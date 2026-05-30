@@ -1,0 +1,259 @@
+/**
+ * Beehive Studio Core Data Models — TypeScript Definitions
+ * 
+ * Single source of truth (mirrored in Python Pydantic).
+ * These models are used by both the desktop frontend and (via serialization)
+ * the agent orchestrator service.
+ * 
+ * All timestamps are Unix epoch seconds (number) unless otherwise noted.
+ * All IDs are UUID v4 strings.
+ */
+
+export type ID = string;
+
+// ============================================
+// Core Musical Domain
+// ============================================
+
+export interface TimeSignature {
+  numerator: number;   // e.g. 4
+  denominator: number; // e.g. 4
+}
+
+export interface TempoAutomationPoint {
+  time: number;   // beats from start of clip/arrangement
+  bpm: number;
+}
+
+export interface ClipMetadata {
+  generative: boolean;
+  agentId?: ID;
+  promptId?: ID;
+  reasoningTrace?: string;   // Human-readable explanation from agent
+  confidence?: number;       // 0-1
+  referenceIds?: ID[];       // Links to Beehive StudioReference used
+  tags?: string[];
+}
+
+export interface MidiNote {
+  pitch: number;      // MIDI note number (0-127)
+  velocity: number;   // 0-127
+  start: number;      // beats from clip start
+  duration: number;   // beats
+}
+
+export interface MidiClipData {
+  notes: MidiNote[];
+  controlChanges?: Array<{
+    time: number;
+    controller: number;
+    value: number;
+  }>;
+  tempoAutomation?: TempoAutomationPoint[];
+}
+
+export type ClipType = 'midi' | 'audio' | 'generative' | 'group';
+
+export interface Clip {
+  id: ID;
+  name: string;
+  type: ClipType;
+  trackId: ID;
+  start: number;      // beat position in arrangement / session
+  duration: number;   // in beats
+  loop: boolean;
+  color?: string;
+
+  // Content
+  midiData?: MidiClipData;
+  audioFilePath?: string;   // relative or absolute local path
+  generativePrompt?: string;
+
+  // Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)
+  // Full instrument details live on Track for richer sessions.
+  playback?: {
+    instrument: 'synth' | 'bass' | 'pad' | 'sample' | 'drum';
+    preset?: string;
+  };
+
+  metadata: ClipMetadata;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ============================================
+// Tracks & Arrangement
+// ============================================
+
+export type TrackType = 'midi' | 'audio' | 'group' | 'return' | 'master';
+
+export interface AutomationLane {
+  id: ID;
+  parameter: string;           // e.g. "volume", "filter.cutoff", "send.reverb"
+  points: Array<{ time: number; value: number }>;
+}
+
+export interface Track {
+  id: ID;
+  name: string;
+  type: TrackType;
+  color: string;
+  volume: number;              // 0-1 linear
+  pan: number;                 // -1 to 1
+  muted: boolean;
+  solo: boolean;
+  arm: boolean;                // record arm
+
+  parentGroupId?: ID;
+  clips: ID[];                 // ordered list of clip ids belonging to this track
+
+  automationLanes: AutomationLane[];
+
+  // For MIDI tracks
+  instrument?: {
+    type: 'tonejs' | 'sample' | 'external'; // external = future VST placeholder
+    preset?: string;
+    settings?: Record<string, unknown>;
+  };
+}
+
+// ============================================
+// Session (the root creative container)
+// ============================================
+
+export interface SessionSettings {
+  bpm: number;
+  timeSignature: TimeSignature;
+  grooveTemplateId?: ID;
+  swing: number; // 0-1
+  masterVolume: number;
+}
+
+export interface Session {
+  id: ID;
+  name: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+
+  settings: SessionSettings;
+
+  tracks: Track[];
+  clips: Record<ID, Clip>;   // map for fast lookup
+
+  // Agent collaboration state
+  activeAgentTasks: ID[];
+  agentHistory: AgentTask[];
+
+  // Beehive Studio context
+  beehive-studioReferenceIds: ID[];
+
+  // Versioning for undo/branching
+  version: number;
+  parentSessionId?: ID;
+}
+
+// ============================================
+// Agents & Tasks
+// ============================================
+
+export type AgentRole =
+  | 'orchestrator'
+  | 'narrative_concept'
+  | 'rhythm_groove'
+  | 'harmony_melody_bass'
+  | 'texture_atmosphere_fx'
+  | 'arrangement_structure'
+  | 'mixing_mastering'
+  | 'style_reference';
+
+export interface Agent {
+  id: ID;
+  role: AgentRole;
+  name: string;           // e.g. "ÆNIMAL Rhythmist"
+  description: string;
+  systemPromptVersion: string;
+  enabled: boolean;
+  temperature?: number;
+  model?: string;         // which Ollama model or NIM deployment
+}
+
+export type AgentTaskStatus = 
+  | 'queued' 
+  | 'running' 
+  | 'awaiting_human' 
+  | 'completed' 
+  | 'failed' 
+  | 'rejected' 
+  | 'overridden';
+
+export interface AgentTask {
+  id: ID;
+  sessionId: ID;
+  agentId: ID;
+  role: AgentRole;
+
+  brief: string;                    // The instruction this task was given
+  contextSnapshot: Record<string, unknown>; // Relevant slice of session + Beehive Studio refs at start
+
+  status: AgentTaskStatus;
+  startedAt?: number;
+  completedAt?: number;
+
+  outputClipIds: ID[];              // Clips this task created or modified
+  reasoning: string[];              // Step-by-step trace shown to user
+  alternativesConsidered?: string[];
+
+  error?: string;
+  humanFeedback?: string;           // What the user said when iterating/rejecting
+
+  parentTaskId?: ID;                // For iteration trees
+}
+
+// ============================================
+// Prompts & Versioning
+// ============================================
+
+export interface GenerationPrompt {
+  id: ID;
+  name: string;
+  role: AgentRole;
+  template: string;                 // The actual prompt text with {{variables}}
+  version: number;
+  createdAt: number;
+  parentPromptId?: ID;              // For prompt evolution tracking
+  tags?: string[];
+}
+
+// ============================================
+// Beehive Studio Integration
+// ============================================
+
+export interface Beehive StudioReference {
+  id: ID;
+  type: 'artist' | 'ritual' | 'co_production' | 'track' | 'aesthetic' | 'custom';
+  title: string;
+  description?: string;
+  tags: string[];
+  // Serialized graph relationships (lightweight for now)
+  relatedIds: ID[];
+  attributes: Record<string, unknown>;   // tempo feel, harmonic language, ritual function, etc.
+  lastUsedAt?: number;
+}
+
+// ============================================
+// UI / Workspace State (desktop only)
+// ============================================
+
+export type WorkspaceMode = 'composition' | 'performance';
+
+export interface WorkspaceState {
+  currentSessionId: ID;
+  mode: WorkspaceMode;
+  selectedTrackId?: ID;
+  selectedClipId?: ID;
+  focusedAgentTaskId?: ID;
+  transportPlaying: boolean;
+  currentBeat: number;
+  zoom: number;                     // for timeline/piano roll
+}

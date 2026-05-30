@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Tauri / Node build
+dist/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.mid
+*.wav
+*.flac
+
+# Secrets (never commit)
+.env
+.env.local
+*.pem
+*.key

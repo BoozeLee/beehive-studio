@@ -1,0 +1,17 @@
+[package]
+name = "beehive-studio-vst"
+version = "0.1.0"
+edition = "2021"
+authors = ["Beehive Studio"]
+description = "Beehive Studio generative MIDI VST plugin"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["standalone"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+[workspace]
