@@ -11,6 +11,7 @@ import { useTimelineStore } from "./lib/timelineStore";
 import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { PatternState } from "./components/PatternEditor/PatternEditor";
 import { exportProjectAudio } from "./lib/audioEngine";
+import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
 
 interface Clip {
   id: string;
@@ -62,6 +63,7 @@ function App() {
   const { setClips: setTimelineClips, addTrack } = useTimelineStore();
   const [showPatternEditor, setShowPatternEditor] = useState(false);
   const [_, setDrumPattern] = useState<PatternState | null>(null);
+  const [showSamples, setShowSamples] = useState(false);
 
   // Load saved projects on mount
   useEffect(() => {
@@ -440,17 +442,27 @@ function App() {
           >
             {showLua ? "Hide Lua" : "Lua"}
           </button>
-          <button
-            onClick={() => setShowTimeline(!showTimeline)}
-            style={{
-              ...buttonStyle(),
-              background: showTimeline ? COLORS.accent : "#2a2a30",
-              color: showTimeline ? "#000" : COLORS.text,
-            }}
-          >
-            {showTimeline ? "Grid" : "Timeline"}
-          </button>
-          <BackendHealth />
+<button
+                onClick={() => setShowTimeline(!showTimeline)}
+                style={{
+                  ...buttonStyle(),
+                  background: showTimeline ? COLORS.accent : "#2a2a30",
+                  color: showTimeline ? "#000" : COLORS.text,
+                }}
+              >
+                {showTimeline ? "Grid" : "Timeline"}
+              </button>
+              <button
+                onClick={() => setShowSamples(!showSamples)}
+                style={{
+                  ...buttonStyle(),
+                  background: showSamples ? COLORS.accent : "#2a2a30",
+                  color: showSamples ? "#000" : COLORS.text,
+                }}
+              >
+                {showSamples ? "Hide Samples" : "Samples"}
+              </button>
+              <BackendHealth />
         </div>
       </div>
 
@@ -760,6 +772,23 @@ function App() {
               ]);
             }}
           />
+
+          {showSamples && (
+            <SampleBrowser
+              onSampleSelect={(_path, info) => {
+                setClips((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    name: info.filename.replace(/\.[^.]+$/, ""),
+                    duration: info.duration_secs > 0 ? info.duration_secs * (transport.bpm / 60) : 2,
+                    color: "#3a5a2a",
+                  },
+                ]);
+                setStatus(`Sample loaded: ${info.filename}`);
+              }}
+            />
+          )}
 
           {streamLog.length > 0 && (
             <div

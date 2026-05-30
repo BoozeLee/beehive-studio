@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio_commands;
+mod sample_commands;
 
 use serde::Serialize;
 
@@ -319,6 +320,8 @@ fn main() {
             close_midi_input,
             audio_commands::write_wav_file,
             audio_commands::export_audio_stems,
+            sample_commands::get_sample_info,
+            sample_commands::load_sample,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
