@@ -10,6 +10,7 @@ import { Timeline } from "./components/Timeline/Timeline";
 import { useTimelineStore } from "./lib/timelineStore";
 import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { PatternState } from "./components/PatternEditor/PatternEditor";
+import { exportProjectAudio } from "./lib/audioEngine";
 
 interface Clip {
   id: string;
@@ -303,6 +304,38 @@ function App() {
       setStatus(`✓ Deleted "${name}"`);
     } catch (err) {
       setStatus(`Delete failed: ${String(err)}`);
+    }
+  }
+
+  async function handleExportAudio() {
+    if (clips.length === 0) {
+      setStatus("Nothing to export — generate some clips first");
+      return;
+    }
+    setStatus("Rendering audio...");
+    try {
+      const renderClips = clips.map((c) => ({
+        id: c.id,
+        notes: c.midiData?.notes ?? [],
+        channel: 0,
+      }));
+      const wavData = await exportProjectAudio(renderClips, transport.bpm);
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const savePath = await save({
+        defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}.wav`,
+        filters: [{ name: "WAV", extensions: ["wav"] }],
+      });
+      if (savePath) {
+        await invoke("write_file_bytes", {
+          path: savePath,
+          data: Array.from(wavData),
+        });
+        setStatus(`✓ Audio exported to ${savePath}`);
+      } else {
+        setStatus("Export cancelled");
+      }
+    } catch (err) {
+      setStatus(`Audio export failed: ${String(err)}`);
     }
   }
 
@@ -662,6 +695,18 @@ function App() {
                 }}
               >
                 🎵 Export MIDI
+              </button>
+              <button
+                onClick={handleExportAudio}
+                disabled={clips.length === 0}
+                style={{
+                  ...buttonStyle(clips.length === 0),
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  background: "#5a2a5a",
+                }}
+              >
+                🔊 Export Audio
               </button>
             </div>
           </div>
