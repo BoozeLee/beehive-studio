@@ -171,7 +171,35 @@ async def list_agents():
                 "description": "Generates drum and bass patterns, grooves, and rhythmic foundations.",
                 "status": "active",
                 "llm_enabled": _check_ollama(),
-            }
+            },
+            {
+                "id": "melody",
+                "name": "Melody",
+                "description": "Scale-based melody generation with multiple styles.",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "harmony",
+                "name": "Harmony",
+                "description": "Chord progression generation (I-IV-V, ii-V-I, jazz, etc.).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "drums",
+                "name": "Drum Agent",
+                "description": "Step-based drum pattern generator (kick, snare, hats, claps, toms, rim).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "arrangement",
+                "name": "Arrangement",
+                "description": "Song structure orchestration (intro, build, drop, outro).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
         ]
     }
 
@@ -363,6 +391,34 @@ class ArrangeRequest(BaseModel):
     structure: str = "intro-build-drop-outro"
     energy_curve: str = "rise-fall"
     bpm: int = 142
+
+
+class DrumRequest(BaseModel):
+    brief: str = ""
+    style: str = "four_on_floor"
+    step_count: int = 16
+    density: float = 0.5
+    swing: float = 0.0
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/drums")
+async def agent_drums(req: DrumRequest):
+    """Run the Drum Agent."""
+    from agents.drums import run_drum_agent
+
+    task = await run_drum_agent(
+        brief=req.brief or f"Generate a {req.style} pattern, {req.step_count} steps",
+        session_context=req.session_context,
+    )
+    return {
+        "task_id": task["id"],
+        "status": task["status"],
+        "reasoning": task["reasoning"],
+        "steps": task["steps"],
+        "style": task["style"],
+        "step_count": task["step_count"],
+    }
 
 
 @app.post("/agents/arrangement")

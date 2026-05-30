@@ -17,6 +17,7 @@ dependencies = [
     "langchain-ollama>=0.2",
     "httpx>=0.28.1",
     "aiosqlite>=0.20",
+    "pydub>=0.25",
 ]
 
 [project.optional-dependencies]

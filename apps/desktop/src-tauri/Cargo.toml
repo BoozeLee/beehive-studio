@@ -22,6 +22,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 reqwest = { version = "0.12", features = ["json"] }
 midir = "0.10"
+hound = "3"
+symphonia = { version = "0.5", features = ["all"] }
 
 [features]
 default = ["custom-protocol"]

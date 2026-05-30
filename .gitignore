@@ -38,6 +38,7 @@ Thumbs.db
 *.mid
 *.wav
 *.flac
+*.tar.gz
 
 # Secrets (never commit)
 .env

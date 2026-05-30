@@ -31,7 +31,7 @@ export interface ClipMetadata {
   promptId?: ID;
   reasoningTrace?: string;   // Human-readable explanation from agent
   confidence?: number;       // 0-1
-  referenceIds?: ID[];       // Links to Beehive StudioReference used
+  referenceIds?: ID[];       // Links to Reference used
   tags?: string[];
 }
 
@@ -146,7 +146,7 @@ export interface Session {
   agentHistory: AgentTask[];
 
   // Beehive Studio context
-  beehive-studioReferenceIds: ID[];
+  referenceIds: ID[];
 
   // Versioning for undo/branching
   version: number;
@@ -229,7 +229,7 @@ export interface GenerationPrompt {
 // Beehive Studio Integration
 // ============================================
 
-export interface Beehive StudioReference {
+export interface Reference {
   id: ID;
   type: 'artist' | 'ritual' | 'co_production' | 'track' | 'aesthetic' | 'custom';
   title: string;

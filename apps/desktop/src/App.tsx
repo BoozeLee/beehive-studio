@@ -6,6 +6,10 @@ import { TransportControls } from "./components/TransportControls";
 import { useTransport, ScheduledClip } from "./lib/transport";
 import { saveProject, loadProject, listProjects, deleteProject } from "./lib/db";
 import { MidiIoPanel } from "./components/MidiIoPanel";
+import { Timeline } from "./components/Timeline/Timeline";
+import { useTimelineStore } from "./lib/timelineStore";
+import { PatternEditor } from "./components/PatternEditor/PatternEditor";
+import type { PatternState } from "./components/PatternEditor/PatternEditor";
 
 interface Clip {
   id: string;
@@ -53,11 +57,43 @@ function App() {
   const [savedProjects, setSavedProjects] = useState<string[]>([]);
   const [showProjects, setShowProjects] = useState(false);
   const transport = useTransport();
+  const [showTimeline, setShowTimeline] = useState(false);
+  const { setClips: setTimelineClips, addTrack } = useTimelineStore();
+  const [showPatternEditor, setShowPatternEditor] = useState(false);
+  const [_, setDrumPattern] = useState<PatternState | null>(null);
 
   // Load saved projects on mount
   useEffect(() => {
     listProjects().then(setSavedProjects).catch(() => {});
   }, []);
+
+  // Sync clips to timeline store
+  useEffect(() => {
+    if (!showTimeline || clips.length === 0) return;
+    const clipMap: Record<string, Clip> = {};
+    for (const clip of clips) {
+      clipMap[clip.id] = clip as unknown as Clip;
+    }
+    setTimelineClips(clipMap as never);
+
+    const { tracks } = useTimelineStore.getState();
+    if (tracks.length === 0) {
+      const trackId = crypto.randomUUID();
+      addTrack({
+        id: trackId,
+        name: "Track 1",
+        type: "midi",
+        color: COLORS.accent,
+        volume: 0.8,
+        pan: 0,
+        muted: false,
+        solo: false,
+        arm: false,
+        clips: clips.map((c) => c.id),
+        automationLanes: [],
+      });
+    }
+  }, [clips, showTimeline]);
 
   // Play a single clip using the transport
   const playClip = useCallback(
@@ -371,6 +407,16 @@ function App() {
           >
             {showLua ? "Hide Lua" : "Lua"}
           </button>
+          <button
+            onClick={() => setShowTimeline(!showTimeline)}
+            style={{
+              ...buttonStyle(),
+              background: showTimeline ? COLORS.accent : "#2a2a30",
+              color: showTimeline ? "#000" : COLORS.text,
+            }}
+          >
+            {showTimeline ? "Grid" : "Timeline"}
+          </button>
           <BackendHealth />
         </div>
       </div>
@@ -561,6 +607,16 @@ function App() {
               >
                 🎼 Arrange
               </button>
+              <button
+                onClick={() => setShowPatternEditor(!showPatternEditor)}
+                style={{
+                  ...buttonStyle(),
+                  background: showPatternEditor ? "#5a2a2a" : "#2a2a30",
+                  color: COLORS.text,
+                }}
+              >
+                🥁 Drums
+              </button>
             </div>
             <div
               style={{
@@ -633,6 +689,15 @@ function App() {
             </span>
           </div>
 
+          {/* Pattern Editor */}
+          {showPatternEditor && (
+            <PatternEditor
+              isPlaying={transport.isPlaying}
+              currentBeat={transport.currentBeat}
+              onPatternChange={setDrumPattern}
+            />
+          )}
+
           {/* MIDI I/O */}
           <MidiIoPanel
             onStatus={setStatus}
@@ -677,18 +742,39 @@ function App() {
             </div>
           )}
 
-          {/* Clip Grid */}
-          <div style={{ ...panelStyle, flex: 1, overflow: "auto" }}>
-            <SessionViewGrid
-              clips={clips}
-              onPlayClip={(id) => {
-                const clip = clips.find((c) => c.id === id);
-                if (clip) playClip(clip);
-              }}
-              onAccept={acceptClip}
-              onReject={rejectClip}
-              onVariations={generateVariations}
-            />
+          {/* Clip Grid / Timeline */}
+          <div
+            style={{
+              ...panelStyle,
+              flex: 1,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {showTimeline ? (
+              <Timeline
+                isPlaying={transport.isPlaying}
+                currentBeat={transport.currentBeat}
+                onPlayClip={(id) => {
+                  const clip = clips.find((c) => c.id === id);
+                  if (clip) playClip(clip);
+                }}
+              />
+            ) : (
+              <div style={{ flex: 1, overflow: "auto" }}>
+                <SessionViewGrid
+                  clips={clips}
+                  onPlayClip={(id) => {
+                    const clip = clips.find((c) => c.id === id);
+                    if (clip) playClip(clip);
+                  }}
+                  onAccept={acceptClip}
+                  onReject={rejectClip}
+                  onVariations={generateVariations}
+                />
+              </div>
+            )}
           </div>
         </div>
 
