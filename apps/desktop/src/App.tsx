@@ -12,6 +12,8 @@ import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { PatternState } from "./components/PatternEditor/PatternEditor";
 import { exportProjectAudio } from "./lib/audioEngine";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
+import { EffectsChain } from "./components/Mixer/EffectsChain";
+import type { EffectInstance } from "./lib/effectEngine";
 
 interface Clip {
   id: string;
@@ -64,6 +66,8 @@ function App() {
   const [showPatternEditor, setShowPatternEditor] = useState(false);
   const [_, setDrumPattern] = useState<PatternState | null>(null);
   const [showSamples, setShowSamples] = useState(false);
+  const [showEffects, setShowEffects] = useState(false);
+  const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
 
   // Load saved projects on mount
   useEffect(() => {
@@ -462,9 +466,19 @@ function App() {
               >
                 {showSamples ? "Hide Samples" : "Samples"}
               </button>
+              <button
+                onClick={() => setShowEffects(!showEffects)}
+                style={{
+                  ...buttonStyle(),
+                  background: showEffects ? COLORS.accent : "#2a2a30",
+                  color: showEffects ? "#000" : COLORS.text,
+                }}
+              >
+                {showEffects ? "Hide FX" : "FX"}
+              </button>
               <BackendHealth />
-        </div>
-      </div>
+            </div>
+          </div>
 
       {/* Transport Controls */}
       <TransportControls
@@ -787,6 +801,13 @@ function App() {
                 ]);
                 setStatus(`Sample loaded: ${info.filename}`);
               }}
+            />
+          )}
+
+          {showEffects && (
+            <EffectsChain
+              effects={selectedTrackEffects}
+              onChange={setSelectedTrackEffects}
             />
           )}
 
