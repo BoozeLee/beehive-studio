@@ -14,6 +14,9 @@ import { exportProjectAudio } from "./lib/audioEngine";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
 import { EffectsChain } from "./components/Mixer/EffectsChain";
 import type { EffectInstance } from "./lib/effectEngine";
+import { AutomationLaneView } from "./components/Timeline/AutomationLane";
+import { Mixer } from "./components/Mixer/Mixer";
+import type { AutomationLane } from "./lib/automationEngine";
 
 interface Clip {
   id: string;
@@ -68,6 +71,8 @@ function App() {
   const [showSamples, setShowSamples] = useState(false);
   const [showEffects, setShowEffects] = useState(false);
   const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
+  const [showMixer, setShowMixer] = useState(false);
+  const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
 
   // Load saved projects on mount
   useEffect(() => {
@@ -476,6 +481,16 @@ function App() {
               >
                 {showEffects ? "Hide FX" : "FX"}
               </button>
+              <button
+                onClick={() => setShowMixer(!showMixer)}
+                style={{
+                  ...buttonStyle(),
+                  background: showMixer ? COLORS.accent : "#2a2a30",
+                  color: showMixer ? "#000" : COLORS.text,
+                }}
+              >
+                {showMixer ? "Hide Mixer" : "Mixer"}
+              </button>
               <BackendHealth />
             </div>
           </div>
@@ -810,6 +825,54 @@ function App() {
               onChange={setSelectedTrackEffects}
             />
           )}
+
+          {showMixer && (
+            <Mixer
+              onVolumeChange={(_trackId, _vol) => {}}
+              onPanChange={(_trackId, _pan) => {}}
+            />
+          )}
+
+          {automationLanes.length > 0 &&
+            automationLanes.map((lane) => (
+              <AutomationLaneView
+                key={lane.id}
+                lane={lane}
+                totalBeats={16}
+                zoom={16}
+                isPlaying={transport.isPlaying}
+                currentBeat={transport.currentBeat}
+                onAddPoint={(time: number, value: number) => {
+                  setAutomationLanes((prev) =>
+                    prev.map((l) =>
+                      l.id === lane.id
+                        ? {
+                            ...l,
+                            points: [
+                              ...l.points,
+                              { time, value },
+                            ].sort((a, b) => a.time - b.time),
+                          }
+                        : l
+                    )
+                  );
+                }}
+                onRemovePoint={(time: number) => {
+                  setAutomationLanes((prev) =>
+                    prev.map((l) =>
+                      l.id === lane.id
+                        ? {
+                            ...l,
+                            points: l.points.filter(
+                              (p) => Math.abs(p.time - time) >= 0.01
+                            ),
+                          }
+                        : l
+                    )
+                  );
+                }}
+              />
+            ))}
 
           {streamLog.length > 0 && (
             <div
