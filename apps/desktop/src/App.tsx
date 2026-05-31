@@ -19,7 +19,7 @@ import { Mixer } from "./components/Mixer/Mixer";
 import type { AutomationLane } from "./lib/automationEngine";
 import { BranchSelector } from "./components/BranchSelector";
 import { ProjectPanel } from "./components/ProjectPanel";
-import { saveSnapshot, ensureProjectInit } from "./lib/projectGit";
+import { saveSnapshot, ensureProjectInit, forkSession, readClips } from "./lib/projectGit";
 
 interface Clip {
   id: string;
@@ -289,6 +289,38 @@ function App() {
     } catch (err) {
       setStatus(`Load failed: ${String(err)}`);
     }
+  }
+
+  async function handleFork() {
+    if (clips.length === 0) {
+      setStatus("Nothing to fork — generate some clips first");
+      return;
+    }
+    const branchName = prompt("Fork branch name:", "experiment");
+    if (!branchName) return;
+    try {
+      const clipJson = JSON.stringify(clips);
+      await ensureProjectInit(projectName);
+      const result = await forkSession(
+        projectName,
+        branchName,
+        clipJson,
+        `Fork: ${projectName} → ${branchName}`,
+      );
+      setStatus(`✓ Forked to '${branchName}' (${result.slice(0, 7)})`);
+    } catch (err) {
+      setStatus(`Fork failed: ${String(err)}`);
+    }
+  }
+
+  async function handleBranchSwitch(_branch: string) {
+    try {
+      const raw = await readClips(projectName);
+      const loaded: Clip[] = JSON.parse(raw);
+      if (Array.isArray(loaded) && loaded.length > 0) {
+        setClips(loaded);
+      }
+    } catch {}
   }
 
   async function handleExportMidi() {
@@ -740,7 +772,7 @@ function App() {
                   borderRadius: 4,
                 }}
               />
-              <BranchSelector projectName={projectName} />
+              <BranchSelector projectName={projectName} onBranchChange={handleBranchSwitch} />
               <button
                 onClick={handleSaveProject}
                 style={{
@@ -750,6 +782,18 @@ function App() {
                 }}
               >
                 💾 Save
+              </button>
+              <button
+                onClick={handleFork}
+                disabled={clips.length === 0}
+                style={{
+                  ...buttonStyle(clips.length === 0),
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  background: "#5a2a5a",
+                }}
+              >
+                🪝 Fork
               </button>
               <button
                 onClick={handleExportMidi}
@@ -1066,6 +1110,7 @@ function App() {
             projectName={projectName}
             visible={showGit}
             onClose={() => setShowGit(false)}
+            onBranchSwitch={handleBranchSwitch}
           />
         )}
 
