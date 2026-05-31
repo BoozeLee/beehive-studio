@@ -334,6 +334,15 @@ fn main() {
             git_commands::git_export_tarball,
             git_commands::git_import_tarball,
             git_commands::git_current_branch,
+            git_commands::git_fork_session,
+            git_commands::git_fork_from_commit,
+            git_commands::git_read_clips,
+            git_commands::git_read_clips_at,
+            git_commands::git_merge_branch,
+            git_commands::git_delete_branch,
+            git_commands::git_rename_branch,
+            git_commands::git_branch_notes,
+            git_commands::git_log_for_branch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

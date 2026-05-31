@@ -8,10 +8,18 @@ import {
   importTarball,
   createBranch,
   checkoutBranch,
+  deleteBranch,
+  renameBranch,
+  forkFromCommit,
+  mergeBranch,
+  getBranchNotes,
+  setBranchNotes,
   type BranchInfo,
   type CommitInfo,
   type DiffEntry,
+  type BranchMeta,
 } from "../lib/projectGit";
+import { BranchDiffView } from "./BranchDiffView";
 
 const COLORS = {
   bg: "#0f0f12",
@@ -30,11 +38,12 @@ interface Props {
   projectName: string;
   visible: boolean;
   onClose: () => void;
+  onBranchSwitch?: (branch: string) => void;
 }
 
-type Tab = "branches" | "history";
+type Tab = "branches" | "history" | "compare";
 
-export function ProjectPanel({ projectName, visible, onClose }: Props) {
+export function ProjectPanel({ projectName, visible, onClose, onBranchSwitch }: Props) {
   const [tab, setTab] = useState<Tab>("branches");
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
@@ -43,6 +52,15 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
   const [newBranchName, setNewBranchName] = useState("");
   const [status, setStatus] = useState("");
   const [statusColor, setStatusColor] = useState(COLORS.textMuted);
+
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [branchNotes, setBranchNotesState] = useState<Record<string, BranchMeta>>({});
+  const [editingNotes, setEditingNotes] = useState<string | null>(null);
+  const [notesValue, setNotesValue] = useState("");
+
+  const [compareA, setCompareA] = useState("");
+  const [compareB, setCompareB] = useState("");
 
   useEffect(() => {
     if (!visible || !projectName) return;
@@ -57,6 +75,16 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
       ]);
       setBranches(b);
       setCommits(c);
+      if (b.length > 0) {
+        const current = b.find((br) => br.is_current);
+        const other = b.find((br) => !br.is_current);
+        setCompareA(current?.name || b[0].name);
+        setCompareB(other?.name || b[0].name);
+      }
+      try {
+        const notes = await getBranchNotes(projectName);
+        setBranchNotesState(notes);
+      } catch {}
     } catch (e) {
       setStatus(`Load failed: ${e}`);
       setStatusColor(COLORS.error);
@@ -67,6 +95,7 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
     try {
       await checkoutBranch(projectName, name);
       await loadData();
+      onBranchSwitch?.(name);
       setStatus(`Switched to ${name}`);
       setStatusColor(COLORS.success);
     } catch (e) {
@@ -117,6 +146,73 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
       setStatus(`Revert failed: ${e}`);
       setStatusColor(COLORS.error);
     }
+  }
+
+  async function handleForkFromCommit(commitHash: string) {
+    const name = prompt("New branch name:", `from-${commitHash.slice(0, 7)}`);
+    if (!name) return;
+    try {
+      await forkFromCommit(projectName, name, commitHash);
+      await loadData();
+      onBranchSwitch?.(name);
+      setStatus(`Forked '${name}' from ${commitHash.slice(0, 7)}`);
+      setStatusColor(COLORS.success);
+    } catch (e) {
+      setStatus(`Fork failed: ${e}`);
+      setStatusColor(COLORS.error);
+    }
+  }
+
+  async function handleRenameBranch(oldName: string, newName: string) {
+    if (!newName.trim() || newName === oldName) return;
+    try {
+      await renameBranch(projectName, oldName, newName);
+      await loadData();
+      setStatus(`Renamed to '${newName}'`);
+      setStatusColor(COLORS.success);
+    } catch (e) {
+      setStatus(`Rename failed: ${e}`);
+      setStatusColor(COLORS.error);
+    }
+    setRenaming(null);
+  }
+
+  async function handleDeleteBranch(branch: string) {
+    if (!confirm(`Delete branch '${branch}'?`)) return;
+    try {
+      await deleteBranch(projectName, branch);
+      await loadData();
+      setStatus(`Deleted '${branch}'`);
+      setStatusColor(COLORS.success);
+    } catch (e) {
+      setStatus(`Delete failed: ${e}`);
+      setStatusColor(COLORS.error);
+    }
+  }
+
+  async function handleMergeBranch(source: string) {
+    if (!confirm(`Merge '${source}' into current branch?`)) return;
+    try {
+      const result = await mergeBranch(projectName, source);
+      setStatus(result);
+      setStatusColor(COLORS.success);
+      await loadData();
+    } catch (e) {
+      setStatus(`Merge failed: ${e}`);
+      setStatusColor(COLORS.error);
+    }
+  }
+
+  async function saveBranchNotes(branch: string, description: string) {
+    const updated = { ...branchNotes, [branch]: { description, created_at: Math.floor(Date.now() / 1000) } };
+    try {
+      await setBranchNotes(projectName, updated);
+      setBranchNotesState(updated);
+    } catch (e) {
+      setStatus(`Notes save failed: ${e}`);
+      setStatusColor(COLORS.error);
+    }
+    setEditingNotes(null);
   }
 
   async function handleExport() {
@@ -175,7 +271,7 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
   return (
     <div
       style={{
-        width: 320,
+        width: 340,
         background: COLORS.panel,
         border: `1px solid ${COLORS.border}`,
         borderRadius: 8,
@@ -184,7 +280,6 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
         overflow: "hidden",
       }}
     >
-      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -212,53 +307,111 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
         </button>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", borderBottom: `1px solid ${COLORS.border}` }}>
-        <button onClick={() => setTab("branches")} style={tabStyle("branches")}>
-          Branches
-        </button>
-        <button onClick={() => setTab("history")} style={tabStyle("history")}>
-          History
-        </button>
+        <button onClick={() => setTab("branches")} style={tabStyle("branches")}>Branches</button>
+        <button onClick={() => setTab("history")} style={tabStyle("history")}>History</button>
+        <button onClick={() => setTab("compare")} style={tabStyle("compare")}>Compare</button>
       </div>
 
-      {/* Content */}
       <div style={{ flex: 1, overflow: "auto", padding: 8 }}>
-        {tab === "branches" ? (
+        {/* ── Branches Tab ── */}
+        {tab === "branches" && (
           <div>
             {branches.map((b) => (
               <div
                 key={b.name}
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "5px 8px",
+                  padding: "6px 8px",
                   borderRadius: 4,
                   marginBottom: 2,
                   background: b.is_current ? "#2a2a30" : "transparent",
+                  borderLeft: b.is_current ? `3px solid ${COLORS.accent}` : "3px solid transparent",
                 }}
               >
-                <span style={{ fontSize: 13, color: b.is_current ? COLORS.accent : COLORS.text }}>
-                  {b.is_current ? "● " : "○ "}
-                  {b.name}
-                </span>
-                {!b.is_current && (
-                  <button
-                    onClick={() => handleSwitchBranch(b.name)}
-                    style={{
-                      padding: "2px 8px",
-                      fontSize: 11,
-                      background: "transparent",
-                      border: `1px solid ${COLORS.border}`,
-                      color: COLORS.textMuted,
-                      borderRadius: 3,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Switch
-                  </button>
-                )}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {renaming === b.name ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRenameBranch(b.name, renameValue);
+                          if (e.key === "Escape") setRenaming(null);
+                        }}
+                        onBlur={() => setRenaming(null)}
+                        style={{
+                          padding: "2px 4px",
+                          fontSize: 12,
+                          background: COLORS.bg,
+                          color: COLORS.text,
+                          border: `1px solid ${COLORS.accent}`,
+                          borderRadius: 3,
+                          width: "100%",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        onClick={() => {
+                          if (!b.is_current) { setRenaming(b.name); setRenameValue(b.name); }
+                        }}
+                        style={{
+                          fontSize: 13,
+                          color: b.is_current ? COLORS.accent : COLORS.text,
+                          cursor: b.is_current ? "default" : "pointer",
+                          fontWeight: b.is_current ? 600 : 400,
+                        }}
+                      >
+                        {b.is_current ? "● " : "○ "}
+                        {b.name}
+                      </div>
+                    )}
+                    {editingNotes === b.name ? (
+                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <input
+                          autoFocus
+                          value={notesValue}
+                          onChange={(e) => setNotesValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveBranchNotes(b.name, notesValue);
+                            if (e.key === "Escape") setEditingNotes(null);
+                          }}
+                          placeholder="Branch description..."
+                          style={{
+                            flex: 1,
+                            padding: "2px 4px",
+                            fontSize: 11,
+                            background: COLORS.bg,
+                            color: COLORS.text,
+                            border: `1px solid ${COLORS.border}`,
+                            borderRadius: 3,
+                          }}
+                        />
+                        <button onClick={() => saveBranchNotes(b.name, notesValue)} style={{ padding: "2px 6px", fontSize: 10, background: COLORS.accent, color: "#000", border: "none", borderRadius: 3, cursor: "pointer" }}>✓</button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => { setEditingNotes(b.name); setNotesValue(branchNotes[b.name]?.description || ""); }}
+                        style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2, cursor: "pointer" }}
+                      >
+                        {branchNotes[b.name]?.description || "(add description)"}
+                      </div>
+                    )}
+                  </div>
+                  {!b.is_current && (
+                    <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginLeft: 6 }}>
+                      <ActBtn label="Switch" onClick={() => handleSwitchBranch(b.name)} />
+                      <ActBtn label="Fork" onClick={() => {
+                        const name = prompt("Fork branch name:", `${b.name}-copy`);
+                        if (name) handleForkFromCommit(`refs/heads/${b.name}`).then(() => {
+                          createBranch(projectName, name).then(() => handleSwitchBranch(name));
+                        });
+                      }} />
+                      <ActBtn label="Merge" onClick={() => handleMergeBranch(b.name)} />
+                      <ActBtn label="✕" onClick={() => handleDeleteBranch(b.name)} color={COLORS.error} />
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
             <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
@@ -294,7 +447,10 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
               </button>
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* ── History Tab ── */}
+        {tab === "history" && (
           <div>
             {diffEntries.length > 0 && selectedCommit && (
               <div
@@ -305,13 +461,7 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
                   marginBottom: 8,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: 4,
-                  }}
-                >
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <span style={{ fontSize: 11, color: COLORS.accent }}>
                     Diff ({selectedCommit.slice(0, 7)})
                   </span>
@@ -319,34 +469,21 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
                     onClick={() => { setDiffEntries([]); setSelectedCommit(null); }}
                     style={{
                       padding: "1px 4px",
-                      fontSize: 10,
-                      background: "transparent",
-                      border: "none",
-                      color: COLORS.textMuted,
-                      cursor: "pointer",
+                      fontSize: 10, background: "transparent", border: "none",
+                      color: COLORS.textMuted, cursor: "pointer",
                     }}
                   >
                     ✕
                   </button>
                 </div>
                 {diffEntries.map((d, i) => (
-                  <div
-                    key={i}
-                    style={{ fontSize: 11, color: COLORS.text, marginBottom: 2 }}
-                  >
-                    <span
-                      style={{
-                        color:
-                          d.status === "Modified"
-                            ? COLORS.warning
-                            : d.status === "Added"
-                              ? COLORS.success
-                              : COLORS.error,
-                      }}
-                    >
+                  <div key={i} style={{ fontSize: 11, color: COLORS.text, marginBottom: 2 }}>
+                    <span style={{
+                      color: d.status === "Modified" ? COLORS.warning
+                        : d.status === "Added" ? COLORS.success : COLORS.error,
+                    }}>
                       [{d.status}]
-                    </span>{" "}
-                    {d.path}
+                    </span> {d.path}
                   </div>
                 ))}
               </div>
@@ -360,18 +497,11 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
                   borderRadius: 4,
                   marginBottom: 2,
                   cursor: "pointer",
-                  background:
-                    selectedCommit === c.hash ? "#2a2a30" : "transparent",
+                  background: selectedCommit === c.hash ? "#2a2a30" : "transparent",
                 }}
                 onClick={() => handleShowDiff(c.hash)}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: COLORS.text }}>
                     {c.message.split("\n")[0]}
                   </span>
@@ -384,21 +514,28 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
                   <span>{new Date(c.timestamp * 1000).toLocaleDateString()}</span>
                 </div>
                 {selectedCommit === c.hash && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleRevert(c.hash); }}
-                    style={{
-                      marginTop: 4,
-                      padding: "2px 8px",
-                      fontSize: 10,
-                      background: COLORS.error,
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 3,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Revert
-                  </button>
+                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRevert(c.hash); }}
+                      style={{
+                        padding: "2px 8px", fontSize: 10,
+                        background: COLORS.error, color: "#fff",
+                        border: "none", borderRadius: 3, cursor: "pointer",
+                      }}
+                    >
+                      Revert
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleForkFromCommit(c.hash); }}
+                      style={{
+                        padding: "2px 8px", fontSize: 10,
+                        background: COLORS.accent, color: "#000",
+                        border: "none", borderRadius: 3, cursor: "pointer",
+                      }}
+                    >
+                      Fork
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -410,62 +547,93 @@ export function ProjectPanel({ projectName, visible, onClose }: Props) {
             )}
           </div>
         )}
+
+        {/* ── Compare Tab ── */}
+        {tab === "compare" && (
+          <div>
+            <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+              <select
+                value={compareA}
+                onChange={(e) => setCompareA(e.target.value)}
+                style={{
+                  flex: 1, padding: "4px 6px", fontSize: 12,
+                  background: COLORS.bg, color: COLORS.text,
+                  border: `1px solid ${COLORS.border}`, borderRadius: 4,
+                }}
+              >
+                {branches.map((b) => (
+                  <option key={b.name} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+              <span style={{ color: COLORS.textMuted, alignSelf: "center" }}>vs</span>
+              <select
+                value={compareB}
+                onChange={(e) => setCompareB(e.target.value)}
+                style={{
+                  flex: 1, padding: "4px 6px", fontSize: 12,
+                  background: COLORS.bg, color: COLORS.text,
+                  border: `1px solid ${COLORS.border}`, borderRadius: 4,
+                }}
+              >
+                {branches.map((b) => (
+                  <option key={b.name} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            {compareA && compareB && compareA !== compareB ? (
+              <BranchDiffView projectName={projectName} branchA={compareA} branchB={compareB} />
+            ) : (
+              <div style={{ fontSize: 12, color: COLORS.textMuted, textAlign: "center", padding: 20 }}>
+                Select two different branches to compare.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Status */}
       {status && (
-        <div
-          style={{
-            padding: "4px 10px",
-            fontSize: 11,
-            color: statusColor,
-            borderTop: `1px solid ${COLORS.border}`,
-          }}
-        >
+        <div style={{
+          padding: "4px 10px", fontSize: 11, color: statusColor,
+          borderTop: `1px solid ${COLORS.border}`,
+        }}>
           {status}
         </div>
       )}
 
-      {/* Import / Export */}
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          padding: 8,
-          borderTop: `1px solid ${COLORS.border}`,
-        }}
-      >
-        <button
-          onClick={handleExport}
-          style={{
-            flex: 1,
-            padding: "4px 0",
-            fontSize: 11,
-            background: COLORS.bg,
-            color: COLORS.text,
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: 4,
-            cursor: "pointer",
-          }}
-        >
+      <div style={{ display: "flex", gap: 4, padding: 8, borderTop: `1px solid ${COLORS.border}` }}>
+        <button onClick={handleExport} style={{
+          flex: 1, padding: "4px 0", fontSize: 11,
+          background: COLORS.bg, color: COLORS.text,
+          border: `1px solid ${COLORS.border}`, borderRadius: 4, cursor: "pointer",
+        }}>
           Export
         </button>
-        <button
-          onClick={handleImport}
-          style={{
-            flex: 1,
-            padding: "4px 0",
-            fontSize: 11,
-            background: COLORS.bg,
-            color: COLORS.text,
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: 4,
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={handleImport} style={{
+          flex: 1, padding: "4px 0", fontSize: 11,
+          background: COLORS.bg, color: COLORS.text,
+          border: `1px solid ${COLORS.border}`, borderRadius: 4, cursor: "pointer",
+        }}>
           Import
         </button>
       </div>
     </div>
+  );
+}
+
+function ActBtn({ label, onClick, color }: { label: string; onClick: () => void; color?: string }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{
+        padding: "2px 6px", fontSize: 10,
+        background: "transparent",
+        border: `1px solid ${color || COLORS.border}`,
+        color: color || COLORS.textMuted,
+        borderRadius: 3, cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </button>
   );
 }

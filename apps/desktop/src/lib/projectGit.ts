@@ -18,6 +18,18 @@ export interface DiffEntry {
   status: string;
 }
 
+export interface BranchMeta {
+  description?: string;
+  created_at?: number;
+}
+
+export interface ClipDiffEntry {
+  id: string;
+  name: string;
+  status: "added" | "removed" | "modified";
+  old_name?: string;
+}
+
 let knownProjects = new Set<string>();
 
 export async function initProject(name: string): Promise<string> {
@@ -92,4 +104,86 @@ export async function ensureProjectInit(name: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Phase 4.2 — Fork/Branch Creative UX
+
+export async function forkSession(
+  name: string,
+  branchName: string,
+  clipData: string,
+  message: string,
+): Promise<string> {
+  return invoke<string>("git_fork_session", {
+    name,
+    branchName,
+    clipData,
+    message,
+  });
+}
+
+export async function forkFromCommit(
+  name: string,
+  branchName: string,
+  commitHash: string,
+): Promise<string> {
+  return invoke<string>("git_fork_from_commit", {
+    name,
+    branchName,
+    commitHash,
+  });
+}
+
+export async function readClips(name: string): Promise<string> {
+  return invoke<string>("git_read_clips", { name });
+}
+
+export async function readClipsAt(name: string, refName: string): Promise<string> {
+  return invoke<string>("git_read_clips_at", { name, refName });
+}
+
+export async function mergeBranch(
+  name: string,
+  sourceBranch: string,
+): Promise<string> {
+  return invoke<string>("git_merge_branch", { name, sourceBranch });
+}
+
+export async function deleteBranch(name: string, branch: string): Promise<string> {
+  return invoke<string>("git_delete_branch", { name, branch });
+}
+
+export async function renameBranch(
+  name: string,
+  oldName: string,
+  newName: string,
+): Promise<string> {
+  return invoke<string>("git_rename_branch", { name, oldName, newName });
+}
+
+export async function getBranchNotes(name: string): Promise<Record<string, BranchMeta>> {
+  const raw = await invoke<string>("git_branch_notes", {
+    name,
+    notesJson: null,
+  });
+  return JSON.parse(raw);
+}
+
+export async function setBranchNotes(
+  name: string,
+  notes: Record<string, BranchMeta>,
+): Promise<Record<string, BranchMeta>> {
+  const raw = await invoke<string>("git_branch_notes", {
+    name,
+    notesJson: JSON.stringify(notes),
+  });
+  return JSON.parse(raw);
+}
+
+export async function getBranchLog(
+  name: string,
+  branch: string,
+  count: number = 50,
+): Promise<CommitInfo[]> {
+  return invoke<CommitInfo[]>("git_log_for_branch", { name, branch, count });
 }
