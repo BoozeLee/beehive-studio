@@ -171,7 +171,35 @@ async def list_agents():
                 "description": "Generates drum and bass patterns, grooves, and rhythmic foundations.",
                 "status": "active",
                 "llm_enabled": _check_ollama(),
-            }
+            },
+            {
+                "id": "melody",
+                "name": "Melody",
+                "description": "Scale-based melody generation with multiple styles.",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "harmony",
+                "name": "Harmony",
+                "description": "Chord progression generation (I-IV-V, ii-V-I, jazz, etc.).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "drums",
+                "name": "Drum Agent",
+                "description": "Step-based drum pattern generator (kick, snare, hats, claps, toms, rim).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "arrangement",
+                "name": "Arrangement",
+                "description": "Song structure orchestration (intro, build, drop, outro).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
         ]
     }
 
@@ -365,6 +393,34 @@ class ArrangeRequest(BaseModel):
     bpm: int = 142
 
 
+class DrumRequest(BaseModel):
+    brief: str = ""
+    style: str = "four_on_floor"
+    step_count: int = 16
+    density: float = 0.5
+    swing: float = 0.0
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/drums")
+async def agent_drums(req: DrumRequest):
+    """Run the Drum Agent."""
+    from agents.drums import run_drum_agent
+
+    task = await run_drum_agent(
+        brief=req.brief or f"Generate a {req.style} pattern, {req.step_count} steps",
+        session_context=req.session_context,
+    )
+    return {
+        "task_id": task["id"],
+        "status": task["status"],
+        "reasoning": task["reasoning"],
+        "steps": task["steps"],
+        "style": task["style"],
+        "step_count": task["step_count"],
+    }
+
+
 @app.post("/agents/arrangement")
 async def agent_arrangement(req: ArrangeRequest):
     """Run the Arrangement Agent."""
@@ -382,4 +438,77 @@ async def agent_arrangement(req: ArrangeRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "arrangement": task["arrangement"],
+    }
+
+
+class RenderRequest(BaseModel):
+    clips: list[dict[str, Any]]
+    bpm: int = 142
+    format: str = "wav"
+
+
+@app.post("/render")
+async def render_audio(req: RenderRequest):
+    """Render MIDI clips to audio (basic sine synthesis via pydub)."""
+    import tempfile
+    from pydub import AudioSegment
+    from pydub.generators import Sine
+    
+
+    sample_rate = 44100
+    beat_duration = 60.0 / req.bpm
+
+    segments: list[AudioSegment] = []
+    max_duration_ms = 0
+
+    for clip in req.clips:
+        notes = clip.get("midiData", {}).get("notes", [])
+        if not notes:
+            notes = clip.get("notes", [])
+
+        clip_segments = AudioSegment.silent(duration=0, frame_rate=sample_rate)
+        clip_end_ms = 0
+
+        for note in notes:
+            pitch = note.get("pitch", 60)
+            velocity = note.get("velocity", 100)
+            start = note.get("start", 0)
+            duration = note.get("duration", 0.5)
+
+            freq = 440.0 * (2 ** ((pitch - 69) / 12.0))
+            vol_db = -30 + (velocity / 127) * 30
+
+            note_start_ms = int(start * beat_duration * 1000)
+            note_dur_ms = max(50, int(duration * beat_duration * 1000))
+
+            tone = Sine(freq).to_audio_segment(duration=note_dur_ms, volume=vol_db)
+            clip_segments = clip_segments.overlay(tone, position=note_start_ms)
+
+            note_end = note_start_ms + note_dur_ms
+            if note_end > clip_end_ms:
+                clip_end_ms = note_end
+
+        if len(clip_segments) > 0:
+            segments.append(clip_segments)
+            if clip_end_ms > max_duration_ms:
+                max_duration_ms = clip_end_ms
+
+    if not segments or max_duration_ms == 0:
+        return {"status": "error", "message": "No notes to render"}
+
+    mixed = AudioSegment.silent(duration=max_duration_ms, frame_rate=sample_rate)
+    for seg in segments:
+        mixed = mixed.overlay(seg)
+
+    output_dir = tempfile.gettempdir()
+    ext = "wav" if req.format == "wav" else "wav"
+    output_path = os.path.join(output_dir, f"beehive-render.{ext}")
+
+    mixed.export(output_path, format=ext)
+
+    return {
+        "status": "ok",
+        "path": output_path,
+        "duration_ms": len(mixed),
+        "format": ext,
     }

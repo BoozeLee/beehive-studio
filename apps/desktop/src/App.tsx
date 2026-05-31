@@ -6,6 +6,20 @@ import { TransportControls } from "./components/TransportControls";
 import { useTransport, ScheduledClip } from "./lib/transport";
 import { saveProject, loadProject, listProjects, deleteProject } from "./lib/db";
 import { MidiIoPanel } from "./components/MidiIoPanel";
+import { Timeline } from "./components/Timeline/Timeline";
+import { useTimelineStore } from "./lib/timelineStore";
+import { PatternEditor } from "./components/PatternEditor/PatternEditor";
+import type { PatternState } from "./components/PatternEditor/PatternEditor";
+import { exportProjectAudio } from "./lib/audioEngine";
+import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
+import { EffectsChain } from "./components/Mixer/EffectsChain";
+import type { EffectInstance } from "./lib/effectEngine";
+import { AutomationLaneView } from "./components/Timeline/AutomationLane";
+import { Mixer } from "./components/Mixer/Mixer";
+import type { AutomationLane } from "./lib/automationEngine";
+import { BranchSelector } from "./components/BranchSelector";
+import { ProjectPanel } from "./components/ProjectPanel";
+import { saveSnapshot, ensureProjectInit } from "./lib/projectGit";
 
 interface Clip {
   id: string;
@@ -53,11 +67,49 @@ function App() {
   const [savedProjects, setSavedProjects] = useState<string[]>([]);
   const [showProjects, setShowProjects] = useState(false);
   const transport = useTransport();
+  const [showTimeline, setShowTimeline] = useState(false);
+  const { setClips: setTimelineClips, addTrack } = useTimelineStore();
+  const [showPatternEditor, setShowPatternEditor] = useState(false);
+  const [_, setDrumPattern] = useState<PatternState | null>(null);
+  const [showSamples, setShowSamples] = useState(false);
+  const [showEffects, setShowEffects] = useState(false);
+  const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
+  const [showMixer, setShowMixer] = useState(false);
+  const [showGit, setShowGit] = useState(false);
+  const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
 
   // Load saved projects on mount
   useEffect(() => {
     listProjects().then(setSavedProjects).catch(() => {});
   }, []);
+
+  // Sync clips to timeline store
+  useEffect(() => {
+    if (!showTimeline || clips.length === 0) return;
+    const clipMap: Record<string, Clip> = {};
+    for (const clip of clips) {
+      clipMap[clip.id] = clip as unknown as Clip;
+    }
+    setTimelineClips(clipMap as never);
+
+    const { tracks } = useTimelineStore.getState();
+    if (tracks.length === 0) {
+      const trackId = crypto.randomUUID();
+      addTrack({
+        id: trackId,
+        name: "Track 1",
+        type: "midi",
+        color: COLORS.accent,
+        volume: 0.8,
+        pan: 0,
+        muted: false,
+        solo: false,
+        arm: false,
+        clips: clips.map((c) => c.id),
+        automationLanes: [],
+      });
+    }
+  }, [clips, showTimeline]);
 
   // Play a single clip using the transport
   const playClip = useCallback(
@@ -209,9 +261,20 @@ function App() {
     }
     try {
       await saveProject(projectName, clips);
+      const clipJson = JSON.stringify(clips);
+      await ensureProjectInit(projectName);
+      const hash = await saveSnapshot(
+        projectName,
+        clipJson,
+        `Save: ${projectName}`,
+      );
       const projects = await listProjects();
       setSavedProjects(projects);
-      setStatus(`✓ Saved "${projectName}" (${clips.length} clips)`);
+      const tag =
+        hash !== "No changes to commit"
+          ? `commit ${hash.slice(0, 7)}`
+          : "no changes";
+      setStatus(`✓ Saved "${projectName}" (${clips.length} clips, ${tag})`);
     } catch (err) {
       setStatus(`Save failed: ${String(err)}`);
     }
@@ -267,6 +330,38 @@ function App() {
       setStatus(`✓ Deleted "${name}"`);
     } catch (err) {
       setStatus(`Delete failed: ${String(err)}`);
+    }
+  }
+
+  async function handleExportAudio() {
+    if (clips.length === 0) {
+      setStatus("Nothing to export — generate some clips first");
+      return;
+    }
+    setStatus("Rendering audio...");
+    try {
+      const renderClips = clips.map((c) => ({
+        id: c.id,
+        notes: c.midiData?.notes ?? [],
+        channel: 0,
+      }));
+      const wavData = await exportProjectAudio(renderClips, transport.bpm);
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const savePath = await save({
+        defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}.wav`,
+        filters: [{ name: "WAV", extensions: ["wav"] }],
+      });
+      if (savePath) {
+        await invoke("write_file_bytes", {
+          path: savePath,
+          data: Array.from(wavData),
+        });
+        setStatus(`✓ Audio exported to ${savePath}`);
+      } else {
+        setStatus("Export cancelled");
+      }
+    } catch (err) {
+      setStatus(`Audio export failed: ${String(err)}`);
     }
   }
 
@@ -371,9 +466,59 @@ function App() {
           >
             {showLua ? "Hide Lua" : "Lua"}
           </button>
-          <BackendHealth />
-        </div>
-      </div>
+<button
+                onClick={() => setShowTimeline(!showTimeline)}
+                style={{
+                  ...buttonStyle(),
+                  background: showTimeline ? COLORS.accent : "#2a2a30",
+                  color: showTimeline ? "#000" : COLORS.text,
+                }}
+              >
+                {showTimeline ? "Grid" : "Timeline"}
+              </button>
+              <button
+                onClick={() => setShowSamples(!showSamples)}
+                style={{
+                  ...buttonStyle(),
+                  background: showSamples ? COLORS.accent : "#2a2a30",
+                  color: showSamples ? "#000" : COLORS.text,
+                }}
+              >
+                {showSamples ? "Hide Samples" : "Samples"}
+              </button>
+              <button
+                onClick={() => setShowEffects(!showEffects)}
+                style={{
+                  ...buttonStyle(),
+                  background: showEffects ? COLORS.accent : "#2a2a30",
+                  color: showEffects ? "#000" : COLORS.text,
+                }}
+              >
+                {showEffects ? "Hide FX" : "FX"}
+              </button>
+              <button
+                onClick={() => setShowMixer(!showMixer)}
+                style={{
+                  ...buttonStyle(),
+                  background: showMixer ? COLORS.accent : "#2a2a30",
+                  color: showMixer ? "#000" : COLORS.text,
+                }}
+              >
+                {showMixer ? "Hide Mixer" : "Mixer"}
+              </button>
+              <button
+                onClick={() => setShowGit(!showGit)}
+                style={{
+                  ...buttonStyle(),
+                  background: showGit ? COLORS.accent : "#2a2a30",
+                  color: showGit ? "#000" : COLORS.text,
+                }}
+              >
+                {showGit ? "Hide Git" : "Git"}
+              </button>
+              <BackendHealth />
+            </div>
+          </div>
 
       {/* Transport Controls */}
       <TransportControls
@@ -561,6 +706,16 @@ function App() {
               >
                 🎼 Arrange
               </button>
+              <button
+                onClick={() => setShowPatternEditor(!showPatternEditor)}
+                style={{
+                  ...buttonStyle(),
+                  background: showPatternEditor ? "#5a2a2a" : "#2a2a30",
+                  color: COLORS.text,
+                }}
+              >
+                🥁 Drums
+              </button>
             </div>
             <div
               style={{
@@ -585,6 +740,7 @@ function App() {
                   borderRadius: 4,
                 }}
               />
+              <BranchSelector projectName={projectName} />
               <button
                 onClick={handleSaveProject}
                 style={{
@@ -606,6 +762,18 @@ function App() {
                 }}
               >
                 🎵 Export MIDI
+              </button>
+              <button
+                onClick={handleExportAudio}
+                disabled={clips.length === 0}
+                style={{
+                  ...buttonStyle(clips.length === 0),
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  background: "#5a2a5a",
+                }}
+              >
+                🔊 Export Audio
               </button>
             </div>
           </div>
@@ -633,6 +801,15 @@ function App() {
             </span>
           </div>
 
+          {/* Pattern Editor */}
+          {showPatternEditor && (
+            <PatternEditor
+              isPlaying={transport.isPlaying}
+              currentBeat={transport.currentBeat}
+              onPatternChange={setDrumPattern}
+            />
+          )}
+
           {/* MIDI I/O */}
           <MidiIoPanel
             onStatus={setStatus}
@@ -650,6 +827,78 @@ function App() {
               ]);
             }}
           />
+
+          {showSamples && (
+            <SampleBrowser
+              onSampleSelect={(_path, info) => {
+                setClips((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    name: info.filename.replace(/\.[^.]+$/, ""),
+                    duration: info.duration_secs > 0 ? info.duration_secs * (transport.bpm / 60) : 2,
+                    color: "#3a5a2a",
+                  },
+                ]);
+                setStatus(`Sample loaded: ${info.filename}`);
+              }}
+            />
+          )}
+
+          {showEffects && (
+            <EffectsChain
+              effects={selectedTrackEffects}
+              onChange={setSelectedTrackEffects}
+            />
+          )}
+
+          {showMixer && (
+            <Mixer
+              onVolumeChange={(_trackId, _vol) => {}}
+              onPanChange={(_trackId, _pan) => {}}
+            />
+          )}
+
+          {automationLanes.length > 0 &&
+            automationLanes.map((lane) => (
+              <AutomationLaneView
+                key={lane.id}
+                lane={lane}
+                totalBeats={16}
+                zoom={16}
+                isPlaying={transport.isPlaying}
+                currentBeat={transport.currentBeat}
+                onAddPoint={(time: number, value: number) => {
+                  setAutomationLanes((prev) =>
+                    prev.map((l) =>
+                      l.id === lane.id
+                        ? {
+                            ...l,
+                            points: [
+                              ...l.points,
+                              { time, value },
+                            ].sort((a, b) => a.time - b.time),
+                          }
+                        : l
+                    )
+                  );
+                }}
+                onRemovePoint={(time: number) => {
+                  setAutomationLanes((prev) =>
+                    prev.map((l) =>
+                      l.id === lane.id
+                        ? {
+                            ...l,
+                            points: l.points.filter(
+                              (p) => Math.abs(p.time - time) >= 0.01
+                            ),
+                          }
+                        : l
+                    )
+                  );
+                }}
+              />
+            ))}
 
           {streamLog.length > 0 && (
             <div
@@ -677,18 +926,39 @@ function App() {
             </div>
           )}
 
-          {/* Clip Grid */}
-          <div style={{ ...panelStyle, flex: 1, overflow: "auto" }}>
-            <SessionViewGrid
-              clips={clips}
-              onPlayClip={(id) => {
-                const clip = clips.find((c) => c.id === id);
-                if (clip) playClip(clip);
-              }}
-              onAccept={acceptClip}
-              onReject={rejectClip}
-              onVariations={generateVariations}
-            />
+          {/* Clip Grid / Timeline */}
+          <div
+            style={{
+              ...panelStyle,
+              flex: 1,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {showTimeline ? (
+              <Timeline
+                isPlaying={transport.isPlaying}
+                currentBeat={transport.currentBeat}
+                onPlayClip={(id) => {
+                  const clip = clips.find((c) => c.id === id);
+                  if (clip) playClip(clip);
+                }}
+              />
+            ) : (
+              <div style={{ flex: 1, overflow: "auto" }}>
+                <SessionViewGrid
+                  clips={clips}
+                  onPlayClip={(id) => {
+                    const clip = clips.find((c) => c.id === id);
+                    if (clip) playClip(clip);
+                  }}
+                  onAccept={acceptClip}
+                  onReject={rejectClip}
+                  onVariations={generateVariations}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -788,6 +1058,15 @@ function App() {
                 "Click 'Research' to query Baker Street for music knowledge."}
             </pre>
           </div>
+        )}
+
+        {/* Right Panel — Git */}
+        {showGit && (
+          <ProjectPanel
+            projectName={projectName}
+            visible={showGit}
+            onClose={() => setShowGit(false)}
+          />
         )}
 
         {/* Right Panel — Lua */}

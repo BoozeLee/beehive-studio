@@ -192,7 +192,7 @@ class Session(BaseModel):
     active_agent_tasks: list[ID] = Field(default_factory=list)
     agent_history: list["AgentTask"] = Field(default_factory=list)
 
-    beehive-studio_reference_ids: list[ID] = Field(default_factory=list)
+    reference_ids: list[ID] = Field(default_factory=list)
 
     version: int = 1
     parent_session_id: Optional[ID] = None
