@@ -42,8 +42,8 @@ pub async fn get_sample_info(path: String) -> Result<SampleInfo, String> {
         "wav" | "wave" => {
             let file = File::open(&path).map_err(|e| format!("Failed to open: {}", e))?;
             let reader = BufReader::new(file);
-            let wav_reader = hound::WavReader::new(reader)
-                .map_err(|e| format!("Failed to read WAV: {}", e))?;
+            let wav_reader =
+                hound::WavReader::new(reader).map_err(|e| format!("Failed to read WAV: {}", e))?;
 
             let spec = wav_reader.spec();
             let duration_secs = wav_reader.duration() as f64 / spec.sample_rate as f64;
@@ -88,8 +88,8 @@ pub async fn load_sample(path: String) -> Result<SampleData, String> {
     let samples = if ext == "wav" || ext == "wave" {
         let file = File::open(&path).map_err(|e| format!("Failed to open: {}", e))?;
         let reader = BufReader::new(file);
-        let wav_reader = hound::WavReader::new(reader)
-            .map_err(|e| format!("Failed to read WAV: {}", e))?;
+        let wav_reader =
+            hound::WavReader::new(reader).map_err(|e| format!("Failed to read WAV: {}", e))?;
 
         let _spec = wav_reader.spec();
         wav_reader

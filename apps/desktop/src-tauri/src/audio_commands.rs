@@ -53,7 +53,11 @@ pub async fn export_audio_stems(
         let channels = stem["channels"].as_u64().unwrap_or(2) as u16;
         let samples: Vec<i16> = stem["samples"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i16)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_i64().map(|n| n as i16))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let spec = hound::WavSpec {

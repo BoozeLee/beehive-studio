@@ -17,6 +17,9 @@ import type { EffectInstance } from "./lib/effectEngine";
 import { AutomationLaneView } from "./components/Timeline/AutomationLane";
 import { Mixer } from "./components/Mixer/Mixer";
 import type { AutomationLane } from "./lib/automationEngine";
+import { BranchSelector } from "./components/BranchSelector";
+import { ProjectPanel } from "./components/ProjectPanel";
+import { saveSnapshot, ensureProjectInit } from "./lib/projectGit";
 
 interface Clip {
   id: string;
@@ -72,6 +75,7 @@ function App() {
   const [showEffects, setShowEffects] = useState(false);
   const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
   const [showMixer, setShowMixer] = useState(false);
+  const [showGit, setShowGit] = useState(false);
   const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
 
   // Load saved projects on mount
@@ -257,9 +261,20 @@ function App() {
     }
     try {
       await saveProject(projectName, clips);
+      const clipJson = JSON.stringify(clips);
+      await ensureProjectInit(projectName);
+      const hash = await saveSnapshot(
+        projectName,
+        clipJson,
+        `Save: ${projectName}`,
+      );
       const projects = await listProjects();
       setSavedProjects(projects);
-      setStatus(`✓ Saved "${projectName}" (${clips.length} clips)`);
+      const tag =
+        hash !== "No changes to commit"
+          ? `commit ${hash.slice(0, 7)}`
+          : "no changes";
+      setStatus(`✓ Saved "${projectName}" (${clips.length} clips, ${tag})`);
     } catch (err) {
       setStatus(`Save failed: ${String(err)}`);
     }
@@ -491,6 +506,16 @@ function App() {
               >
                 {showMixer ? "Hide Mixer" : "Mixer"}
               </button>
+              <button
+                onClick={() => setShowGit(!showGit)}
+                style={{
+                  ...buttonStyle(),
+                  background: showGit ? COLORS.accent : "#2a2a30",
+                  color: showGit ? "#000" : COLORS.text,
+                }}
+              >
+                {showGit ? "Hide Git" : "Git"}
+              </button>
               <BackendHealth />
             </div>
           </div>
@@ -715,6 +740,7 @@ function App() {
                   borderRadius: 4,
                 }}
               />
+              <BranchSelector projectName={projectName} />
               <button
                 onClick={handleSaveProject}
                 style={{
@@ -1032,6 +1058,15 @@ function App() {
                 "Click 'Research' to query Baker Street for music knowledge."}
             </pre>
           </div>
+        )}
+
+        {/* Right Panel — Git */}
+        {showGit && (
+          <ProjectPanel
+            projectName={projectName}
+            visible={showGit}
+            onClose={() => setShowGit(false)}
+          />
         )}
 
         {/* Right Panel — Lua */}

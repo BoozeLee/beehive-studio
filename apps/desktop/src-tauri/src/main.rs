@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio_commands;
+mod git_commands;
 mod sample_commands;
 
 use serde::Serialize;
@@ -322,6 +323,17 @@ fn main() {
             audio_commands::export_audio_stems,
             sample_commands::get_sample_info,
             sample_commands::load_sample,
+            git_commands::git_init_project,
+            git_commands::git_save_snapshot,
+            git_commands::git_list_branches,
+            git_commands::git_create_branch,
+            git_commands::git_checkout_branch,
+            git_commands::git_log,
+            git_commands::git_diff,
+            git_commands::git_revert,
+            git_commands::git_export_tarball,
+            git_commands::git_import_tarball,
+            git_commands::git_current_branch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
