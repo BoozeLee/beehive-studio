@@ -246,6 +246,98 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    // ── MP3 encoder tests ──
+
+    #[test]
+    fn test_mp3_encode_mono() {
+        use shine_rs::mp3_encoder::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
+
+        let samples: Vec<i16> = (0..4410)
+            .map(|i| ((i as f64 * 440.0 * 2.0 * std::f64::consts::PI / 44100.0).sin() * 16000.0) as i16)
+            .collect();
+
+        let config = Mp3EncoderConfig::new()
+            .sample_rate(44100)
+            .bitrate(192)
+            .channels(1)
+            .stereo_mode(StereoMode::Mono)
+            .copyright(false)
+            .original(true);
+
+        let result = encode_pcm_to_mp3(config, &samples).unwrap();
+        assert!(!result.is_empty(), "MP3 data should not be empty");
+        // Verify MP3 sync word: first 11 bits should be 0x7FF
+        assert_eq!(result[0], 0xFF, "First byte should be MP3 sync 0xFF");
+        assert!(
+            (result[1] & 0xE0) == 0xE0 || (result[1] & 0xF0) == 0xF0,
+            "Second byte should have sync bits set"
+        );
+    }
+
+    #[test]
+    fn test_mp3_encode_stereo() {
+        use shine_rs::mp3_encoder::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
+
+        let samples: Vec<i16> = (0..8820)
+            .map(|i| ((i as f64 * 440.0 * 2.0 * std::f64::consts::PI / 44100.0).sin() * 16000.0) as i16)
+            .collect();
+
+        let config = Mp3EncoderConfig::new()
+            .sample_rate(44100)
+            .bitrate(192)
+            .channels(2)
+            .stereo_mode(StereoMode::JointStereo)
+            .copyright(false)
+            .original(true);
+
+        let result = encode_pcm_to_mp3(config, &samples).unwrap();
+        assert!(!result.is_empty());
+        assert_eq!(result[0], 0xFF);
+    }
+
+    #[test]
+    fn test_mp3_encode_different_sample_rates() {
+        use shine_rs::mp3_encoder::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
+
+        for &sample_rate in &[44100, 48000] {
+            let count = sample_rate as usize / 200;
+            let samples: Vec<i16> = (0..count)
+                .map(|i| ((i as f64 * 440.0 * 2.0 * std::f64::consts::PI / sample_rate as f64).sin() * 8000.0) as i16)
+                .collect();
+
+            let config = Mp3EncoderConfig::new()
+                .sample_rate(sample_rate)
+                .bitrate(192)
+                .channels(1)
+                .stereo_mode(StereoMode::Mono)
+                .copyright(false)
+                .original(true);
+
+            let result = encode_pcm_to_mp3(config, &samples).unwrap();
+            assert!(!result.is_empty(), "MP3 should encode at {}Hz", sample_rate);
+            assert_eq!(result[0], 0xFF);
+        }
+    }
+
+    #[test]
+    fn test_mp3_encode_silence() {
+        use shine_rs::mp3_encoder::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
+
+        let samples: Vec<i16> = vec![0i16; 4410]; // 100ms of silence
+
+        let config = Mp3EncoderConfig::new()
+            .sample_rate(44100)
+            .bitrate(128)
+            .channels(1)
+            .stereo_mode(StereoMode::Mono)
+            .copyright(false)
+            .original(true);
+
+        let result = encode_pcm_to_mp3(config, &samples).unwrap();
+        assert!(!result.is_empty());
+        assert_eq!(result[0], 0xFF);
+    }
+
     // ── git_commands logic tests ──
 
     #[test]

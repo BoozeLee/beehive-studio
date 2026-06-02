@@ -83,12 +83,30 @@ describe("audioBufferToFlac", () => {
     const longBuffer = createMockBuffer(44100 * 4, 1);
     const shortResult = audioBufferToFlac(shortBuffer);
     const longResult = audioBufferToFlac(longBuffer);
-    // Verify raw binary difference
     let diff = 0;
     for (let i = 0; i < Math.min(shortResult.length, longResult.length); i++) {
       if (shortResult[i] !== longResult[i]) diff++;
     }
-    // They should differ at the audio data portion after the header
     expect(diff).toBeGreaterThan(0);
+  });
+
+  it("handles 48kHz sample rate", () => {
+    const buffer = createMockBuffer(48000, 1, 48000);
+    const result = audioBufferToFlac(buffer);
+    expect(result.length).toBeGreaterThan(0);
+    const marker = String.fromCharCode(result[0], result[1], result[2], result[3]);
+    expect(marker).toBe("fLaC");
+  });
+
+  it("handles 96kHz sample rate", () => {
+    const buffer = createMockBuffer(96000, 1, 96000);
+    const result = audioBufferToFlac(buffer);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("handles very large audio (over 4 seconds)", () => {
+    const buffer = createMockBuffer(44100 * 6, 1);
+    const result = audioBufferToFlac(buffer);
+    expect(result.length).toBeGreaterThan(0);
   });
 });
