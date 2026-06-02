@@ -1,5 +1,26 @@
 use std::path::Path;
 
+/// Encode PCM samples to MP3 bytes.
+#[tauri::command]
+pub async fn encode_mp3(
+    sample_rate: u32,
+    channels: u16,
+    samples: Vec<i16>,
+) -> Result<Vec<u8>, String> {
+    use shine_rs::mp3_encoder::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
+
+    let config = Mp3EncoderConfig::new()
+        .sample_rate(sample_rate)
+        .bitrate(192)
+        .channels(channels as u8)
+        .stereo_mode(if channels > 1 { StereoMode::JointStereo } else { StereoMode::Mono })
+        .copyright(false)
+        .original(true);
+
+    encode_pcm_to_mp3(config, &samples)
+        .map_err(|e| format!("Failed to encode MP3: {}", e))
+}
+
 /// Write WAV audio data to a file.
 /// `samples` are interleaved 16-bit PCM little-endian.
 #[tauri::command]

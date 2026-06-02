@@ -1,6 +1,6 @@
 [package]
 name = "beehive-studio-vst"
-version = "0.1.0"
+version = "1.0.0-prep"
 edition = "2021"
 authors = ["Beehive Studio"]
 description = "Beehive Studio generative MIDI VST plugin"

@@ -8,7 +8,7 @@ Now includes:
 - /agents          List available agents
 """
 
-from __future__ import annotations
+from api.agent_cache import get_cached_result, set_cached_result, invalidate_cache, get_cache_stats
 
 import os
 from typing import Any
@@ -17,7 +17,29 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="Beehive Studio Agent Orchestrator", version="0.1.0-sprint1")
+app = FastAPI(title="Beehive Studio Agent Orchestrator", version="1.0.0rc0")
+
+# Startup timer for cold-start profiling
+import time
+_app_start_time: float = time.time()
+
+@app.on_event("startup")
+async def _on_startup():
+    # Pre-warm commonly used agent imports so first request is fast
+    import importlib
+    common_agents = [
+        "agents.rhythm_groove",
+        "agents.melody",
+        "agents.harmony",
+        "agents.drums",
+    ]
+    for mod_name in common_agents:
+        try:
+            importlib.import_module(mod_name)
+        except Exception:
+            pass
+    elapsed = time.time() - _app_start_time
+    print(f"[startup] Cold start: {elapsed:.2f}s (pre-warmed {len(common_agents)} agents)")
 
 # CORS: allow Tauri dev frontend and local connections
 app.add_middleware(
@@ -52,7 +74,7 @@ async def health():
     return {
         "status": "ok",
         "service": "beehive-studio-agent-orchestrator",
-        "version": "0.1.0-sprint1",
+        "version": "1.0.0rc0",
         "ollama_available": _check_ollama(),
         "lupa_available": _check_lupa(),
     }
@@ -82,6 +104,11 @@ async def submit_brief(req: BriefRequest):
     """
     from agents.rhythm_groove import run_rhythm_groove_agent
 
+    # Check cache first for identical briefs
+    cached = get_cached_result(req.brief, req.session_context)
+    if cached is not None:
+        return cached
+
     task = await run_rhythm_groove_agent(
         brief=req.brief,
         session_context=req.session_context,
@@ -100,12 +127,30 @@ async def submit_brief(req: BriefRequest):
         status = getattr(getattr(task, "status", None), "value", "completed")
         reasoning = getattr(task, "reasoning", [])
 
-    return {
+    result = {
         "task_id": task_id,
         "status": status,
         "reasoning": reasoning,
         "clip_preview": midi_data,
     }
+    set_cached_result(req.brief, result, req.session_context)
+    return result
+
+
+@app.get("/cache/stats")
+async def cache_stats():
+    """Get agent cache statistics."""
+    return get_cache_stats()
+
+
+@app.post("/cache/invalidate")
+async def cache_invalidate(brief: str | None = None):
+    """Invalidate agent cache (all entries or for a specific brief)."""
+    if brief:
+        invalidate_cache(brief)
+        return {"status": "ok", "invalidated": brief}
+    invalidate_cache()
+    return {"status": "ok", "invalidated": "all"}
 
 
 @app.post("/lua/run")
@@ -160,47 +205,32 @@ async def agent_websocket(websocket: WebSocket):
     await agent_websocket_handler(websocket)
 
 
+@app.websocket("/ws/session")
+async def session_websocket(websocket: WebSocket):
+    """WebSocket for real-time session sync (clip/playback state)."""
+    from api.websocket import session_sync_handler
+
+    await session_sync_handler(websocket)
+
+
 @app.get("/agents")
 async def list_agents():
     """List available agents and their status."""
+    from orchestrator import AgentRegistry
+
+    AgentRegistry.initialize()
+    all_agents = AgentRegistry.list_agents()
     return {
         "agents": [
             {
-                "id": "rhythm_groove",
-                "name": "Rhythm & Groove",
-                "description": "Generates drum and bass patterns, grooves, and rhythmic foundations.",
+                "id": agent["name"],
+                "name": agent["name"].replace("_", " ").title(),
+                "description": agent["description"],
                 "status": "active",
                 "llm_enabled": _check_ollama(),
-            },
-            {
-                "id": "melody",
-                "name": "Melody",
-                "description": "Scale-based melody generation with multiple styles.",
-                "status": "active",
-                "llm_enabled": _check_ollama(),
-            },
-            {
-                "id": "harmony",
-                "name": "Harmony",
-                "description": "Chord progression generation (I-IV-V, ii-V-I, jazz, etc.).",
-                "status": "active",
-                "llm_enabled": _check_ollama(),
-            },
-            {
-                "id": "drums",
-                "name": "Drum Agent",
-                "description": "Step-based drum pattern generator (kick, snare, hats, claps, toms, rim).",
-                "status": "active",
-                "llm_enabled": _check_ollama(),
-            },
-            {
-                "id": "arrangement",
-                "name": "Arrangement",
-                "description": "Song structure orchestration (intro, build, drop, outro).",
-                "status": "active",
-                "llm_enabled": _check_ollama(),
-            },
-        ]
+            }
+            for agent in all_agents
+        ],
     }
 
 
@@ -441,10 +471,212 @@ async def agent_arrangement(req: ArrangeRequest):
     }
 
 
+class OrchestrateRequest(BaseModel):
+    brief: str
+    agents: list[str] | None = None
+    chain_mode: bool = True
+    session_context: dict[str, Any] = {}
+    style_references: list[str] = []
+
+
+@app.post("/orchestrate")
+async def orchestrate_agents(req: OrchestrateRequest):
+    """
+    Orchestrate multiple agents to fulfill a complex brief.
+    
+    - Agents are invoked in chain order (rhythm -> drums -> harmony -> melody -> arrangement)
+    - Output from one agent is passed to the next if chain_mode=True
+    - Auto-detects which agents to invoke based on brief keywords if agents=None
+    """
+    from orchestrator import orchestrate
+
+    result = await orchestrate(
+        brief=req.brief,
+        requested_agents=req.agents,
+        chain_mode=req.chain_mode,
+        session_context=req.session_context,
+    )
+
+    return {
+        "task_id": result.task_id,
+        "status": result.status,
+        "agents_invoked": result.agents_invoked,
+        "reasoning": result.reasoning,
+        "errors": result.errors,
+        "completed_at": result.completed_at,
+        "results": {
+            agent: {"status": "completed"} if res else {"status": "error"}
+            for agent, res in result.results.items()
+        },
+    }
+
+
 class RenderRequest(BaseModel):
     clips: list[dict[str, Any]]
     bpm: int = 142
     format: str = "wav"
+
+
+class StyleReferenceRequest(BaseModel):
+    midi_data: dict[str, Any] | None = None
+    audio_path: str | None = None
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/style")
+async def agent_style(req: StyleReferenceRequest):
+    """Run the Style Reference Agent to analyze MIDI and extract style profile."""
+    from agents.style_reference import run_style_reference_agent
+
+    result = await run_style_reference_agent(
+        midi_data=req.midi_data,
+        audio_path=req.audio_path,
+        session_context=req.session_context,
+    )
+
+    return {
+        "id": result["id"],
+        "status": result["status"],
+        "reasoning": result["reasoning"],
+        "style_profile": result.get("style_profile"),
+        "tags": result.get("tags", []),
+    }
+
+
+class MixingAssistantRequest(BaseModel):
+    tracks: list[dict[str, Any]] = []
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/mixing")
+async def agent_mixing(req: MixingAssistantRequest):
+    """Run the Mixing Assistant Agent to analyze tracks and suggest mixing parameters."""
+    from agents.mixing_assistant import run_mixing_assistant_agent
+
+    result = await run_mixing_assistant_agent(
+        tracks=req.tracks,
+        session_context=req.session_context,
+    )
+
+    return {
+        "id": result["id"],
+        "status": result["status"],
+        "reasoning": result["reasoning"],
+        "track_count": result["track_count"],
+        "tracks": result["tracks"],
+        "master_effect_chain": result["master_effect_chain"],
+        "suggestions": result["suggestions"],
+    }
+
+
+class TextureRequest(BaseModel):
+    brief: str = ""
+    source_notes: list[dict[str, Any]] | None = None
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/texture")
+async def agent_texture(req: TextureRequest):
+    """Run the Texture & Atmosphere Agent to generate ambient textures and pads."""
+    from agents.texture_atmosphere import run_texture_atmosphere_agent
+
+    result = await run_texture_atmosphere_agent(
+        brief=req.brief or "Generate ambient texture",
+        source_notes=req.source_notes,
+        session_context=req.session_context,
+    )
+
+    return {
+        "id": result["id"],
+        "status": result["status"],
+        "reasoning": result["reasoning"],
+        "clip_preview": result.get("_generated_midi_data"),
+        "texture_type": result.get("_texture_type"),
+        "style": result.get("_style"),
+    }
+
+
+class SoundDesignRequest(BaseModel):
+    brief: str = ""
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/sound_design")
+async def agent_sound_design(req: SoundDesignRequest):
+    """Run the Sound Design Agent to generate synth patch parameters from text descriptions."""
+    from agents.sound_design import run_sound_design_agent
+
+    result = await run_sound_design_agent(
+        brief=req.brief or "Generate a synth patch",
+        session_context=req.session_context,
+    )
+
+    return {
+        "id": result["id"],
+        "status": result["status"],
+        "reasoning": result["reasoning"],
+        "patch": result["patch"],
+        "sfz_file": result["sfz_file"],
+        "web_audio_config": result["web_audio_config"],
+        "synth_type": result["_synth_type"],
+        "category": result["_category"],
+    }
+
+
+class MasteringRequest(BaseModel):
+    tracks: list[dict[str, Any]] = []
+    brief: str = ""
+    session_context: dict[str, Any] = {}
+
+
+@app.post("/agents/mastering")
+async def agent_mastering(req: MasteringRequest):
+    """Run the Mastering Agent to analyze tracks and suggest a complete mastering chain."""
+    from agents.mastering import run_mastering_agent
+
+    result = await run_mastering_agent(
+        tracks=req.tracks,
+        brief=req.brief or "Master this track",
+        session_context=req.session_context,
+    )
+
+    return {
+        "id": result["id"],
+        "status": result["status"],
+        "reasoning": result["reasoning"],
+        "genre": result["genre"],
+        "analysis": result["analysis"],
+        "mastering_chain": result["mastering_chain"],
+        "platform_target": result["platform_target"],
+    }
+
+
+class SampleCuratorRequest(BaseModel):
+    sample_files: list[str] = []
+    brief: str = ""
+    session_context: dict[str, Any] = {}
+    generate_types: list[str] | None = None
+
+
+@app.post("/agents/sample_curator")
+async def agent_sample_curator(req: SampleCuratorRequest):
+    """Run the Sample Curator Agent to analyze audio samples and/or generate synthetic ones."""
+    from agents.sample_curator import run_sample_curator_agent
+
+    result = await run_sample_curator_agent(
+        sample_files=req.sample_files,
+        brief=req.brief or "Curate samples",
+        session_context=req.session_context,
+        generate_types=req.generate_types,
+    )
+
+    return {
+        "id": result["id"],
+        "status": result["status"],
+        "reasoning": result["reasoning"],
+        "samples": result["samples"],
+        "generated_samples": result["generated_samples"],
+    }
 
 
 @app.post("/render")

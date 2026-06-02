@@ -1,5 +1,3 @@
-import * as Tone from "tone";
-
 export type EffectType = "reverb" | "delay" | "filter" | "distortion";
 
 export interface EffectInstance {
@@ -25,35 +23,87 @@ export function createEffect(type: EffectType): EffectInstance {
   };
 }
 
-export function createToneEffect(
-  instance: EffectInstance
-): Tone.ToneAudioNode {
-  switch (instance.type) {
-    case "reverb":
-      return new Tone.Reverb({
-        decay: instance.params.decay ?? 2,
-        preDelay: instance.params.preDelay ?? 0.01,
-        wet: instance.params.wet ?? 0.5,
-      });
-    case "delay":
-      return new Tone.FeedbackDelay({
-        delayTime: instance.params.delayTime ?? 0.25,
-        feedback: instance.params.feedback ?? 0.3,
-        wet: instance.params.wet ?? 0.5,
-      });
-    case "filter": {
-      const types = ["lowpass", "highpass", "bandpass"] as const;
-      return new Tone.Filter({
-        frequency: instance.params.frequency ?? 1000,
-        Q: instance.params.Q ?? 1,
-        type: types[Math.min(instance.params.type ?? 0, 2)] ?? "lowpass",
-      });
+function createReverbImpulseResponse(
+  ctx: AudioContext,
+  decay: number,
+  sampleRate: number
+): AudioBuffer {
+  const length = sampleRate * decay;
+  const impulse = ctx.createBuffer(2, length, sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = impulse.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
     }
-    case "distortion":
-      return new Tone.Distortion({
-        distortion: instance.params.distortion ?? 0.4,
-        wet: instance.params.wet ?? 0.5,
-      });
+  }
+  return impulse;
+}
+
+export function createWebAudioEffect(
+  ctx: AudioContext,
+  instance: EffectInstance
+): AudioNode {
+  switch (instance.type) {
+    case "reverb": {
+      const convolver = ctx.createConvolver();
+      const wetGain = ctx.createGain();
+      const dryGain = ctx.createGain();
+      const merger = ctx.createGain();
+
+      const impulse = createReverbImpulseResponse(
+        ctx,
+        instance.params.decay ?? 2,
+        ctx.sampleRate
+      );
+      convolver.buffer = impulse;
+      wetGain.gain.value = instance.params.wet ?? 0.5;
+      dryGain.gain.value = 1 - (instance.params.wet ?? 0.5);
+
+      // Dry path
+      dryGain.connect(merger);
+      // Wet path
+      convolver.connect(wetGain);
+      wetGain.connect(merger);
+
+      return merger;
+    }
+    case "delay": {
+      const delay = ctx.createDelay(2);
+      const feedback = ctx.createGain();
+      const wetGain = ctx.createGain();
+      const merger = ctx.createGain();
+
+      delay.delayTime.value = instance.params.delayTime ?? 0.25;
+      feedback.gain.value = instance.params.feedback ?? 0.3;
+      wetGain.gain.value = instance.params.wet ?? 0.5;
+
+      delay.connect(feedback);
+      feedback.connect(delay);
+      delay.connect(wetGain);
+      wetGain.connect(merger);
+
+      return merger;
+    }
+    case "filter": {
+      const filter = ctx.createBiquadFilter();
+      const types: BiquadFilterType[] = ["lowpass", "highpass", "bandpass"];
+      filter.type = types[Math.min(instance.params.type ?? 0, 2)];
+      filter.frequency.value = instance.params.frequency ?? 1000;
+      filter.Q.value = instance.params.Q ?? 1;
+      return filter;
+    }
+    case "distortion": {
+      const shaper = ctx.createWaveShaper();
+      const amount = instance.params.distortion ?? 0.4;
+      const curve = new Float32Array(44100);
+      const deg = Math.PI / 180;
+      for (let i = 0; i < 44100; i++) {
+        const x = (i * 2) / 44100 - 1;
+        curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+      }
+      shaper.curve = curve;
+      return shaper;
+    }
   }
 }
 
@@ -66,28 +116,37 @@ export function updateEffectParam(
 }
 
 export function buildEffectChain(
+  ctx: AudioContext,
   effects: EffectInstance[]
-): { chain: Tone.ToneAudioNode[]; nodes: Map<string, Tone.ToneAudioNode> } {
-  const chain: Tone.ToneAudioNode[] = [];
-  const nodes = new Map<string, Tone.ToneAudioNode>();
+): { input: AudioNode; output: AudioNode; nodes: AudioNode[] } {
+  if (effects.length === 0 || effects.every((e) => e.bypass)) {
+    const passthrough = ctx.createGain();
+    return { input: passthrough, output: passthrough, nodes: [passthrough] };
+  }
+
+  const nodes: AudioNode[] = [];
+  let lastNode: AudioNode | null = null;
 
   for (const fx of effects) {
     if (fx.bypass) continue;
-    const node = createToneEffect(fx);
-    chain.push(node);
-    nodes.set(fx.id, node);
+    const node = createWebAudioEffect(ctx, fx);
+    if (lastNode) {
+      lastNode.connect(node);
+    }
+    lastNode = node;
+    nodes.push(node);
   }
 
-  return { chain, nodes };
+  const input = nodes[0];
+  const output = lastNode ?? ctx.createGain();
+
+  return { input, output, nodes };
 }
 
-export function disposeEffectChain(
-  nodes: Map<string, Tone.ToneAudioNode>
-): void {
-  for (const node of nodes.values()) {
-    node.dispose();
+export function disposeEffectChain(nodes: AudioNode[]): void {
+  for (const node of nodes) {
+    node.disconnect();
   }
-  nodes.clear();
 }
 
 export const EFFECT_LABELS: Record<EffectType, string> = {

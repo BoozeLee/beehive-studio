@@ -15,7 +15,6 @@ export interface SampleData {
 }
 
 const sampleCache = new Map<string, SampleInfo>();
-const players = new Map<string, any>();
 
 export async function getSampleMeta(path: string): Promise<SampleInfo> {
   if (sampleCache.has(path)) {
@@ -30,29 +29,55 @@ export async function loadSampleForPlayback(path: string): Promise<SampleData> {
   return invoke<SampleData>("load_sample", { path });
 }
 
-export async function playSamplePreview(path: string): Promise<void> {
-  const Tone = await import("tone");
+let previewAudioCtx: AudioContext | null = null;
+let currentPreviewSource: AudioBufferSourceNode | null = null;
 
-  if (players.has(path)) {
-    players.get(path)!.start();
-    return;
+function getPreviewAudioContext(): AudioContext {
+  if (!previewAudioCtx) {
+    previewAudioCtx = new AudioContext();
   }
-
-  const player = new Tone.Player(path).toDestination();
-  await Tone.loaded();
-  players.set(path, player);
-  player.start();
+  return previewAudioCtx;
 }
 
-export function stopSamplePreview(path: string): void {
-  const player = players.get(path);
-  if (player) {
-    player.stop();
+export async function playSamplePreview(path: string): Promise<void> {
+  stopSamplePreview();
+
+  const ctx = getPreviewAudioContext();
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
+
+  const response = await fetch(`asset://localhost/${path}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load sample: ${response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+  const source = ctx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(ctx.destination);
+  source.start(0);
+
+  currentPreviewSource = source;
+}
+
+export function stopSamplePreview(): void {
+  if (currentPreviewSource) {
+    try {
+      currentPreviewSource.stop();
+    } catch {}
+    currentPreviewSource.disconnect();
+    currentPreviewSource = null;
   }
 }
 
 export function clearSampleCache(): void {
   sampleCache.clear();
-  players.forEach((p) => p.dispose());
-  players.clear();
+  stopSamplePreview();
+  if (previewAudioCtx) {
+    previewAudioCtx.close();
+    previewAudioCtx = null;
+  }
 }

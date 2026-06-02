@@ -2,17 +2,17 @@ use nih_plug::prelude::*;
 use nih_plug::util::db_to_gain;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
-/// Beehive Studio VST Plugin — Generative MIDI output
+/// Beehive Studio VST Plugin — Generative MIDI output.
 /// Communicates with the local agent orchestrator backend to receive
-/// MIDI note data and outputs it as a MIDI plugin in the DAW.
-
+/// MIDI note data and outputs it as a MIDI/audio plugin in the DAW.
 pub struct BeehiveStudioVst {
     params: Arc<BeehiveStudioParams>,
     sample_rate: f32,
     last_bpm: f32,
     is_generating: Arc<AtomicBool>,
-    pending_notes: Vec<(u8, u8, f64)>, // pitch, velocity, start_time_seconds
+    pending_notes: Arc<Mutex<Vec<(u8, u8, f64)>>>, // pitch, velocity, start_time_seconds
 }
 
 #[derive(Params)]
@@ -47,7 +47,7 @@ impl Default for BeehiveStudioVst {
             sample_rate: 44100.0,
             last_bpm: 142.0,
             is_generating: Arc::new(AtomicBool::new(false)),
-            pending_notes: Vec::new(),
+            pending_notes: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -91,7 +91,9 @@ impl Plugin for BeehiveStudioVst {
     }
 
     fn reset(&mut self) {
-        self.pending_notes.clear();
+        if let Ok(mut notes) = self.pending_notes.lock() {
+            notes.clear();
+        }
     }
 
     fn process(
@@ -112,8 +114,16 @@ impl Plugin for BeehiveStudioVst {
             self.trigger_generation();
         }
 
-        // Output MIDI notes
-        for (pitch, velocity, _start_time) in &self.pending_notes {
+        // Output MIDI notes from the shared pending buffer
+        let notes_to_send: Vec<(u8, u8, f64)> = {
+            if let Ok(mut notes) = self.pending_notes.lock() {
+                std::mem::take(&mut *notes)
+            } else {
+                Vec::new()
+            }
+        };
+
+        for (pitch, velocity, _start_time) in &notes_to_send {
             context.send_event(NoteEvent::NoteOn {
                 timing: 0,
                 voice_id: None,
@@ -122,7 +132,6 @@ impl Plugin for BeehiveStudioVst {
                 velocity: *velocity as f32 / 127.0,
             });
         }
-        self.pending_notes.clear();
 
         // Process audio (passthrough for now)
         for channel_samples in buffer.iter_samples() {
@@ -148,12 +157,16 @@ impl BeehiveStudioVst {
         };
         let density = self.params.density.value();
 
-        // Spawn a thread to call the backend
+        // Share the pending_notes Arc with the background thread
+        let pending_notes = self.pending_notes.clone();
         let is_generating = self.is_generating.clone();
         std::thread::spawn(move || {
             match Self::call_backend(bpm, density) {
                 Ok(notes) => {
                     nih_log!("Generated {} notes from backend", notes.len());
+                    if let Ok(mut dest) = pending_notes.lock() {
+                        dest.extend(notes);
+                    }
                 }
                 Err(e) => {
                     nih_log!("Backend error: {}", e);
@@ -221,4 +234,13 @@ impl ClapPlugin for BeehiveStudioVst {
     ];
 }
 
+impl Vst3Plugin for BeehiveStudioVst {
+    const VST3_CLASS_ID: [u8; 16] = [0xbe, 0xe1, 0x0c, 0xa1, 0x00, 0x00, 0x40, 0x00, 0x8c, 0x0a, 0x1e, 0x2f, 0x3d, 0x4e, 0x5a, 0x6b];
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[
+        Vst3SubCategory::Instrument,
+        Vst3SubCategory::Synth,
+    ];
+}
+
 nih_export_clap!(BeehiveStudioVst);
+nih_export_vst3!(BeehiveStudioVst);

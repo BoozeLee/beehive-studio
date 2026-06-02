@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Beehive Studio
+Comment=Local-first AI music production. Human creative sovereignty.
+Exec=/usr/bin/beehive-studio
+Icon=beehive-studio
+Terminal=false
+Type=Application
+Categories=Audio;AudioVideo;Music;Production;
+MimeType=
+StartupNotify=true

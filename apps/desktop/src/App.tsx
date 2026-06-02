@@ -3,23 +3,29 @@ import { invoke } from "@tauri-apps/api/core";
 import { SessionViewGrid } from "./components/SessionView/SessionViewGrid";
 import { BackendHealth } from "./components/BackendHealth";
 import { TransportControls } from "./components/TransportControls";
-import { useTransport, ScheduledClip } from "./lib/transport";
+import { useTransport, ScheduledClip } from "./lib/webAudioTransport";
 import { saveProject, loadProject, listProjects, deleteProject } from "./lib/db";
 import { MidiIoPanel } from "./components/MidiIoPanel";
 import { Timeline } from "./components/Timeline/Timeline";
 import { useTimelineStore } from "./lib/timelineStore";
 import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { PatternState } from "./components/PatternEditor/PatternEditor";
-import { exportProjectAudio } from "./lib/audioEngine";
+import { exportProjectAudio, exportTrackStems } from "./lib/audioEngine";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
+import { SampleCuratorDialog } from "./components/SampleCuratorDialog";
 import { EffectsChain } from "./components/Mixer/EffectsChain";
 import type { EffectInstance } from "./lib/effectEngine";
 import { AutomationLaneView } from "./components/Timeline/AutomationLane";
 import { Mixer } from "./components/Mixer/Mixer";
-import type { AutomationLane } from "./lib/automationEngine";
+import { type AutomationLane, applyAutomationAtBeat } from "./lib/automationEngine";
 import { BranchSelector } from "./components/BranchSelector";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { saveSnapshot, ensureProjectInit, forkSession, readClips } from "./lib/projectGit";
+import { useUndoRedoStore } from "./lib/undoRedoStore";
+import { ReasoningTrace, useStreamingReasoning } from "./components/ReasoningTrace";
+import { OrchestrationPanel } from "./components/OrchestrationPanel";
+import { SynthPatchPanel } from "./components/SynthPatchPanel";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 interface Clip {
   id: string;
@@ -58,30 +64,139 @@ function App() {
   const [showLua, setShowLua] = useState(false);
   const [researchResult, setResearchResult] = useState<string>("");
   const [showResearch, setShowResearch] = useState(false);
-  const [streamLog, setStreamLog] = useState<string[]>([]);
+  const [showOrchestrate, setShowOrchestrate] = useState(false);
+  const { steps: reasoningSteps, addStep, appendReasoning, complete: completeReasoning, clear: clearReasoning } = useStreamingReasoning();
   const [luaScript, setLuaScript] = useState(
     `-- Beehive Studio Lua Script\n-- Generate music events programmatically\nlocal events = {}\nfor i = 1, 8 do\n  local on, off = music.play_note{\n    pitch = 36 + i,\n    velocity = 100,\n    duration = 0.25,\n    time = i * 0.25,\n    channel = 0\n  }\n  table.insert(events, on)\n  table.insert(events, off)\nend\nreturn {\n  name = "Generated Pattern",\n  events = events,\n  count = #events\n}\n`
   );
   const [luaResult, setLuaResult] = useState<string>("");
   const [projectName, setProjectName] = useState<string>("Untitled Project");
+  const [exportFormat, setExportFormat] = useState<"wav" | "flac" | "mp3">("wav");
   const [savedProjects, setSavedProjects] = useState<string[]>([]);
   const [showProjects, setShowProjects] = useState(false);
   const transport = useTransport();
   const [showTimeline, setShowTimeline] = useState(false);
-  const { setClips: setTimelineClips, addTrack } = useTimelineStore();
+  const timelineStore = useTimelineStore();
+  const undoRedoStore = useUndoRedoStore();
   const [showPatternEditor, setShowPatternEditor] = useState(false);
   const [_, setDrumPattern] = useState<PatternState | null>(null);
   const [showSamples, setShowSamples] = useState(false);
+  const [showSampleCurator, setShowSampleCurator] = useState(false);
   const [showEffects, setShowEffects] = useState(false);
   const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
   const [showMixer, setShowMixer] = useState(false);
   const [showGit, setShowGit] = useState(false);
+  const [showSynthPatch, setShowSynthPatch] = useState(false);
   const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
 
   // Load saved projects on mount
   useEffect(() => {
     listProjects().then(setSavedProjects).catch(() => {});
   }, []);
+
+  // Wire automation lanes to transport
+  useEffect(() => {
+    const callback =
+      automationLanes.length > 0
+        ? (currentBeat: number, _audioTime: number) => {
+            applyAutomationAtBeat(automationLanes, currentBeat, _audioTime);
+          }
+        : null;
+    transport.setAutomationCallback(callback);
+    return () => transport.setAutomationCallback(null);
+  }, [automationLanes, transport]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle shortcuts when typing in inputs
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      // Space: play/pause
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (transport.isPlaying) {
+          transport.pause();
+        } else {
+          transport.play();
+        }
+      }
+
+       // Left/Right arrow: nudge playhead
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        e.preventDefault();
+        // transport doesn't have setBeat, we'll need to implement this differently
+        // For now, we'll skip this shortcut
+      }
+
+       // Up/Down arrow: change zoom
+      if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') && !e.shiftKey) {
+        e.preventDefault();
+        const zoomFactor = e.code === 'ArrowUp' ? 1.2 : 0.8;
+        timelineStore.setZoom(timelineStore.zoom * zoomFactor);
+      }
+
+      // Delete/Backspace: delete selected clip
+      if ((e.code === 'Delete' || e.code === 'Backspace') && timelineStore.selectedClipId) {
+        e.preventDefault();
+        handleDeleteClip(timelineStore.selectedClipId);
+      }
+
+      // Ctrl+Z: undo
+      if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') {
+        e.preventDefault();
+        handleUndo();
+      }
+
+      // Ctrl+Y or Ctrl+Shift+Z: redo
+      if ((e.ctrlKey && e.code === 'KeyY') || (e.ctrlKey && e.shiftKey && e.code === 'KeyZ')) {
+        e.preventDefault();
+        handleRedo();
+      }
+
+      // Ctrl+S: save project
+      if (e.ctrlKey && e.code === 'KeyS') {
+        e.preventDefault();
+        handleSaveProject();
+      }
+
+      // Ctrl+O: open project picker
+      if (e.ctrlKey && e.code === 'KeyO') {
+        e.preventDefault();
+        setShowProjects(true);
+      }
+
+      // Ctrl+N: new project
+      if (e.ctrlKey && e.code === 'KeyN') {
+        e.preventDefault();
+        handleNewProject();
+      }
+
+      // Ctrl+F: fork project
+      if (e.ctrlKey && e.code === 'KeyF') {
+        e.preventDefault();
+        handleFork();
+      }
+
+      // Ctrl+Shift+S: save as
+      if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
+        e.preventDefault();
+        // Implementation would show a save-as dialog
+        // For now, just prompt for name
+        const name = prompt("Save project as:", projectName);
+        if (name && name !== projectName) {
+          setProjectName(name);
+          handleSaveProject();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [transport, timelineStore.selectedClipId]);
 
   // Sync clips to timeline store
   useEffect(() => {
@@ -90,12 +205,12 @@ function App() {
     for (const clip of clips) {
       clipMap[clip.id] = clip as unknown as Clip;
     }
-    setTimelineClips(clipMap as never);
+    timelineStore.setClips(clipMap as never);
 
     const { tracks } = useTimelineStore.getState();
     if (tracks.length === 0) {
       const trackId = crypto.randomUUID();
-      addTrack({
+      timelineStore.addTrack({
         id: trackId,
         name: "Track 1",
         type: "midi",
@@ -136,53 +251,90 @@ function App() {
     [transport]
   );
 
-  async function sendBrief(variationBrief?: string) {
-    const text = variationBrief ?? brief;
-    if (!text.trim()) return;
-
-    setIsLoading(true);
-    setStreamLog([]);
-    setStatus(
-      variationBrief ? "Generating variation..." : "Agent thinking..."
-    );
-
-    try {
-      const data = await invoke<{
-        task_id: string;
-        status: string;
-        reasoning: string[];
-        clip_preview: { notes: any[] };
-      }>("send_brief", {
-        brief: text.trim(),
-        sessionContext: {
-          bpm: transport.bpm,
-          swing: 0.68,
-          session_id: "demo-session-1",
-        },
-      });
-
-      const newClip: Clip = {
-        id: data.task_id || crypto.randomUUID(),
-        name: text.slice(0, 40) + (text.length > 40 ? "..." : ""),
-        midiData: data.clip_preview,
-        reasoning: data.reasoning,
-      };
-
-      setClips((prev) => [...prev, newClip]);
-      if (!variationBrief) setBrief("");
+async function sendBrief(variationBrief?: string) {
+      const text = variationBrief ?? brief;
+      if (!text.trim()) return;
+  
+      setIsLoading(true);
+      clearReasoning();
+      addStep({ type: "status", text: variationBrief ? "Generating variation..." : "Agent thinking..." });
       setStatus(
-        variationBrief
-          ? "Variation ready"
-          : "Clip generated — click Play"
+        variationBrief ? "Generating variation..." : "Agent thinking..."
       );
-      setStreamLog(data.reasoning || []);
-    } catch (err) {
-      console.error(err);
-      setStatus("Backend error — is it running on port 9876?");
-    } finally {
-      setIsLoading(false);
+  
+      // Save current state to history before making changes
+      const { tracks, clips: existingClips, selectedTrackId, selectedClipId, cursorPosition, zoom, scrollOffset, snapToGrid, gridDivision } = timelineStore;
+      undoRedoStore.push({
+        tracks,
+        clips: existingClips,
+        selectedTrackId,
+        selectedClipId,
+        cursorPosition,
+        zoom,
+        scrollOffset,
+        snapToGrid,
+        gridDivision,
+        setTracks: () => {},
+        addTrack: () => {},
+        updateTrack: () => {},
+        removeTrack: () => {},
+        setClips: () => {},
+        addClip: () => {},
+        updateClip: () => {},
+        removeClip: () => {},
+        selectTrack: () => {},
+        selectClip: () => {},
+        setCursorPosition: () => {},
+        setZoom: () => {},
+        setScrollOffset: () => {},
+        setSnapToGrid: () => {},
+      });
+  
+     try {
+       const data = await invoke<{
+         task_id: string;
+         status: string;
+         reasoning: string[];
+         clip_preview: { notes: any[] };
+       }>("send_brief", {
+         brief: text.trim(),
+         sessionContext: {
+           bpm: transport.bpm,
+           swing: 0.68,
+           session_id: "demo-session-1",
+         },
+       });
+  
+       if (data.reasoning && data.reasoning.length > 0) {
+         for (const r of data.reasoning) {
+           appendReasoning(r);
+         }
+       }
+  
+       const newClip: Clip = {
+         id: data.task_id || crypto.randomUUID(),
+         name: text.slice(0, 40) + (text.length > 40 ? "..." : ""),
+         midiData: data.clip_preview,
+         reasoning: data.reasoning,
+       };
+  
+       setClips((prev) => [...prev, newClip]);
+       if (!variationBrief) setBrief("");
+       addStep({ type: "complete", text: "Clip generated successfully" });
+       setStatus(
+         variationBrief
+           ? "Variation ready"
+           : "Clip generated — click Play"
+       );
+       completeReasoning();
+     } catch (err) {
+       console.error(err);
+       addStep({ type: "error", text: `Backend error: ${String(err)}` });
+       setStatus("Backend error — is it running on port 9876?");
+     } finally {
+       setIsLoading(false);
+     }
     }
-  }
 
   async function doResearch() {
     if (!brief.trim()) return;
@@ -254,31 +406,59 @@ function App() {
     }
   }
 
-  async function handleSaveProject() {
-    if (clips.length === 0) {
-      setStatus("Nothing to save — generate some clips first");
-      return;
-    }
-    try {
-      await saveProject(projectName, clips);
-      const clipJson = JSON.stringify(clips);
-      await ensureProjectInit(projectName);
-      const hash = await saveSnapshot(
-        projectName,
-        clipJson,
-        `Save: ${projectName}`,
-      );
-      const projects = await listProjects();
-      setSavedProjects(projects);
-      const tag =
-        hash !== "No changes to commit"
-          ? `commit ${hash.slice(0, 7)}`
-          : "no changes";
-      setStatus(`✓ Saved "${projectName}" (${clips.length} clips, ${tag})`);
-    } catch (err) {
-      setStatus(`Save failed: ${String(err)}`);
-    }
-  }
+   async function handleSaveProject() {
+     if (clips.length === 0) {
+       setStatus("Nothing to save — generate some clips first");
+       return;
+     }
+     try {
+// Save current state to history before saving
+        const { tracks: t2, clips: c2, selectedTrackId: st2, selectedClipId: sc2, cursorPosition: cp2, zoom: z2, scrollOffset: so2, snapToGrid: sg2, gridDivision: gd2 } = timelineStore;
+        undoRedoStore.push({
+          tracks: t2,
+          clips: c2,
+          selectedTrackId: st2,
+          selectedClipId: sc2,
+          cursorPosition: cp2,
+          zoom: z2,
+          scrollOffset: so2,
+          snapToGrid: sg2,
+          gridDivision: gd2,
+          setTracks: () => {},
+          addTrack: () => {},
+          updateTrack: () => {},
+          removeTrack: () => {},
+          setClips: () => {},
+          addClip: () => {},
+          updateClip: () => {},
+          removeClip: () => {},
+          selectTrack: () => {},
+          selectClip: () => {},
+          setCursorPosition: () => {},
+          setZoom: () => {},
+          setScrollOffset: () => {},
+          setSnapToGrid: () => {},
+        });
+ 
+       await saveProject(projectName, clips);
+       const clipJson = JSON.stringify(clips);
+       await ensureProjectInit(projectName);
+       const hash = await saveSnapshot(
+         projectName,
+         clipJson,
+         `Save: ${projectName}`,
+       );
+       const projects = await listProjects();
+       setSavedProjects(projects);
+       const tag =
+         hash !== "No changes to commit"
+           ? `commit ${hash.slice(0, 7)}`
+           : "no changes";
+       setStatus(`✓ Saved "${projectName}" (${clips.length} clips, ${tag})`);
+     } catch (err) {
+       setStatus(`Save failed: ${String(err)}`);
+     }
+   }
 
   async function handleLoadProject(name: string) {
     try {
@@ -354,6 +534,55 @@ function App() {
     }
   }
 
+  async function handleDeleteClip(clipId: string) {
+    try {
+      setClips(prev => prev.filter(clip => clip.id !== clipId));
+      setStatus(`🗑️ Deleted clip`);
+    } catch (err) {
+      setStatus(`Delete failed: ${String(err)}`);
+    }
+  }
+
+  async function handleUndo() {
+    try {
+      const prev = undoRedoStore.undo();
+      if (prev.clips) {
+        const clipArray = Object.values(prev.clips) as unknown as Clip[];
+        if (clipArray.length > 0) {
+          setClips(clipArray);
+        }
+      }
+      setStatus("↶ Undo");
+    } catch {
+      setStatus("Nothing to undo");
+    }
+  }
+
+  async function handleRedo() {
+    try {
+      const next = undoRedoStore.redo();
+      if (next.clips) {
+        const clipArray = Object.values(next.clips) as unknown as Clip[];
+        if (clipArray.length > 0) {
+          setClips(clipArray);
+        }
+      }
+      setStatus("↷ Redo");
+    } catch {
+      setStatus("Nothing to redo");
+    }
+  }
+
+  async function handleNewProject() {
+    try {
+      setClips([]);
+      setProjectName("Untitled Project");
+      setStatus("📄 New project created");
+    } catch (err) {
+      setStatus(`New project failed: ${String(err)}`);
+    }
+  }
+
   async function handleDeleteProject(name: string) {
     try {
       await deleteProject(name);
@@ -377,16 +606,17 @@ function App() {
         notes: c.midiData?.notes ?? [],
         channel: 0,
       }));
-      const wavData = await exportProjectAudio(renderClips, transport.bpm);
+      const audioData = await exportProjectAudio(renderClips, transport.bpm, exportFormat);
       const { save } = await import("@tauri-apps/plugin-dialog");
+      const ext = exportFormat;
       const savePath = await save({
-        defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}.wav`,
-        filters: [{ name: "WAV", extensions: ["wav"] }],
+        defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}.${ext}`,
+        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
       });
       if (savePath) {
         await invoke("write_file_bytes", {
           path: savePath,
-          data: Array.from(wavData),
+          data: Array.from(audioData),
         });
         setStatus(`✓ Audio exported to ${savePath}`);
       } else {
@@ -394,6 +624,43 @@ function App() {
       }
     } catch (err) {
       setStatus(`Audio export failed: ${String(err)}`);
+    }
+  }
+
+  async function handleExportStems() {
+    if (clips.length === 0) {
+      setStatus("Nothing to export — generate some clips first");
+      return;
+    }
+    setStatus("Rendering stems...");
+    try {
+      // Group clips by name pattern (unique stems from individual clips)
+      const stemsData = clips.map((clip) => ({
+        id: clip.id,
+        name: clip.name || `clip-${clip.id.slice(0, 6)}`,
+        clips: [{ id: clip.id, notes: clip.midiData?.notes ?? [] }],
+      }));
+
+      const stems = await exportTrackStems(stemsData, transport.bpm, exportFormat);
+
+      // Save each stem to a directory
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      for (const stem of stems) {
+        const ext = exportFormat;
+        const savePath = await save({
+          defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}_${stem.name.replace(/\s+/g, "_")}.${ext}`,
+          filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+        });
+        if (savePath) {
+          await invoke("write_file_bytes", {
+            path: savePath,
+            data: Array.from(stem.data),
+          });
+        }
+      }
+      setStatus(`✓ ${stems.length} stems exported`);
+    } catch (err) {
+      setStatus(`Stem export failed: ${String(err)}`);
     }
   }
 
@@ -418,10 +685,11 @@ function App() {
   };
 
   return (
-    <div
-      style={{
-        padding: 20,
-        fontFamily: "system-ui, -apple-system, sans-serif",
+    <ErrorBoundary>
+      <div
+        style={{
+          padding: 20,
+          fontFamily: "system-ui, -apple-system, sans-serif",
         height: "100vh",
         display: "flex",
         flexDirection: "column",
@@ -517,6 +785,16 @@ function App() {
                 }}
               >
                 {showSamples ? "Hide Samples" : "Samples"}
+              </button>
+              <button
+                onClick={() => setShowSampleCurator(!showSampleCurator)}
+                style={{
+                  ...buttonStyle(),
+                  background: showSampleCurator ? COLORS.accent : "#2a2a30",
+                  color: showSampleCurator ? "#000" : COLORS.text,
+                }}
+              >
+                {showSampleCurator ? "Hide Curator" : "Curator"}
               </button>
               <button
                 onClick={() => setShowEffects(!showEffects)}
@@ -748,6 +1026,26 @@ function App() {
               >
                 🥁 Drums
               </button>
+              <button
+                onClick={() => setShowOrchestrate(!showOrchestrate)}
+                style={{
+                  ...buttonStyle(),
+                  background: showOrchestrate ? "#2a4a2a" : "#2a2a30",
+                  color: COLORS.text,
+                }}
+              >
+                🎼 Orchestrate
+              </button>
+              <button
+                onClick={() => setShowSynthPatch(!showSynthPatch)}
+                style={{
+                  ...buttonStyle(),
+                  background: showSynthPatch ? "#4a2a4a" : "#2a2a30",
+                  color: COLORS.text,
+                }}
+              >
+                🎛 Synth
+              </button>
             </div>
             <div
               style={{
@@ -819,6 +1117,34 @@ function App() {
               >
                 🔊 Export Audio
               </button>
+              <button
+                onClick={handleExportStems}
+                disabled={clips.length === 0}
+                style={{
+                  ...buttonStyle(clips.length === 0),
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  background: "#3a2a5a",
+                }}
+              >
+                🎚 Export Stems
+              </button>
+              <button
+                onClick={() => setExportFormat(f => f === "wav" ? "flac" : f === "flac" ? "mp3" : "wav")}
+                title="Toggle export format (cycles: WAV → FLAC → MP3)"
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: exportFormat === "flac" ? "#8b5cf6" : exportFormat === "mp3" ? "#f59e0b" : "#2a2a30",
+                  border: "1px solid #3a3a40",
+                  borderRadius: 4,
+                  color: "#ccc",
+                  cursor: "pointer",
+                }}
+              >
+                .{exportFormat}
+              </button>
             </div>
           </div>
 
@@ -853,6 +1179,23 @@ function App() {
               onPatternChange={setDrumPattern}
             />
           )}
+
+          {/* Orchestration Panel */}
+          {showOrchestrate && (
+            <OrchestrationPanel
+              brief={brief}
+              clips={clips}
+              bpm={transport.bpm}
+              onStatus={setStatus}
+              onClipGenerated={(clip) => {
+                setClips((prev) => [...prev, clip]);
+              }}
+              reasoningHook={{ steps: reasoningSteps, addStep, appendReasoning, complete: completeReasoning, clear: clearReasoning }}
+            />
+          )}
+
+          {/* Synth Patch Designer */}
+          {showSynthPatch && <SynthPatchPanel />}
 
           {/* MIDI I/O */}
           <MidiIoPanel
@@ -889,6 +1232,23 @@ function App() {
             />
           )}
 
+          {showSampleCurator && (
+            <SampleCuratorDialog
+              onImportSample={(_path, name) => {
+                setClips((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    name,
+                    duration: 2,
+                    color: "#5a2a3a",
+                  },
+                ]);
+                setStatus(`Sample imported: ${name}`);
+              }}
+            />
+          )}
+
           {showEffects && (
             <EffectsChain
               effects={selectedTrackEffects}
@@ -896,12 +1256,7 @@ function App() {
             />
           )}
 
-          {showMixer && (
-            <Mixer
-              onVolumeChange={(_trackId, _vol) => {}}
-              onPanChange={(_trackId, _pan) => {}}
-            />
-          )}
+          {showMixer && <Mixer />}
 
           {automationLanes.length > 0 &&
             automationLanes.map((lane) => (
@@ -944,30 +1299,12 @@ function App() {
               />
             ))}
 
-          {streamLog.length > 0 && (
-            <div
-              style={{
-                ...panelStyle,
-                maxHeight: 120,
-                overflow: "auto",
-                fontSize: 12,
-              }}
-            >
-              <div
-                style={{
-                  color: COLORS.textMuted,
-                  marginBottom: 6,
-                  fontWeight: 600,
-                }}
-              >
-                Agent Reasoning
-              </div>
-              {streamLog.map((line, i) => (
-                <div key={i} style={{ marginBottom: 3, color: COLORS.text }}>
-                  • {line}
-                </div>
-              ))}
-            </div>
+          {reasoningSteps.length > 0 && (
+            <ReasoningTrace
+              steps={reasoningSteps}
+              title="Agent Reasoning"
+              maxHeight={180}
+            />
           )}
 
           {/* Clip Grid / Timeline */}
@@ -1185,9 +1522,10 @@ function App() {
         <span>Backend: 9876</span>
         <span>Ollama: 11434</span>
         <span>Baker Street: 3001</span>
-        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.1.0</span>
+        <span style={{ marginLeft: "auto" }}>Beehive Studio v1.0.0-prep</span>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
 
