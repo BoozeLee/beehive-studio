@@ -1,7 +1,7 @@
 {
   "name": "beehive-studio-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0-prep",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -17,19 +21,22 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "@tauri-apps/plugin-sql": "^2.4.0",
+    "pixi.js": "^8",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "tone": "^15.0.4",
-    "pixi.js": "^8",
     "zustand": "^5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
+    "@types/wav": "^1",
     "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
-    "@types/wav": "^1"
+    "vitest": "^2.1.7"
   }
 }

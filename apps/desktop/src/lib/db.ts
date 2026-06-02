@@ -1,13 +1,44 @@
 import Database from "@tauri-apps/plugin-sql";
 
+export interface ClipData {
+  id: string;
+  name: string;
+  midiData?: {
+    notes: Array<{
+      pitch: number;
+      velocity: number;
+      start: number;
+      duration: number;
+    }>;
+  };
+  reasoning?: string[];
+  duration?: number;
+  color?: string;
+}
+
+function serializeClip(clip: ClipData): { name: string; midiData: string; reasoning: string } {
+  return {
+    name: clip.name,
+    midiData: JSON.stringify(clip.midiData ?? {}),
+    reasoning: (clip.reasoning ?? []).join("\n"),
+  };
+}
+
+function deserializeClip(row: { name: string; midi_data: string; reasoning: string }, idx: number): ClipData {
+  return {
+    id: `db-${idx}`,
+    name: row.name,
+    midiData: JSON.parse(row.midi_data || "{}"),
+    reasoning: row.reasoning ? row.reasoning.split("\n") : [],
+  };
+}
+
 let db: Database | null = null;
 
 export async function initDb(): Promise<Database> {
   if (db) return db;
-  // sqlite:// prefix tells Tauri to use the SQL plugin with SQLite
   db = await Database.load("sqlite:beehive-studio.db");
 
-  // Create tables
   await db.execute(`
     CREATE TABLE IF NOT EXISTS projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,21 +52,22 @@ export async function initDb(): Promise<Database> {
     CREATE TABLE IF NOT EXISTS clips (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id INTEGER NOT NULL,
+      external_id TEXT NOT NULL,
       name TEXT,
       midi_data TEXT,
       reasoning TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, external_id)
     )
   `);
 
   return db;
 }
 
-export async function saveProject(name: string, clips: any[]): Promise<void> {
+export async function saveProject(name: string, clips: ClipData[]): Promise<void> {
   const db = await initDb();
 
-  // Check if project exists
   const existing = await db.select<{ id: number }[]>(
     "SELECT id FROM projects WHERE name = ?",
     [name]
@@ -48,25 +80,48 @@ export async function saveProject(name: string, clips: any[]): Promise<void> {
       "UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [projectId]
     );
-    // Delete old clips
-    await db.execute("DELETE FROM clips WHERE project_id = ?", [projectId]);
   } else {
     const result = await db.execute("INSERT INTO projects (name) VALUES (?)", [name]);
     projectId = result.lastInsertId ?? 0;
   }
 
-  // Insert clips
-  for (const clip of clips) {
-    const midiData = JSON.stringify(clip.midiData ?? {});
-    const reasoning = (clip.reasoning ?? []).join("\n");
+  // Get existing clip external_ids for this project
+  const existingClips = await db.select<{ external_id: string }[]>(
+    "SELECT external_id FROM clips WHERE project_id = ?",
+    [projectId]
+  );
+  const existingIds = new Set(existingClips.map((r) => r.external_id));
+  const newIds = new Set(clips.map((c) => c.id));
+
+  // Delete clips that were removed
+  const toRemove = [...existingIds].filter((id) => !newIds.has(id));
+  for (const extId of toRemove) {
     await db.execute(
-      "INSERT INTO clips (project_id, name, midi_data, reasoning) VALUES (?, ?, ?, ?)",
-      [projectId, clip.name, midiData, reasoning]
+      "DELETE FROM clips WHERE project_id = ? AND external_id = ?",
+      [projectId, extId]
     );
+  }
+
+  // Upsert each clip (insert or update)
+  for (const clip of clips) {
+    const { name: clipName, midiData, reasoning } = serializeClip(clip);
+    if (existingIds.has(clip.id)) {
+      // Update existing clip
+      await db.execute(
+        "UPDATE clips SET name = ?, midi_data = ?, reasoning = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND external_id = ?",
+        [clipName, midiData, reasoning, projectId, clip.id]
+      );
+    } else {
+      // Insert new clip
+      await db.execute(
+        "INSERT INTO clips (project_id, external_id, name, midi_data, reasoning) VALUES (?, ?, ?, ?, ?)",
+        [projectId, clip.id, clipName, midiData, reasoning]
+      );
+    }
   }
 }
 
-export async function loadProject(name: string): Promise<any[]> {
+export async function loadProject(name: string): Promise<ClipData[]> {
   const db = await initDb();
 
   const projects = await db.select<{ id: number }[]>(
@@ -75,25 +130,15 @@ export async function loadProject(name: string): Promise<any[]> {
   );
 
   if (!projects || projects.length === 0) return [];
-  const projectId = projects[0].id;
 
+  const projectId = projects[0].id;
   const rows = await db.select<{ name: string; midi_data: string; reasoning: string }[]>(
     "SELECT name, midi_data, reasoning FROM clips WHERE project_id = ?",
     [projectId]
   );
 
   if (!rows) return [];
-
-  return rows.map((row, idx) => {
-    const midiData = JSON.parse(row.midi_data || "{}");
-    const reasoning = row.reasoning ? row.reasoning.split("\n") : [];
-    return {
-      id: `db-${idx}`,
-      name: row.name,
-      midiData: midiData,
-      reasoning: reasoning,
-    };
-  });
+  return rows.map((row, idx) => deserializeClip(row, idx));
 }
 
 export async function listProjects(): Promise<string[]> {

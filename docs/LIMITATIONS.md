@@ -8,7 +8,7 @@ We will keep this document brutally honest and update it as we learn.
 
 ## Audio & Playback Fidelity (Current)
 
-- **Tone.js** is used for the MVP playback engine.
+- **Web Audio API** is the playback engine (migrated from Tone.js in Phase 7).
 - This gives **instant local auditioning** with zero setup — a major win for the creative loop.
 - It is **not** professional DAW audio quality. Expect:
   - Limited polyphony in complex sessions
@@ -33,7 +33,7 @@ Reasons:
 - Security surface area
 - Conflicts with the local-first / privacy ethos
 
-**Current instruments** will be Tone.js-based or simple sample playback.
+**Current instruments** use Web Audio API synthesizers or sample playback.
 
 **Future options** (not promises):
 - Send MIDI + automation data to external DAWs via export or (much later) some form of ReWire-like protocol

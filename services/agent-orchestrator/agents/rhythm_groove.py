@@ -7,6 +7,7 @@ Falls back to pure tool-based generation when LLM is unavailable.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -96,11 +97,11 @@ def _create_llm_agent():
             model=model_name,
             base_url=base_url,
             temperature=0.7,
-            timeout=30,
+            timeout=8,
         )
     except Exception:
         try:
-            llm = ChatOllama(model="qwen2.5:7b", base_url=base_url, temperature=0.7, timeout=30)
+            llm = ChatOllama(model="qwen2.5:7b", base_url=base_url, temperature=0.7, timeout=8)
         except Exception:
             return None
 
@@ -172,21 +173,24 @@ async def run_rhythm_groove_agent_streaming(
             if agent is not None:
                 yield {"type": "reasoning", "text": "Initializing LLM agent with Ollama..."}
 
-                result = await agent.ainvoke(
-                    {
-                        "messages": [
-                            HumanMessage(
-                                content=(
-                                    f"You are a Rhythm & Groove specialist for a music production app. "
-                                    f"Analyze this brief and generate a MIDI pattern. "
-                                    f"Brief: '{brief}'. "
-                                    f"First call analyze_brief to extract parameters, "
-                                    f"then call generate_midi with those parameters. "
-                                    f"Return the final MIDI JSON."
+                result = await asyncio.wait_for(
+                    agent.ainvoke(
+                        {
+                            "messages": [
+                                HumanMessage(
+                                    content=(
+                                        f"You are a Rhythm & Groove specialist for a music production app. "
+                                        f"Analyze this brief and generate a MIDI pattern. "
+                                        f"Brief: '{brief}'. "
+                                        f"First call analyze_brief to extract parameters, "
+                                        f"then call generate_midi with those parameters. "
+                                        f"Return the final MIDI JSON."
+                                    )
                                 )
-                            )
-                        ]
-                    }
+                            ]
+                        }
+                    ),
+                    timeout=10,
                 )
                 messages = result.get("messages", [])
 

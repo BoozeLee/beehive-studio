@@ -1,6 +1,6 @@
 [package]
 name = "beehive-studio"
-version = "0.1.0"
+version = "1.0.0-prep"
 description = "Beehive Studio - AI Agent Music Production Environment"
 authors = ["Beehive Studio"]
 edition = "2021"
@@ -23,6 +23,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 reqwest = { version = "0.12", features = ["json"] }
 midir = "0.10"
 hound = "3"
+shine-rs = "0.1"
 symphonia = { version = "0.5", features = ["all"] }
 git2 = "0.19"
 flate2 = "1"
