@@ -91,6 +91,95 @@ describe("audioBufferToWav", () => {
   });
 });
 
+describe("audioBufferToWav additional edge cases", () => {
+  it("handles 5.1 surround (6 channels)", () => {
+    const buffer = createMockBuffer(100, 6);
+    const result = audioBufferToWav(buffer);
+    const view = new DataView(result.buffer);
+    expect(view.getUint16(22, true)).toBe(6);
+  });
+
+  it("handles 8kHz telephone quality", () => {
+    const buffer = createMockBuffer(100, 1, 8000);
+    const result = audioBufferToWav(buffer);
+    const view = new DataView(result.buffer);
+    expect(view.getUint32(24, true)).toBe(8000);
+  });
+
+  it("handles 24-bit samples", () => {
+    const buffer = createMockBuffer(100, 1);
+    const result = audioBufferToWav(buffer);
+    const view = new DataView(result.buffer);
+    expect(view.getUint16(34, true)).toBe(16);
+  });
+});
+
+describe("exportProjectAudio format parameter", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "OfflineAudioContext",
+      vi.fn().mockImplementation((_channels: number, length: number, sampleRate: number) => {
+        const mockLength = length || 44100;
+        return {
+          currentTime: 0,
+          sampleRate,
+          createOscillator: () => ({
+            type: "sawtooth",
+            frequency: { setValueAtTime: vi.fn() },
+            connect: vi.fn().mockReturnThis(),
+            start: vi.fn(),
+            stop: vi.fn(),
+          }),
+          createGain: () => ({
+            gain: {
+              value: 0,
+              setValueAtTime: vi.fn(),
+              linearRampToValueAtTime: vi.fn(),
+              cancelScheduledValues: vi.fn(),
+            },
+            connect: vi.fn(),
+          }),
+          startRendering: vi.fn().mockResolvedValue({
+            length: mockLength,
+            numberOfChannels: 2,
+            sampleRate,
+            getChannelData: () => new Float32Array(mockLength),
+            duration: mockLength / sampleRate,
+          }),
+        };
+      })
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults to wav format", async () => {
+    const clips = [{
+      id: "test",
+      notes: [{ pitch: 60, velocity: 100, start: 0, duration: 1 }],
+      channel: 0,
+    }];
+    const { exportProjectAudio } = await import("./audioEngine");
+    const result = await exportProjectAudio(clips, 140);
+    const header = String.fromCharCode(result[0], result[1], result[2], result[3]);
+    expect(header).toBe("RIFF");
+  });
+
+  it("exports flac format", async () => {
+    const clips = [{
+      id: "test",
+      notes: [{ pitch: 60, velocity: 100, start: 0, duration: 1 }],
+      channel: 0,
+    }];
+    const { exportProjectAudio } = await import("./audioEngine");
+    const result = await exportProjectAudio(clips, 140, "flac");
+    const marker = String.fromCharCode(result[0], result[1], result[2], result[3]);
+    expect(marker).toBe("fLaC");
+  });
+});
+
 describe("renderAudioBuffer", () => {
   beforeEach(() => {
     vi.stubGlobal(
