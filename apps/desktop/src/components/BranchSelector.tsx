@@ -1,3 +1,4 @@
+import { BEEHIVE } from "../lib/theme";
 import { useState, useEffect, useRef } from "react";
 import {
   getCurrentBranch,
@@ -7,17 +8,7 @@ import {
   type BranchInfo,
 } from "../lib/projectGit";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  accentDim: "#cc7035",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  success: "#4ade80",
-  error: "#ef4444",
-};
+const COLORS = { ...BEEHIVE, accentDim: "#cc7035" };
 
 interface Props {
   projectName: string;

@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from "react";
+import { BEEHIVE } from "../lib/theme";
 
 interface Props {
   children: ReactNode;
@@ -9,16 +10,6 @@ interface State {
   hasError: boolean;
   error: Error | null;
 }
-
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  error: "#ef4444",
-};
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -47,56 +38,30 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div
           style={{
-            border: `1px solid ${COLORS.error}`,
+            border: `1px solid ${BEEHIVE.error}`,
             borderRadius: 8,
-            background: COLORS.bg,
+            background: BEEHIVE.hive,
             padding: 24,
             textAlign: "center",
           }}
         >
-          <div
-            style={{
-              fontSize: 24,
-              marginBottom: 12,
-            }}
-          >
-            ⚠
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: COLORS.error,
-              marginBottom: 8,
-            }}
-          >
+          <div style={{ fontSize: 24, marginBottom: 12 }}>⚠</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: BEEHIVE.error, marginBottom: 8 }}>
             Something went wrong
           </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: COLORS.textMuted,
-              marginBottom: 16,
-              fontFamily: "monospace",
-              padding: 8,
-              background: COLORS.panel,
-              borderRadius: 4,
-              wordBreak: "break-word",
-            }}
-          >
+          <div style={{
+            fontSize: 12, color: BEEHIVE.smoke, marginBottom: 16,
+            fontFamily: "monospace", padding: 8, background: BEEHIVE.comb,
+            borderRadius: 4, wordBreak: "break-word",
+          }}>
             {this.state.error?.message || "Unknown error"}
           </div>
           <button
             onClick={this.handleReset}
             style={{
-              padding: "8px 20px",
-              fontSize: 13,
-              fontWeight: 600,
-              border: "none",
-              borderRadius: 6,
-              background: COLORS.accent,
-              color: "#000",
-              cursor: "pointer",
+              padding: "8px 20px", fontSize: 13, fontWeight: 600,
+              border: "none", borderRadius: 6, background: BEEHIVE.honey,
+              color: "#000", cursor: "pointer",
             }}
           >
             Try Again

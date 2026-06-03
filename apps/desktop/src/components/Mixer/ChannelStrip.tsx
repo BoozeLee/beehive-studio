@@ -1,17 +1,8 @@
+import { BEEHIVE } from "../../lib/theme";
 import React, { useRef, useEffect, useCallback } from "react";
 import type { Track } from "../../../../../packages/core-models/index";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  meter: "#4ade80",
-  meterPeak: "#fbbf24",
-  meterClip: "#ef4444",
-};
+const COLORS = { ...BEEHIVE, meter: "#4ade80", meterPeak: "#fbbf24", meterClip: "#ef4444" };
 
 interface ChannelStripProps {
   track: Track;

@@ -1,19 +1,26 @@
 import React from "react";
+import { BEEHIVE } from "../lib/theme";
 
 interface LoadingSpinnerProps {
   label?: string;
   size?: number;
 }
 
-const COLORS = {
-  accent: "#ff8c42",
-  textMuted: "#888",
-};
-
 export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   label = "Loading...",
   size = 24,
 }) => {
+  const hexPoints = (() => {
+    const pts: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i - Math.PI / 2;
+      const x = 50 + 40 * Math.cos(angle);
+      const y = 50 + 40 * Math.sin(angle);
+      pts.push(`${x}% ${y}%`);
+    }
+    return pts.join(", ");
+  })();
+
   return (
     <div
       style={{
@@ -29,18 +36,17 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
         style={{
           width: size,
           height: size,
-          border: `3px solid #2a2a30`,
-          borderTopColor: COLORS.accent,
-          borderRadius: "50%",
-          animation: "spin 0.8s linear infinite",
+          background: `conic-gradient(from 0deg, ${BEEHIVE.honey}, ${BEEHIVE.amber}, ${BEEHIVE.honey})`,
+          clipPath: `polygon(${hexPoints})`,
+          animation: "hexspin 1.2s linear infinite",
         }}
       />
       <style>{`
-        @keyframes spin {
+        @keyframes hexspin {
           to { transform: rotate(360deg); }
         }
       `}</style>
-      <span style={{ fontSize: 12, color: COLORS.textMuted }}>{label}</span>
+      <span style={{ fontSize: 12, color: BEEHIVE.smoke }}>{label}</span>
     </div>
   );
 };

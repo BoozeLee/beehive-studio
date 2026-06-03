@@ -1,18 +1,7 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { BEEHIVE } from "../../lib/theme";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  active: "#4ade80",
-  activeDim: "rgba(74,222,128,0.5)",
-  inactive: "rgba(255,255,255,0.06)",
-  hoverBg: "rgba(255,255,255,0.1)",
-  playhead: "#ff8c42",
-};
+const COLORS = { ...BEEHIVE, active: "#4ade80", activeDim: "rgba(74,222,128,0.5)", inactive: "rgba(255,255,255,0.06)", hoverBg: "rgba(255,255,255,0.1)", playhead: "#ff8c42" };
 
 interface StepData {
   active: boolean;

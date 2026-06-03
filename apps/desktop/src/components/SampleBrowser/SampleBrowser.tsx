@@ -1,15 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { BEEHIVE } from "../../lib/theme";
 import { getSampleMeta, playSamplePreview, stopSamplePreview, type SampleInfo } from "../../lib/sampleCache";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-};
+const COLORS = BEEHIVE;
 
 interface SampleEntry {
   path: string;

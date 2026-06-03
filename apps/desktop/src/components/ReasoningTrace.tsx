@@ -1,17 +1,7 @@
+import { BEEHIVE } from "../lib/theme";
 import React, { useState, useCallback } from "react";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  reasoningStep: "#2d4a3e",
-  toolCall: "#3d2d4a",
-  error: "#4a2d2d",
-  success: "#2d4a2d",
-};
+const COLORS = { ...BEEHIVE, reasoningStep: "#2d4a3e", toolCall: "#3d2d4a", success: "#2d4a2d", error: "#4a2d2d" };
 
 export interface ReasoningStep {
   type: "reasoning" | "tool_call" | "status" | "error" | "complete";

@@ -1,3 +1,4 @@
+import { BEEHIVE } from "../lib/theme";
 import React, { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -9,14 +10,7 @@ interface GeneratedSample {
 
 const SAMPLE_TYPES = ["kick", "snare", "hihat", "clap", "tom", "fm_tone"];
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-};
+const COLORS = BEEHIVE;
 
 interface SampleCuratorDialogProps {
   onImportSample?: (path: string, name: string) => void;

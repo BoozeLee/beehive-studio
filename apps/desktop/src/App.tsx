@@ -26,6 +26,7 @@ import { ReasoningTrace, useStreamingReasoning } from "./components/ReasoningTra
 import { OrchestrationPanel } from "./components/OrchestrationPanel";
 import { SynthPatchPanel } from "./components/SynthPatchPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { BEEHIVE } from "./lib/theme";
 
 interface Clip {
   id: string;
@@ -43,18 +44,7 @@ interface Clip {
   reasoning?: string[];
 }
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  accentHover: "#ffaa66",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  success: "#4ade80",
-  error: "#ef4444",
-  warning: "#fbbf24",
-};
+const COLORS = BEEHIVE;
 
 function App() {
   const [brief, setBrief] = useState("");
@@ -693,8 +683,8 @@ async function sendBrief(variationBrief?: string) {
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        background: COLORS.bg,
-        color: COLORS.text,
+        background: `${COLORS.hive} url('/honeycomb-bg.svg')`,
+        color: COLORS.wing,
         boxSizing: "border-box",
       }}
     >
@@ -712,17 +702,18 @@ async function sendBrief(variationBrief?: string) {
             style={{
               width: 36,
               height: 36,
-              borderRadius: 8,
-              background: `linear-gradient(135deg, ${COLORS.accent}, ${COLORS.accentHover})`,
+              borderRadius: 36,
+              background: `linear-gradient(135deg, ${COLORS.honey}, ${COLORS.amber})`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: 800,
               color: "#000",
+              clipPath: "polygon(25% 0%, 75% 0%, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0% 75%, 0% 25%)",
             }}
           >
-            B
+            🐝
           </div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>

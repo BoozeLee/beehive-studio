@@ -1,3 +1,4 @@
+import { BEEHIVE } from "../lib/theme";
 import React, { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -14,15 +15,7 @@ interface Props {
   onNote: (note: MidiNote) => void;
 }
 
-const COLORS = {
-  bg: "#121214",
-  text: "#e8e6e3",
-  textMuted: "#8a8a8a",
-  border: "#2a2a30",
-  accent: "#ff4d00",
-  success: "#2a5a3a",
-  warning: "#8a6a00",
-};
+const COLORS = { ...BEEHIVE, accent: "#ff4d00" };
 
 export const MidiIoPanel: React.FC<Props> = ({ onStatus, onNote }) => {
   const [ports, setPorts] = useState<string[]>([]);

@@ -1,16 +1,9 @@
+import { BEEHIVE } from "../../lib/theme";
 import React, { useRef, useCallback, useMemo, useState } from "react";
 import { TrackHeader } from "./TrackHeader";
 import { useTimelineStore } from "../../lib/timelineStore";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  rulerBg: "#141418",
-};
+const COLORS = { ...BEEHIVE, rulerBg: "#141418" };
 
 const TRACK_HEIGHT = 40;
 const RULER_HEIGHT = 24;
