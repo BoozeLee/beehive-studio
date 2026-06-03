@@ -54,7 +54,7 @@ jobs:
             libasound2-dev \
             libjack-jackd2-dev \
             libx11-dev \
-            libxcb-xfixes0-dev
+            libxcb-xfixes0-dev \
             libx11-xcb-dev \
             python3-pip
 

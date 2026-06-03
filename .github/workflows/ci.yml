@@ -125,9 +125,9 @@ jobs:
             libssl-dev \
             pkg-config \
             libasound2-dev \
-            libjack-jackd2-dev
-            libx11-dev
-            libxcb-xfixes0-dev
+            libjack-jackd2-dev \
+            libx11-dev \
+            libxcb-xfixes0-dev \
             libx11-xcb-dev
 
       - name: Install JS dependencies
@@ -183,9 +183,9 @@ jobs:
             libssl-dev \
             pkg-config \
             libasound2-dev \
-            libjack-jackd2-dev
-            libx11-dev
-            libxcb-xfixes0-dev
+            libjack-jackd2-dev \
+            libx11-dev \
+            libxcb-xfixes0-dev \
             libx11-xcb-dev
 
       - name: Install JS dependencies
