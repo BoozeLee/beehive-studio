@@ -35,37 +35,42 @@ dev-all:
     @echo "Start desktop in another:     just dev"
 
 # ─────────────────────────────────────────────────────────────
-# BUILD & BUNDLE
+# LAUNCH & OMARCHY
 # ─────────────────────────────────────────────────────────────
 
-# Build Python backend as a single executable (PyInstaller sidecar)
-build-sidecar:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    TRIPLE=$(rustc --print host-tuple)
-    SIDECAR_DIR="apps/desktop/src-tauri/binaries"
-    BACKEND_DIR="services/agent-orchestrator"
-    BINARY_NAME="beehive-studio-agent"
-    mkdir -p "$SIDECAR_DIR"
-    rm -f "$SIDECAR_DIR/$BINARY_NAME"*
-    cd "$BACKEND_DIR"
-    uv run pyinstaller \
-        --onefile \
-        --name "$BINARY_NAME" \
-        --hidden-import uvicorn.logging \
-        --hidden-import uvicorn.loops \
-        --hidden-import uvicorn.loops.auto \
-        --hidden-import fastapi.middleware.cors \
-        --distpath "../../$SIDECAR_DIR" \
-        api/main.py
-    mv "$SIDECAR_DIR/$BINARY_NAME" "$SIDECAR_DIR/$BINARY_NAME-$TRIPLE"
-    echo "✓ Sidecar built: $SIDECAR_DIR/$BINARY_NAME-$TRIPLE"
+# Launch Beehive Studio (backend + desktop) — uses beehivestudio script
+run:
+    beehivestudio
 
-# Build Tauri app for production
+# Stop all Beehive Studio processes
+stop:
+    beehivestudio stop
+
+# Build production desktop app
 build-desktop:
     cd apps/desktop && pnpm tauri build
+    @echo "✓ Desktop built: apps/desktop/src-tauri/target/release/beehive-studio"
+    @echo "  To install: just install-desktop"
 
-# Build VST plugin for release
+# Full production build (desktop + VST)
+build: build-desktop build-vst
+    @echo "✓ Full production build complete"
+
+# Install desktop entry and launcher for omarchy
+install-desktop:
+    @echo "=== Installing beehivestudio launcher ==="
+    mkdir -p ~/.local/bin
+    cp scripts/beehivestudio.sh ~/.local/bin/beehivestudio
+    chmod +x ~/.local/bin/beehivestudio
+    @echo "=== Installing desktop entry ==="
+    mkdir -p ~/.local/share/applications
+    cp scripts/beehive-studio.desktop ~/.local/share/applications/
+    @echo "=== Installing icon ==="
+    mkdir -p ~/.local/share/icons/hicolor/128x128/apps
+    cp apps/desktop/src-tauri/icons/128x128.png \
+      ~/.local/share/icons/hicolor/128x128/apps/beehive-studio.png
+    gtk-update-icon-cache ~/.local/share/icons/hicolor/ 2>/dev/null || true
+    @echo "✓ Install complete — run: just run"
 build-vst:
     cd crates/beehive-studio-vst && cargo build --release
     @echo "✓ VST built: crates/beehive-studio-vst/target/release/libbeehive_studio_vst.so"
