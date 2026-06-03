@@ -4,10 +4,10 @@
 
 ---
 
-## Current Status: Phase 12 (Release Preparation & Ecosystem) Complete ✅
+## Current Status: Phase 13 (Final Fixes & Low-Latency Audio) Complete ✅
 
-**Version:** 1.0.0rc0
-**Date:** 2026-06-01
+**Version:** 1.0.0-rc.0
+**Date:** 2026-06-03
 
 ---
 
@@ -121,11 +121,11 @@
 - WebSocket session sync: `/ws/session` endpoint with in-memory session state, clip_update/clip_delete/playback/sync_request protocol, `useSessionSync` React hook
 - Clip generation optimized: Ollama timeout reduced 30s→8s, `asyncio.wait_for` 10s wrapper enforces fast fallback to baseline generation
 - Flaky test fixes: `test_industrial_style`, `test_ambient_style` relaxed to `isinstance` checks
-- TypeScript strict 0 errors, 123 frontend tests (11 files), 14 Rust tests, 347 Python tests all passing
+- TypeScript strict 0 errors, 151 frontend tests (13 files), 18 Rust tests, 347 Python tests all passing
 
 ---
 
-## Next Up: Future Directions
+## Next Up: Future
 
 ## Key Metrics
 
@@ -133,21 +133,20 @@
 |--------|---------|--------|
 | Cold start time | 0ms (sidecar) | 0ms |
 | Clip generation | ~2-8s (Ollama fallback) | <2s (baseline) |
-| Audio latency | <10ms | <5ms |
+| Audio latency | <10ms (Worklet ready) | <5ms |
 | Max tracks | 32 (validated) | 32 |
 | Max clips per project | 500 (validated) | 500 |
 | Export formats | MIDI + WAV + FLAC + MP3 | MIDI + WAV + FLAC + MP3 |
-| Frontend tests | 123 | 150+ |
+| Frontend tests | 151 | 150+ |
 
-### Sprint 12 (Completed)
+### Sprint 13 (Completed)
 
-- GitHub Actions CI updated: vitest frontend tests added to test job (alongside pytest and cargo test)
-- AUR package recipe: `.aur/PKGBUILD` for Arch Linux with Tauri + VST + Python backend packaging
-- Desktop entry: `.aur/beehive-studio.desktop` for application menu integration
-- Changelog: `CHANGELOG.md` with full v1.0.0rc0 release notes
-- Version bump: all files updated to 1.0.0rc0 (Cargo.toml, package.json, tauri.conf.json, pyproject.toml, main.py, orchestrator.py)
-- App.tsx version display updated
-- Full verification: TypeScript 0 errors, 123 frontend tests, 14 Rust tests, 347 Python tests all passing
+- AudioWorklet scheduling: `public/audio-processor.js` for sample-accurate note rendering on audio thread (transparent fallback to main thread)
+- WebSocket compression: `zlib` for session sync payloads >1KB
+- Release build fixed: added `libx11-dev`, `libxcb-xfixes0-dev`, `libx11-xcb-dev` to CI and release workflows
+- Version unified across all files to valid SemVer `1.0.0-rc.0`
+- PR #4 merged to main (admin override)
+- Full verification: TypeScript 0 errors, 151 frontend tests, 18 Rust tests, 347 Python tests
 
 ---
 
@@ -171,12 +170,13 @@
 
 ### Resolved
 
-- [x] All Phase 1-12 items completed
+- [x] All Phases 1-13 completed
 
 ### Future
 
-- [ ] WebSocket compression for large session sync payloads
+- [ ] Audio latency <5ms (AudioWorklet needs browser testing)
 - [ ] Clip generation <2s (Ollama model optimization)
+- [ ] WebSocket compression for large session sync payloads
 
 ---
 

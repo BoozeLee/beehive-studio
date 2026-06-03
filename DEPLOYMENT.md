@@ -1,8 +1,8 @@
 # Beehive Studio — Deployment Plan
 
-**Version:** 0.2.0 (Phase 2 Complete)  
-**Date:** 2026-05-30  
-**Status:** Ready for Alpha Distribution
+**Version:** 1.0.0-rc.0  
+**Date:** 2026-06-03  
+**Status:** v1.0.0 Release Candidate
 
 ---
 
@@ -58,7 +58,7 @@ Beehive Studio Phase 2 is complete. All 6 major features are implemented, compil
 │                    BEEHIVE STUDIO                            │
 ├─────────────────────────────────────────────────────────────┤
 │  Desktop App (Tauri v2)                                     │
-│  ├── React 19 + Tone.js (Audio/Transport)                   │
+│  ├── React 19 + Web Audio API (Audio/Transport)                   │
 │  ├── SQLite Persistence (tauri-plugin-sql)                  │
 │  └── Rust Backend Commands (MIDI I/O, File I/O, HTTP)       │
 ├─────────────────────────────────────────────────────────────┤
