@@ -15,8 +15,9 @@ BACKEND_DIR="$BEEHIVE_DIR/services/agent-orchestrator"
 # Wayland fix: Tauri/GTK/WebKit needs explicit X11 backend
 unset WAYLAND_DISPLAY
 export GDK_BACKEND=x11
-# NVidia GPU: WebKit GBM buffer fails at high resolutions — use CPU compositing
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
+# NVidia GPU rendering — HARDWARE ACCELERATED
+export GBM_BACKEND=nvidia-drm
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
