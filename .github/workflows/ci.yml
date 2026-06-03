@@ -128,6 +128,7 @@ jobs:
             libjack-jackd2-dev
             libx11-dev
             libxcb-xfixes0-dev
+            libx11-xcb-dev
 
       - name: Install JS dependencies
         run: pnpm install
@@ -185,6 +186,7 @@ jobs:
             libjack-jackd2-dev
             libx11-dev
             libxcb-xfixes0-dev
+            libx11-xcb-dev
 
       - name: Install JS dependencies
         run: pnpm install
