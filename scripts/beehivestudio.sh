@@ -12,7 +12,9 @@ LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/beehive-studio/logs"
 BACKEND_DIR="$BEEHIVE_DIR/services/agent-orchestrator"
 
 # Wayland fix: Tauri/GTK needs explicit display backend
-export GDK_BACKEND="${GDK_BACKEND:-x11}"
+# Wayland fix: Tauri/GTK/WebKit needs explicit X11 backend
+unset WAYLAND_DISPLAY
+export GDK_BACKEND=x11
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
