@@ -60,7 +60,7 @@ describe("useSessionSync", () => {
   });
 
   it("establishes a WebSocket connection", () => {
-    const { result } = renderHook(() => useSessionSync({ enabled: true }));
+    renderHook(() => useSessionSync({ enabled: true }));
     expect(mockWs).toBeDefined();
     expect(mockWs!.url).toContain("/ws/session");
   });

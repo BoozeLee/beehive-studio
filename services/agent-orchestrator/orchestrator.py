@@ -33,7 +33,7 @@ class AgentInfo:
     name: str
     capability: AgentCapability
     description: str
-    version: str = "1.0.0rc0"
+    version: str = "1.0.0-rc.0"
     chain_order: int = 0  # 0 = first, higher = later in chain
 
 
