@@ -9,6 +9,12 @@ BEEHIVE_DIR="${BEEHIVE_DIR:-$HOME/mixhive}"
 BACKEND_PORT="${BACKEND_PORT:-9876}"
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/beehive-studio/logs"
+BACKEND_DIR="$BEEHIVE_DIR/services/agent-orchestrator"
+
+# Wayland fix: Tauri/GTK needs explicit display backend
+export GDK_BACKEND="${GDK_BACKEND:-wayland,x11}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -34,7 +40,7 @@ check_backend() {
 # Start the Python backend
 start_backend() {
   log "Starting agent orchestrator backend..."
-  cd "$BEEHIVE_DIR/services/agent-orchestrator"
+  cd "$BACKEND_DIR"
   PYTHONPATH=. uv run uvicorn api.main:app \
     --host "$BACKEND_HOST" \
     --port "$BACKEND_PORT" \
@@ -76,6 +82,7 @@ launch_desktop() {
 
   if [ -x "$binary" ]; then
     log "Launching Beehive Studio desktop..."
+    cd "$BEEHIVE_DIR"
     "$binary" &
     DESKTOP_PID=$!
     echo "$DESKTOP_PID" > "$LOG_DIR/desktop.pid"

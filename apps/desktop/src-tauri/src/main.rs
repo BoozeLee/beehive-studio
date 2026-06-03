@@ -414,28 +414,9 @@ fn main() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|_app| {
-            // Spawn the Python agent backend as a child process
-            let backend_dir = std::env::current_dir()
-                .map(|p| p.join("../../services/agent-orchestrator"))
-                .unwrap_or_else(|_| std::path::PathBuf::from("../../services/agent-orchestrator"));
-
-            if backend_dir.exists() {
-                use std::process::{Command, Stdio};
-                let child = Command::new("uv")
-                    .args(["run", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "9876"])
-                    .current_dir(&backend_dir)
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
-
-                match child {
-                    Ok(_) => println!("Backend started from: {:?}", backend_dir),
-                    Err(e) => eprintln!("Failed to start backend: {}", e),
-                }
-            } else {
-                eprintln!("Backend directory not found: {:?}", backend_dir);
-            }
-
+            // Backend is spawned by the beehivestudio launcher script.
+            // When running standalone (just dev), the user starts it manually:
+            //   cd services/agent-orchestrator && just backend
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
