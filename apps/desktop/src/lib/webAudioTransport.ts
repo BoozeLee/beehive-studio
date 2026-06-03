@@ -142,6 +142,8 @@ class WebAudioTransport {
   private processorTimer: ReturnType<typeof setTimeout> | null = null;
   private lastScheduledAudioTime = 0;
   private automationCallback: ((currentBeat: number, audioTime: number) => void) | null = null;
+  private workletNode: AudioWorkletNode | null = null;
+  private useWorklet = false;
 
   private readonly LOOK_AHEAD = 0.2; // Schedule 200ms ahead
   private readonly SCHEDULE_INTERVAL = 0.05; // Check every 50ms
@@ -203,62 +205,25 @@ class WebAudioTransport {
     return this.voicePool.acquire();
   }
 
-  setAutomationCallback(cb: ((currentBeat: number, audioTime: number) => void) | null): void {
-    this.automationCallback = cb;
-  }
-
-  private audioProcessorLoop() {
-    if (!this.isPlaying || !this.audioContext) return;
-
-    profilerStart("transport:tick");
-
-    const now = this.audioContext.currentTime;
-    const scheduleUntil = now + this.LOOK_AHEAD;
-
-    // Apply automation at current position
-    if (this.automationCallback) {
-      profilerStart("transport:automationApply");
-      const currentBeat = this.currentBeatOffset + this.getBeatsFromSeconds(now - this.startTime);
-      this.automationCallback(currentBeat, now);
-      profilerEnd("transport:automationApply");
-    }
-
-    // Process notes that are due but not yet scheduled
-    const toSchedule = this.scheduledNotes.filter(
-      (n) =>
-        n.audioStartTime >= this.lastScheduledAudioTime &&
-        n.audioStartTime <= scheduleUntil &&
-        n.audioStartTime >= now
-    );
-
-    for (const note of toSchedule) {
-      profilerStart("transport:noteTrigger");
-      const voice = this.getOrCreateVoice();
-      if (voice) {
-        voice.triggerNote(
-          note.audioStartTime,
-          note.audioEndTime - note.audioStartTime,
-          note.pitch,
-          note.velocity / 127,
-        );
-      }
-      profilerEnd("transport:noteTrigger");
-    }
-
-    this.lastScheduledAudioTime = scheduleUntil;
-    profilerEnd("transport:tick");
-
-    this.processorTimer = setTimeout(
-      () => this.audioProcessorLoop(),
-      this.SCHEDULE_INTERVAL * 1000
-    );
-  }
-
   async start() {
     if (!this.audioContext) {
       this.audioContext = new (window.AudioContext ||
         (window as any).webkitAudioContext)();
       this.voicePool = new VoicePool(this.audioContext, MAX_VOICES);
+
+      // Initialize AudioWorklet if enabled
+      if (this.useWorklet) {
+        try {
+          await this.audioContext.audioWorklet.addModule("/audio-processor.js");
+          this.workletNode = new AudioWorkletNode(this.audioContext, "beehive-processor");
+          this.workletNode.connect(this.audioContext.destination);
+          console.log("[AudioWorklet] Initialized successfully");
+        } catch (err) {
+          console.warn("[AudioWorklet] Failed to load, falling back to main thread:", err);
+          this.useWorklet = false;
+          this.workletNode = null;
+        }
+      }
     }
 
     if (this.audioContext.state === "suspended") {
@@ -278,6 +243,68 @@ class WebAudioTransport {
       this.lastScheduledAudioTime = this.audioContext.currentTime;
       this.audioProcessorLoop();
     }
+  }
+
+  setUseWorklet(enabled: boolean): void {
+    this.useWorklet = enabled;
+  }
+
+  setAutomationCallback(cb: ((currentBeat: number, audioTime: number) => void) | null): void {
+    this.automationCallback = cb;
+  }
+
+  private audioProcessorLoop() {
+    if (!this.isPlaying || !this.audioContext) return;
+
+    if (this.useWorklet && this.workletNode) {
+      const now = this.audioContext.currentTime;
+      const scheduleUntil = now + this.LOOK_AHEAD;
+      const toSchedule = this.scheduledNotes.filter(
+        (n) => n.audioStartTime >= this.lastScheduledAudioTime &&
+              n.audioStartTime <= scheduleUntil && n.audioStartTime >= now
+      );
+      for (const note of toSchedule) {
+        const freq = 440 * Math.pow(2, (note.pitch - 69) / 12);
+        this.workletNode.port.postMessage({
+          type: "noteOn", frequency: freq, velocity: note.velocity / 127,
+          duration: note.audioEndTime - note.audioStartTime,
+        });
+      }
+      this.lastScheduledAudioTime = scheduleUntil;
+      if (this.automationCallback) {
+        const currentBeat = this.currentBeatOffset + this.getBeatsFromSeconds(now - this.startTime);
+        this.automationCallback(currentBeat, now);
+      }
+      this.processorTimer = setTimeout(() => this.audioProcessorLoop(), this.SCHEDULE_INTERVAL * 1000);
+      return;
+    }
+
+    profilerStart("transport:tick");
+    const now = this.audioContext.currentTime;
+    const scheduleUntil = now + this.LOOK_AHEAD;
+
+    if (this.automationCallback) {
+      profilerStart("transport:automationApply");
+      const currentBeat = this.currentBeatOffset + this.getBeatsFromSeconds(now - this.startTime);
+      this.automationCallback(currentBeat, now);
+      profilerEnd("transport:automationApply");
+    }
+
+    const toSchedule = this.scheduledNotes.filter(
+      (n) => n.audioStartTime >= this.lastScheduledAudioTime &&
+            n.audioStartTime <= scheduleUntil && n.audioStartTime >= now
+    );
+
+    for (const note of toSchedule) {
+      profilerStart("transport:noteTrigger");
+      const voice = this.getOrCreateVoice();
+      if (voice) voice.triggerNote(note.audioStartTime, note.audioEndTime - note.audioStartTime, note.pitch, note.velocity / 127);
+      profilerEnd("transport:noteTrigger");
+    }
+
+    this.lastScheduledAudioTime = scheduleUntil;
+    profilerEnd("transport:tick");
+    this.processorTimer = setTimeout(() => this.audioProcessorLoop(), this.SCHEDULE_INTERVAL * 1000);
   }
 
   pause() {
@@ -438,6 +465,10 @@ export function useTransport() {
     (cb: ((currentBeat: number, audioTime: number) => void) | null) => transport.setAutomationCallback(cb),
     []
   );
+  const enableWorklet = useCallback(
+    (enabled: boolean) => transport.setUseWorklet(enabled),
+    []
+  );
 
   return {
     ...state,
@@ -449,5 +480,6 @@ export function useTransport() {
     unscheduleClip,
     clearAll,
     setAutomationCallback,
+    enableWorklet,
   };
 }

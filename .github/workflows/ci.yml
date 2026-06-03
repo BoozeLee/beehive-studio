@@ -126,6 +126,8 @@ jobs:
             pkg-config \
             libasound2-dev \
             libjack-jackd2-dev
+            libx11-dev
+            libxcb-xfixes0-dev
 
       - name: Install JS dependencies
         run: pnpm install
@@ -181,6 +183,8 @@ jobs:
             pkg-config \
             libasound2-dev \
             libjack-jackd2-dev
+            libx11-dev
+            libxcb-xfixes0-dev
 
       - name: Install JS dependencies
         run: pnpm install

@@ -17,7 +17,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="Beehive Studio Agent Orchestrator", version="1.0.0rc0")
+app = FastAPI(title="Beehive Studio Agent Orchestrator", version="1.0.0-rc.0")
 
 # Startup timer for cold-start profiling
 import time
@@ -74,7 +74,7 @@ async def health():
     return {
         "status": "ok",
         "service": "beehive-studio-agent-orchestrator",
-        "version": "1.0.0rc0",
+        "version": "1.0.0-rc.0",
         "ollama_available": _check_ollama(),
         "lupa_available": _check_lupa(),
     }

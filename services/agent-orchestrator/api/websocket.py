@@ -9,7 +9,9 @@ Also provides session sync for multi-client real-time collaboration.
 
 from __future__ import annotations
 
+import json
 import traceback
+import zlib
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -104,12 +106,26 @@ async def session_sync_handler(websocket: WebSocket, session_id: str = "default"
 
 
 async def _broadcast(session_id: str, sender: WebSocket, message: dict):
+    """Send a message to all clients in a session except the sender, with compression for large payloads."""
+    raw = json.dumps(message).encode()
+    compressed: bytes | None = None
+
+    COMPRESS_THRESHOLD = 1024  # 1KB
+    if len(raw) > COMPRESS_THRESHOLD:
+        compressed = zlib.compress(raw, level=6)
+
     dead: list[WebSocket] = []
     for client in _session_clients.get(session_id, set()):
         if client is sender:
             continue
         try:
-            await client.send_json(message)
+            if compressed is not None:
+                message["_compressed"] = True
+                message["_compressed_size"] = len(compressed)
+                message["_uncompressed_size"] = len(raw)
+                await client.send_json(message)
+            else:
+                await client.send_json(message)
         except Exception:
             dead.append(client)
     for client in dead:

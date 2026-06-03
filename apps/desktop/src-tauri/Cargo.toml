@@ -1,6 +1,6 @@
 [package]
 name = "beehive-studio"
-version = "1.0.0-prep"
+version = "1.0.0-rc.0"
 description = "Beehive Studio - AI Agent Music Production Environment"
 authors = ["Beehive Studio"]
 edition = "2021"

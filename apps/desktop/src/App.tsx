@@ -1522,7 +1522,7 @@ async function sendBrief(variationBrief?: string) {
         <span>Backend: 9876</span>
         <span>Ollama: 11434</span>
         <span>Baker Street: 3001</span>
-        <span style={{ marginLeft: "auto" }}>Beehive Studio v1.0.0-prep</span>
+        <span style={{ marginLeft: "auto" }}>Beehive Studio v1.0.0-rc.0</span>
       </div>
     </div>
     </ErrorBoundary>
