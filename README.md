@@ -86,7 +86,9 @@ See `AGENTS.md` in the root (once written) for how to work on this codebase with
 
 ## License
 
-MIT (same spirit as Beehive).
+All Rights Reserved. See [LICENSE](./LICENSE).
+
+This is a portfolio project. Source is publicly viewable but not licensed for reuse, modification, or distribution without written permission.
 
 ---
 
