@@ -1,16 +1,26 @@
 /**
- * SessionViewGrid — Very rough MVP clip launcher grid for Sprint 1
+ * SessionViewGrid — Clip launcher grid with agent-type color coding
  *
- * Heavily inspired by Beehive's WorkspaceGrid but for musical clips instead of terminals.
- * This is a stub to allow early wiring of the end-to-end loop.
+ * Displays generated clips in a grid with visual note density,
+ * agent-type colors, and accept/reject/iterate controls.
  */
+
+import { BEEHIVE } from "../../lib/theme";
+
+interface Note {
+  pitch: number;
+  velocity: number;
+  start: number;
+  duration: number;
+}
 
 interface Clip {
   id: string;
   name: string;
-  midiData?: any;
+  color?: string;
+  midiData?: { notes: Note[] };
   reasoning?: string[];
-  playback?: { instrument: string; preset?: string };
+  qa?: { pass?: boolean; score?: number; warnings?: string[] };
 }
 
 interface Props {
@@ -21,38 +31,264 @@ interface Props {
   onVariations?: (clipId: string) => void;
 }
 
+const AGENT_COLORS: Record<string, string> = {
+  rhythm: BEEHIVE.comb,
+  groove: BEEHIVE.comb,
+  bass: BEEHIVE.comb,
+  melody: BEEHIVE.honey,
+  harmony: "#6366f1",
+  chords: "#6366f1",
+  drum: "#ef4444",
+  percussion: "#ef4444",
+  arrangement: "#10b981",
+  style: "#a855f7",
+  texture: "#06b6d4",
+  mix: "#f59e0b",
+};
+
+function inferClipColor(name: string, fallback?: string): string {
+  if (fallback && fallback !== "#0f0f12") return fallback;
+  const lower = name.toLowerCase();
+  for (const [keyword, color] of Object.entries(AGENT_COLORS)) {
+    if (lower.includes(keyword)) return color;
+  }
+  return BEEHIVE.comb;
+}
+
+function noteDensityBars(notes: Note[], totalDuration: number, divisions: number): number[] {
+  if (notes.length === 0) return Array(divisions).fill(0);
+  const bucket = Array(divisions).fill(0);
+  for (const note of notes) {
+    const idx = Math.floor((note.start / totalDuration) * divisions);
+    if (idx >= 0 && idx < divisions) {
+      bucket[idx] += (note.velocity ?? 100) / 127;
+    }
+  }
+  const max = Math.max(...bucket, 1);
+  return bucket.map((v) => v / max);
+}
+
 export function SessionViewGrid({ clips, onPlayClip, onAccept, onReject, onVariations }: Props) {
   if (clips.length === 0) {
     return (
-      <div className="session-grid-empty">
-        <p>No clips yet. Send a brief to the Rhythm & Groove agent.</p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          color: BEEHIVE.textMuted,
+          fontSize: 14,
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🎵</div>
+          <p>No clips yet. Send a brief to an agent.</p>
+          <p style={{ fontSize: 12, marginTop: 4 }}>
+            Try: "142 BPM dark rolling psytrance bassline"
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="session-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-      {clips.map((clip) => (
-        <div key={clip.id} className="clip-card" style={{ border: '1px solid #444', padding: 12, borderRadius: 6 }}>
-          <div><strong>{clip.name}</strong></div>
-          {clip.reasoning && clip.reasoning.length > 0 && (
-            <div style={{ fontSize: 11, marginTop: 8, opacity: 0.75, lineHeight: 1.35 }}>
-              <div style={{ fontWeight: 600, marginBottom: 3 }}>Reasoning</div>
-              {clip.reasoning.slice(0, 2).map((r, i) => (
-                <div key={i} style={{ marginBottom: 2 }}>• {r}</div>
-              ))}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+        gap: 12,
+        padding: 4,
+      }}
+    >
+      {clips.map((clip) => {
+        const color = inferClipColor(clip.name, clip.color);
+        const notes = clip.midiData?.notes ?? [];
+        const noteCount = notes.length;
+        const duration = notes.length > 0
+          ? Math.max(...notes.map((n) => n.start + n.duration))
+          : 0;
+        const density = noteDensityBars(notes, Math.max(duration, 4), 20);
+        const qaScore = clip.qa?.score;
+        const qaWarnings = clip.qa?.warnings ?? [];
+
+        return (
+          <div
+            key={clip.id}
+            style={{
+              border: `1px solid ${BEEHIVE.border}`,
+              borderRadius: 8,
+              padding: 12,
+              background: BEEHIVE.panel,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: color,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: BEEHIVE.text,
+                  flex: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {clip.name}
+              </span>
+              {qaScore !== undefined && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    background: qaScore >= 65 ? `${BEEHIVE.success}22` : `${BEEHIVE.warning}22`,
+                    color: qaScore >= 65 ? BEEHIVE.success : BEEHIVE.warning,
+                  }}
+                >
+                  {qaScore.toFixed(0)}
+                </span>
+              )}
             </div>
-          )}
-          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            <button onClick={() => onPlayClip?.(clip.id)} style={{ fontSize: 12 }}>▶ Play</button>
-            <button onClick={() => onAccept?.(clip.id)} style={{ fontSize: 12 }}>Accept</button>
-            <button onClick={() => onReject?.(clip.id)} style={{ fontSize: 12 }}>Reject</button>
-            {onVariations && (
-              <button onClick={() => onVariations(clip.id)} style={{ fontSize: 12 }}>Variations</button>
+
+            {/* Note density mini-visualizer */}
+            {noteCount > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 1,
+                  height: 24,
+                  alignItems: "flex-end",
+                  padding: "4px 0",
+                }}
+              >
+                {density.map((h, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      height: `${Math.max(h * 100, 8)}%`,
+                      background: color,
+                      opacity: 0.5 + h * 0.5,
+                      borderRadius: "1px 1px 0 0",
+                      minHeight: 2,
+                    }}
+                  />
+                ))}
+              </div>
             )}
+
+            {/* Meta */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                fontSize: 10,
+                color: BEEHIVE.textMuted,
+              }}
+            >
+              <span>{noteCount} notes</span>
+              {duration > 0 && <span>{duration.toFixed(1)} beats</span>}
+            </div>
+
+            {/* QA Warnings */}
+            {qaWarnings.length > 0 && (
+              <div
+                style={{
+                  fontSize: 10,
+                  color: BEEHIVE.warning,
+                  background: `${BEEHIVE.warning}11`,
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  lineHeight: 1.4,
+                }}
+              >
+                {qaWarnings.slice(0, 2).map((w, i) => (
+                  <div key={i}>• {w}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Reasoning */}
+            {clip.reasoning && clip.reasoning.length > 0 && (
+              <div
+                style={{
+                  fontSize: 10,
+                  color: BEEHIVE.textMuted,
+                  lineHeight: 1.4,
+                  maxHeight: 60,
+                  overflow: "auto",
+                }}
+              >
+                {clip.reasoning.slice(0, 2).map((r, i) => (
+                  <div key={i} style={{ marginBottom: 2 }}>• {r}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: "auto" }}>
+              <ActionBtn onClick={() => onPlayClip?.(clip.id)} accent={color}>
+                ▶ Play
+              </ActionBtn>
+              <ActionBtn onClick={() => onAccept?.(clip.id)}>
+                ✓ Accept
+              </ActionBtn>
+              <ActionBtn onClick={() => onReject?.(clip.id)}>
+                ✕ Reject
+              </ActionBtn>
+              {onVariations && (
+                <ActionBtn onClick={() => onVariations(clip.id)}>
+                  🔄 Iterate
+                </ActionBtn>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
+  );
+}
+
+function ActionBtn({
+  children,
+  onClick,
+  accent,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  accent?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        padding: "4px 10px",
+        borderRadius: 4,
+        border: `1px solid ${accent ?? BEEHIVE.border}`,
+        background: accent ? `${accent}22` : "transparent",
+        color: accent ?? BEEHIVE.text,
+        cursor: "pointer",
+        transition: "all 0.15s",
+      }}
+    >
+      {children}
+    </button>
   );
 }

@@ -1,10 +1,11 @@
 """Smoke tests for the agent orchestrator."""
 
 import sys
+import asyncio
 from pathlib import Path
 
 # Ensure project root is in path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def test_import_main():
@@ -19,11 +20,19 @@ def test_import_agents():
     from agents.harmony import generate_chords
     from agents.arrangement import arrange_clips
     from agents.rhythm_groove import generate_rolling_bass
+    from agents.drums import generate_drum_pattern
+    from agents.style_reference import generate_style_midi
+    from agents.texture_atmosphere import generate_texture
+    from agents.mix_master import analyze_mix
 
     assert generate_melody is not None
     assert generate_chords is not None
     assert arrange_clips is not None
     assert generate_rolling_bass is not None
+    assert generate_drum_pattern is not None
+    assert generate_style_midi is not None
+    assert generate_texture is not None
+    assert analyze_mix is not None
 
 
 def test_melody_generation():
@@ -78,3 +87,30 @@ def test_midi_tools():
     notes = generate_rolling_bass(bpm=120, bars=1)
     assert len(notes) > 0
     assert validate_notes(notes) is True
+
+
+def test_agents_endpoint_lists_all_alpha_agents():
+    """FastAPI /agents should expose all alpha agents."""
+    from api.main import list_agents
+
+    payload = asyncio.run(list_agents())
+    agent_ids = {agent["id"] for agent in payload["agents"]}
+    assert agent_ids == {
+        "rhythm_groove",
+        "melody",
+        "harmony",
+        "drums",
+        "arrangement",
+        "style_reference",
+        "texture_atmosphere",
+        "mix_master",
+    }
+
+
+def test_health_version_is_alpha():
+    """Health response should identify the 0.2 alpha service."""
+    from api.main import health
+
+    payload = asyncio.run(health())
+    assert payload["status"] == "ok"
+    assert payload["version"] == "0.2.0-alpha"

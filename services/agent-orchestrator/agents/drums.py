@@ -8,6 +8,7 @@ from typing import Any
 
 from langgraph.prebuilt import create_react_agent
 from langchain_ollama import ChatOllama
+from tools.music_qa import analyze_drum_pattern
 
 SYSTEM_PROMPT = """
 You are the Drum Agent for Beehive Studio — an AI music production environment.
@@ -139,6 +140,19 @@ async def run_drum_agent(
         steps = pattern["steps"]
         reasoning.append("Fallback four-on-floor pattern")
 
+    # ── Musical QA feedback ──
+    qa = analyze_drum_pattern(steps)
+    if qa["warnings"]:
+        reasoning.append("Drum QA warnings: " + "; ".join(qa["warnings"][:3]))
+        # Auto-remediate: inject ghost hits on snare if missing
+        if any("ghost" in w.lower() for w in qa["warnings"]) and "snare" in steps:
+            for i, s in enumerate(steps["snare"]):
+                if not s["active"] and i % 4 == 2:
+                    s["active"] = True
+                    s["velocity"] = 42
+                    reasoning.append("Auto-added ghost snare for human feel")
+                    break
+
     return {
         "id": "drum-task",
         "status": "completed",
@@ -146,4 +160,5 @@ async def run_drum_agent(
         "steps": steps,
         "style": pattern.get("style", "four_on_floor"),
         "step_count": pattern.get("step_count", 16),
+        "qa": {"pass": qa["pass"], "score": qa["score"], "warnings": qa["warnings"]},
     }

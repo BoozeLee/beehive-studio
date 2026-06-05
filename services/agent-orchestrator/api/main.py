@@ -11,13 +11,17 @@ Now includes:
 from __future__ import annotations
 
 import os
+import urllib.request
 from typing import Any
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="Beehive Studio Agent Orchestrator", version="0.1.0-sprint1")
+APP_VERSION = "0.2.0-alpha"
+_OLLAMA_AVAILABLE_CACHE: bool | None = None
+
+app = FastAPI(title="Beehive Studio Agent Orchestrator", version=APP_VERSION)
 
 # CORS: allow Tauri dev frontend and local connections
 app.add_middleware(
@@ -52,20 +56,28 @@ async def health():
     return {
         "status": "ok",
         "service": "beehive-studio-agent-orchestrator",
-        "version": "0.1.0-sprint1",
+        "version": APP_VERSION,
         "ollama_available": _check_ollama(),
         "lupa_available": _check_lupa(),
     }
 
 
 def _check_ollama() -> bool:
-    try:
-        import ollama as _ollama
-
-        _ollama.list()
-        return True
-    except Exception:
+    global _OLLAMA_AVAILABLE_CACHE
+    if os.getenv("BEEHIVE_SKIP_OLLAMA_CHECK") == "1":
         return False
+
+    if _OLLAMA_AVAILABLE_CACHE is not None:
+        return _OLLAMA_AVAILABLE_CACHE
+
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=0.25):
+            pass
+        _OLLAMA_AVAILABLE_CACHE = True
+    except Exception:
+        _OLLAMA_AVAILABLE_CACHE = False
+
+    return _OLLAMA_AVAILABLE_CACHE
 
 
 def _check_lupa() -> bool:
@@ -197,6 +209,27 @@ async def list_agents():
                 "id": "arrangement",
                 "name": "Arrangement",
                 "description": "Song structure orchestration (intro, build, drop, outro).",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "style_reference",
+                "name": "Style Reference",
+                "description": "Translates artist and genre references into MIDI motifs and style constraints.",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "texture_atmosphere",
+                "name": "Texture & Atmosphere",
+                "description": "Creates pads, drones, swarm textures, risers, and atmospheric layers.",
+                "status": "active",
+                "llm_enabled": _check_ollama(),
+            },
+            {
+                "id": "mix_master",
+                "name": "Mix & Master",
+                "description": "Analyzes mix balance and suggests EQ, stereo, loudness, and mastering moves.",
                 "status": "active",
                 "llm_enabled": _check_ollama(),
             },
@@ -438,6 +471,58 @@ async def agent_arrangement(req: ArrangeRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "arrangement": task["arrangement"],
+    }
+
+
+@app.post("/agents/style_reference")
+async def agent_style_reference(req: BriefRequest):
+    """Run the Style Reference Agent."""
+    from agents.style_reference import run_style_reference_agent
+
+    task = await run_style_reference_agent(
+        brief=req.brief,
+        session_context=req.session_context,
+        style_references=req.style_references,
+    )
+    return {
+        "task_id": task["id"],
+        "status": task["status"],
+        "reasoning": task["reasoning"],
+        "clip_preview": task.get("_generated_midi_data"),
+    }
+
+
+@app.post("/agents/texture_atmosphere")
+async def agent_texture_atmosphere(req: BriefRequest):
+    """Run the Texture & Atmosphere Agent."""
+    from agents.texture_atmosphere import run_texture_atmosphere_agent
+
+    task = await run_texture_atmosphere_agent(
+        brief=req.brief,
+        session_context=req.session_context,
+    )
+    return {
+        "task_id": task["id"],
+        "status": task["status"],
+        "reasoning": task["reasoning"],
+        "clip_preview": task.get("_generated_midi_data"),
+    }
+
+
+@app.post("/agents/mix_master")
+async def agent_mix_master(req: BriefRequest):
+    """Run the Mix Master Agent."""
+    from agents.mix_master import run_mix_master_agent
+
+    task = await run_mix_master_agent(
+        brief=req.brief,
+        session_context=req.session_context,
+    )
+    return {
+        "task_id": task["id"],
+        "status": task["status"],
+        "reasoning": task["reasoning"],
+        "mix_report": task.get("mix_report"),
     }
 
 

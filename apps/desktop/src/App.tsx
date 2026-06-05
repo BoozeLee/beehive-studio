@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import * as Tone from "tone";
 import { invoke } from "@tauri-apps/api/core";
 import { SessionViewGrid } from "./components/SessionView/SessionViewGrid";
 import { BackendHealth } from "./components/BackendHealth";
@@ -11,6 +12,7 @@ import { useTimelineStore } from "./lib/timelineStore";
 import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { PatternState } from "./components/PatternEditor/PatternEditor";
 import { exportProjectAudio } from "./lib/audioEngine";
+import { initMixer, createChannel, removeChannel, updateChannel } from "./lib/audioMixer";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
 import { EffectsChain } from "./components/Mixer/EffectsChain";
 import type { EffectInstance } from "./lib/effectEngine";
@@ -20,6 +22,12 @@ import type { AutomationLane } from "./lib/automationEngine";
 import { BranchSelector } from "./components/BranchSelector";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { saveSnapshot, ensureProjectInit, forkSession, readClips } from "./lib/projectGit";
+import {
+  assignClipIdsToTracks,
+  findTrackIdForClip,
+  normalizeTimelineClip,
+} from "./lib/timelineClipAdapter";
+import type { Clip as TimelineClip, Track } from "../../../packages/core-models/index";
 
 interface Clip {
   id: string;
@@ -35,6 +43,7 @@ interface Clip {
     }>;
   };
   reasoning?: string[];
+  qa?: { pass?: boolean; score?: number; warnings?: string[] };
 }
 
 const COLORS = {
@@ -68,7 +77,13 @@ function App() {
   const [showProjects, setShowProjects] = useState(false);
   const transport = useTransport();
   const [showTimeline, setShowTimeline] = useState(false);
-  const { setClips: setTimelineClips, addTrack } = useTimelineStore();
+  const {
+    tracks: timelineTracks,
+    setClips: setTimelineClips,
+    addTrack,
+    removeTrack,
+    updateTrack,
+  } = useTimelineStore();
   const [showPatternEditor, setShowPatternEditor] = useState(false);
   const [_, setDrumPattern] = useState<PatternState | null>(null);
   const [showSamples, setShowSamples] = useState(false);
@@ -77,26 +92,66 @@ function App() {
   const [showMixer, setShowMixer] = useState(false);
   const [showGit, setShowGit] = useState(false);
   const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
+  const [renderPreset, setRenderPreset] = useState<"draft" | "club" | "festival">("festival");
 
   // Load saved projects on mount
   useEffect(() => {
     listProjects().then(setSavedProjects).catch(() => {});
   }, []);
 
-  // Sync clips to timeline store
+  // Keyboard shortcuts
   useEffect(() => {
-    if (!showTimeline || clips.length === 0) return;
-    const clipMap: Record<string, Clip> = {};
-    for (const clip of clips) {
-      clipMap[clip.id] = clip as unknown as Clip;
-    }
-    setTimelineClips(clipMap as never);
+    const handler = (e: KeyboardEvent) => {
+      // Ignore if typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
 
-    const { tracks } = useTimelineStore.getState();
-    if (tracks.length === 0) {
-      const trackId = crypto.randomUUID();
-      addTrack({
-        id: trackId,
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (transport.isPlaying) transport.pause();
+        else transport.play();
+      } else if (e.key === "s" && e.ctrlKey) {
+        e.preventDefault();
+        handleSaveProject();
+      } else if (e.key === "e" && e.ctrlKey) {
+        e.preventDefault();
+        handleExportAudio();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        const { selectedClipId, selectedTrackId, removeClip, removeTrack } = useTimelineStore.getState();
+        if (selectedClipId) {
+          removeClip(selectedClipId);
+          setClips((prev) => prev.filter((c) => c.id !== selectedClipId));
+        } else if (selectedTrackId) {
+          removeTrack(selectedTrackId);
+          removeChannel(selectedTrackId);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [transport.isPlaying, transport.play, transport.pause]);
+
+  // Sync generated/session clips into full timeline clips and assign any new
+  // clips to the first track, preserving existing manual track assignments.
+  useEffect(() => {
+    if (!showTimeline) return;
+
+    const state = useTimelineStore.getState();
+    if (clips.length === 0) {
+      setTimelineClips({});
+      for (const track of state.tracks) {
+        if (track.clips.length > 0) updateTrack(track.id, { clips: [] });
+      }
+      return;
+    }
+
+    let tracks = state.tracks;
+    let targetTrack = tracks[0];
+    if (!targetTrack) {
+      targetTrack = {
+        id: crypto.randomUUID(),
         name: "Track 1",
         type: "midi",
         color: COLORS.accent,
@@ -105,11 +160,95 @@ function App() {
         muted: false,
         solo: false,
         arm: false,
-        clips: clips.map((c) => c.id),
+        clips: [],
         automationLanes: [],
+      };
+      addTrack(targetTrack);
+      createChannel(targetTrack.id, targetTrack.name);
+      tracks = [targetTrack];
+    }
+
+    const currentClips = useTimelineStore.getState().clips as Record<string, TimelineClip>;
+    const nextClips: Record<string, TimelineClip> = {};
+    for (let index = 0; index < clips.length; index++) {
+      const clip = clips[index];
+      const trackId =
+        findTrackIdForClip(tracks, clip.id) ??
+        currentClips[clip.id]?.trackId ??
+        targetTrack.id;
+      nextClips[clip.id] = normalizeTimelineClip(clip, trackId, index, currentClips[clip.id]);
+    }
+
+    setTimelineClips(nextClips as never);
+
+    const nextTrackClipIds = assignClipIdsToTracks(
+      tracks as Track[],
+      clips.map((clip) => clip.id),
+      targetTrack.id
+    );
+    for (const track of tracks) {
+      const nextIds = nextTrackClipIds[track.id] ?? [];
+      if (
+        nextIds.length !== track.clips.length ||
+        nextIds.some((clipId, index) => clipId !== track.clips[index])
+      ) {
+        updateTrack(track.id, { clips: nextIds });
+      }
+    }
+  }, [clips, showTimeline, setTimelineClips, addTrack, updateTrack]);
+
+  // Initialize mixer on mount
+  useEffect(() => {
+    initMixer();
+  }, []);
+
+  // Wire timeline track state to the Web Audio mixer. Timeline and Mixer controls
+  // both mutate the timeline store, so this is the single sync point.
+  useEffect(() => {
+    for (const track of timelineTracks) {
+      createChannel(track.id, track.name);
+      updateChannel(track.id, {
+        muted: track.muted,
+        solo: track.solo,
+        volume: track.volume,
+        pan: track.pan,
+        armed: track.arm,
       });
     }
-  }, [clips, showTimeline]);
+  }, [timelineTracks]);
+
+  const handleAddTrack = useCallback(() => {
+    const trackId = crypto.randomUUID();
+    const trackNum = useTimelineStore.getState().tracks.length + 1;
+    addTrack({
+        id: trackId,
+        name: `Track ${trackNum}`,
+        type: "midi",
+        color: COLORS.accent,
+        volume: 0.8,
+        pan: 0,
+        muted: false,
+        solo: false,
+        arm: false,
+        clips: [],
+        automationLanes: [],
+    });
+    createChannel(trackId, `Track ${trackNum}`);
+  }, [addTrack]);
+
+  const handleRemoveTrack = useCallback((trackId: string) => {
+    removeTrack(trackId);
+    removeChannel(trackId);
+  }, [removeTrack]);
+
+  const handleSeek = useCallback((beat: number) => {
+    transport.stop();
+    // Tone.Transport.position accepts bars:quarters:sixteenths format
+    const bars = Math.floor(beat / 4);
+    const quarters = Math.floor(beat % 4);
+    const sixteenths = (beat % 1) * 4;
+    Tone.Transport.position = `${bars}:${quarters}:${sixteenths}`;
+  }, [transport]);
 
   // Play a single clip using the transport
   const playClip = useCallback(
@@ -280,6 +419,48 @@ function App() {
     }
   }
 
+  function handleNewProjectWithTemplate() {
+    const templateTracks = [
+      { name: "Kick", type: "midi" as const, color: "#ef4444", pitch: 36 },
+      { name: "Snare", type: "midi" as const, color: "#fbbf24", pitch: 38 },
+      { name: "Hi-Hats", type: "midi" as const, color: "#60a5fa", pitch: 42 },
+      { name: "Bass", type: "midi" as const, color: "#ff8c42", pitch: 36 },
+      { name: "Synth", type: "midi" as const, color: "#a855f7", pitch: 60 },
+      { name: "Pad", type: "midi" as const, color: "#06b6d4", pitch: 48 },
+    ];
+
+    // Clear existing
+    const { tracks } = useTimelineStore.getState();
+    for (const t of tracks) {
+      removeTrack(t.id);
+      removeChannel(t.id);
+    }
+    setClips([]);
+    setTimelineClips({});
+
+    // Create template tracks
+    for (const tt of templateTracks) {
+      const trackId = crypto.randomUUID();
+      addTrack({
+        id: trackId,
+        name: tt.name,
+        type: tt.type,
+        color: tt.color,
+        volume: 0.8,
+        pan: 0,
+        muted: false,
+        solo: false,
+        arm: false,
+        clips: [],
+        automationLanes: [],
+      });
+      createChannel(trackId, tt.name);
+    }
+
+    setProjectName("Untitled Project");
+    setStatus("New project with template created");
+  }
+
   async function handleLoadProject(name: string) {
     try {
       const loaded = await loadProject(name);
@@ -370,17 +551,26 @@ function App() {
       setStatus("Nothing to export — generate some clips first");
       return;
     }
-    setStatus("Rendering audio...");
+    setStatus(`Rendering audio (${renderPreset} preset)...`);
     try {
-      const renderClips = clips.map((c) => ({
+      const renderClips = clips.map((c, i) => ({
         id: c.id,
         notes: c.midiData?.notes ?? [],
-        channel: 0,
+        channel: i,
       }));
-      const wavData = await exportProjectAudio(renderClips, transport.bpm);
+      const { tracks } = useTimelineStore.getState();
+      const mixerTracks = tracks.map((t) => ({
+        id: String(t.id),
+        volume: t.volume,
+        pan: t.pan,
+        muted: t.muted,
+        solo: t.solo,
+        instrument: t.type === "midi" ? ("bass" as const) : ("synth" as const),
+      }));
+      const wavData = await exportProjectAudio(renderClips, transport.bpm, renderPreset, mixerTracks);
       const { save } = await import("@tauri-apps/plugin-dialog");
       const savePath = await save({
-        defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}.wav`,
+        defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}-${renderPreset}.wav`,
         filters: [{ name: "WAV", extensions: ["wav"] }],
       });
       if (savePath) {
@@ -784,6 +974,17 @@ function App() {
                 💾 Save
               </button>
               <button
+                onClick={handleNewProjectWithTemplate}
+                style={{
+                  ...buttonStyle(),
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  background: "#2a2a5a",
+                }}
+              >
+                🆕 Template
+              </button>
+              <button
                 onClick={handleFork}
                 disabled={clips.length === 0}
                 style={{
@@ -807,6 +1008,23 @@ function App() {
               >
                 🎵 Export MIDI
               </button>
+              <select
+                value={renderPreset}
+                onChange={(e) => setRenderPreset(e.target.value as "draft" | "club" | "festival")}
+                disabled={clips.length === 0}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  background: COLORS.bg,
+                  color: COLORS.text,
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: 4,
+                }}
+              >
+                <option value="draft">Draft (-14 LUFS)</option>
+                <option value="club">Club (-9.5 LUFS)</option>
+                <option value="festival">Festival (-7.5 LUFS)</option>
+              </select>
               <button
                 onClick={handleExportAudio}
                 disabled={clips.length === 0}
@@ -851,6 +1069,19 @@ function App() {
               isPlaying={transport.isPlaying}
               currentBeat={transport.currentBeat}
               onPatternChange={setDrumPattern}
+              onSendToTimeline={(notes, name, qa) => {
+                const clipId = crypto.randomUUID();
+                const newClip: Clip = {
+                  id: clipId,
+                  name,
+                  duration: Math.max(...notes.map((n) => n.start + n.duration), 4),
+                  color: "#ef4444",
+                  midiData: { notes },
+                  qa,
+                };
+                setClips((prev) => [...prev, newClip]);
+                setStatus(`Drum pattern "${name}" sent to timeline`);
+              }}
             />
           )}
 
@@ -898,8 +1129,8 @@ function App() {
 
           {showMixer && (
             <Mixer
-              onVolumeChange={(_trackId, _vol) => {}}
-              onPanChange={(_trackId, _pan) => {}}
+              onVolumeChange={(trackId, vol) => updateChannel(trackId, { volume: vol })}
+              onPanChange={(trackId, pan) => updateChannel(trackId, { pan })}
             />
           )}
 
@@ -988,6 +1219,9 @@ function App() {
                   const clip = clips.find((c) => c.id === id);
                   if (clip) playClip(clip);
                 }}
+                onSeek={handleSeek}
+                onAddTrack={handleAddTrack}
+                onRemoveTrack={handleRemoveTrack}
               />
             ) : (
               <div style={{ flex: 1, overflow: "auto" }}>
@@ -1185,7 +1419,7 @@ function App() {
         <span>Backend: 9876</span>
         <span>Ollama: 11434</span>
         <span>Baker Street: 3001</span>
-        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.1.0</span>
+        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.2.0</span>
       </div>
     </div>
   );

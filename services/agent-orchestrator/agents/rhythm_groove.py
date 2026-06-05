@@ -13,6 +13,45 @@ import uuid
 from typing import Any
 
 from tools.midi_tools import generate_rolling_bass, validate_notes
+from tools.music_qa import analyze_notes
+
+
+def _generate_notes_with_qa(
+    bpm: int,
+    swing: float,
+    darkness: float,
+    density: float,
+    bars: int = 4,
+    max_attempts: int = 3,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Generate rolling bass with QA feedback loop."""
+    warnings: list[str] = []
+    for attempt in range(max_attempts):
+        notes = generate_rolling_bass(
+            bpm=bpm, density=density, swing=swing, darkness=darkness, bars=bars
+        )
+        if not validate_notes(notes):
+            density = max(0.3, density - 0.1)
+            continue
+
+        qa = analyze_notes(notes, bpm=bpm)
+        if qa["pass"]:
+            return notes, []
+
+        warnings = qa["warnings"]
+        # Adjust parameters based on warnings for next attempt
+        if any("monophonic" in w or "unique pitches" in w for w in warnings):
+            darkness = max(0.3, darkness - 0.08)  # more pitch variety
+        if any("velocity" in w.lower() for w in warnings):
+            swing = min(0.95, swing + 0.05)  # swing adds velocity variation via microtiming
+        if any("grid-locked" in w or "rhythm" in w.lower() for w in warnings):
+            swing = min(0.95, swing + 0.08)
+        if any("repetition" in w.lower() or "looped" in w.lower() for w in warnings):
+            density = min(0.9, density + 0.05)  # more notes = more variation
+            darkness = max(0.3, darkness - 0.05)
+
+    # Return last attempt even if not perfect, with warnings
+    return notes, warnings
 
 # ─────────────────────────────────────────────────────────────
 # Try to import LangGraph / LangChain components
@@ -234,32 +273,32 @@ async def run_rhythm_groove_agent_streaming(
     if "bright" in brief_lower:
         darkness = 0.45
 
+    notes, qa_warnings = _generate_notes_with_qa(
+        bpm=int(bpm), swing=swing, darkness=darkness, density=density, bars=4
+    )
     midi_data = {
-        "notes": generate_rolling_bass(
-            bpm=int(bpm), density=density, swing=swing, darkness=darkness, bars=4
-        ),
+        "notes": notes,
         "control_changes": [],
         "tempo_automation": [],
     }
-
-    if not validate_notes(midi_data["notes"]):
-        midi_data["notes"] = generate_rolling_bass(
-            bpm=int(bpm), density=0.55, swing=swing, darkness=darkness, bars=4
-        )
 
     yield {"type": "midi", "data": midi_data}
 
     task_id = str(uuid.uuid4())
 
+    reasoning_lines = [
+        f"Analyzed brief: '{brief[:70]}...'",
+        f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
+        f"Generated 4-bar pattern at {int(bpm)} BPM",
+    ]
+    if qa_warnings:
+        reasoning_lines.append("QA warnings: " + "; ".join(qa_warnings[:3]))
+
     yield {
         "type": "complete",
         "task_id": task_id,
         "status": "completed",
-        "reasoning": [
-            f"Analyzed brief: '{brief[:70]}...'",
-            f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
-            f"Generated 4-bar pattern at {int(bpm)} BPM",
-        ],
+        "reasoning": reasoning_lines,
         "clip_preview": midi_data,
     }
 
@@ -285,27 +324,27 @@ async def _generate_baseline(
     if "bright" in brief_lower:
         darkness = 0.45
 
+    notes, qa_warnings = _generate_notes_with_qa(
+        bpm=int(bpm), swing=swing, darkness=darkness, density=density, bars=4
+    )
     midi_data = {
-        "notes": generate_rolling_bass(
-            bpm=int(bpm), density=density, swing=swing, darkness=darkness, bars=4
-        ),
+        "notes": notes,
         "control_changes": [],
         "tempo_automation": [],
     }
 
-    if not validate_notes(midi_data["notes"]):
-        midi_data["notes"] = generate_rolling_bass(
-            bpm=int(bpm), density=0.55, swing=swing, darkness=darkness, bars=4
-        )
+    reasoning_lines = [
+        f"Analyzed brief: '{brief[:70]}...'",
+        f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
+        f"Generated 4-bar pattern at {int(bpm)} BPM",
+    ]
+    if qa_warnings:
+        reasoning_lines.append("QA warnings: " + "; ".join(qa_warnings[:3]))
 
     return {
         "id": str(uuid.uuid4()),
         "status": "completed",
-        "reasoning": [
-            f"Analyzed brief: '{brief[:70]}...'",
-            f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
-            f"Generated 4-bar pattern at {int(bpm)} BPM",
-        ],
+        "reasoning": reasoning_lines,
         "_generated_midi_data": midi_data,
         "_bpm": bpm,
     }

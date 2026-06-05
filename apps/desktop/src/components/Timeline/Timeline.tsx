@@ -20,12 +20,18 @@ interface TimelineProps {
   isPlaying: boolean;
   currentBeat: number;
   onPlayClip?: (clipId: string) => void;
+  onSeek?: (beat: number) => void;
+  onAddTrack?: () => void;
+  onRemoveTrack?: (trackId: string) => void;
 }
 
 export const Timeline: React.FC<TimelineProps> = ({
   isPlaying,
   currentBeat,
   onPlayClip,
+  onSeek,
+  onAddTrack,
+  onRemoveTrack,
 }) => {
   const {
     tracks,
@@ -100,6 +106,17 @@ export const Timeline: React.FC<TimelineProps> = ({
     return marks;
   }, [totalBeats]);
 
+  const handleRulerClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onSeek || !lanesRef.current) return;
+      const rect = lanesRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + lanesRef.current.scrollLeft;
+      const beat = x / zoom;
+      onSeek(snapBeat(beat));
+    },
+    [onSeek, zoom, snapBeat]
+  );
+
   return (
     <div
       style={{
@@ -154,6 +171,14 @@ export const Timeline: React.FC<TimelineProps> = ({
         >
           ║
         </button>
+        <div style={{ width: 1, height: 16, background: COLORS.border }} />
+        <button
+          onClick={onAddTrack}
+          style={zoomBtnStyle}
+          title="Add track"
+        >
+          +T
+        </button>
       </div>
 
       {/* Ruler + Lanes */}
@@ -189,6 +214,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               onToggleArm={() =>
                 updateTrack(track.id, { arm: !track.arm })
               }
+              onRemove={onRemoveTrack ? () => onRemoveTrack(track.id) : undefined}
             />
           ))}
         </div>
@@ -205,6 +231,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         >
           {/* Ruler */}
           <div
+            onClick={handleRulerClick}
             style={{
               position: "sticky",
               top: 0,
@@ -213,6 +240,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               background: COLORS.rulerBg,
               borderBottom: `1px solid ${COLORS.border}`,
               zIndex: 10,
+              cursor: onSeek ? "pointer" : "default",
             }}
           >
             {rulerMarks.map((mark) => (
