@@ -139,6 +139,15 @@ export function useTransport() {
     setState((s) => ({ ...s, isPlaying: false, currentBeat: 0 }));
   }, []);
 
+  const seek = useCallback((beat: number) => {
+    const safeBeat = Math.max(0, beat);
+    const bars = Math.floor(safeBeat / 4);
+    const quarters = Math.floor(safeBeat % 4);
+    const sixteenths = Math.round((safeBeat % 1) * 4);
+    Tone.Transport.position = `${bars}:${quarters}:${sixteenths}`;
+    setState((s) => ({ ...s, currentBeat: safeBeat }));
+  }, []);
+
   const setBpm = useCallback((bpm: number) => {
     Tone.Transport.bpm.rampTo(bpm, 0.1);
     setState((s) => ({ ...s, bpm }));
@@ -193,6 +202,7 @@ export function useTransport() {
     play,
     pause,
     stop,
+    seek,
     setBpm,
     scheduleClip,
     unscheduleClip,

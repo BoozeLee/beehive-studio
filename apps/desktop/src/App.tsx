@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from "react";
-import * as Tone from "tone";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { SessionViewGrid } from "./components/SessionView/SessionViewGrid";
@@ -243,12 +242,7 @@ function App() {
   }, [removeTrack]);
 
   const handleSeek = useCallback((beat: number) => {
-    transport.stop();
-    // Tone.Transport.position accepts bars:quarters:sixteenths format
-    const bars = Math.floor(beat / 4);
-    const quarters = Math.floor(beat % 4);
-    const sixteenths = (beat % 1) * 4;
-    Tone.Transport.position = `${bars}:${quarters}:${sixteenths}`;
+    transport.seek(beat);
   }, [transport]);
 
   // Play a single clip using the transport
@@ -1221,6 +1215,8 @@ function App() {
                 onSeek={handleSeek}
                 onAddTrack={handleAddTrack}
                 onRemoveTrack={handleRemoveTrack}
+                onDeleteClip={(id) => setClips((prev) => prev.filter((clip) => clip.id !== id))}
+                onDuplicateClip={(clip) => setClips((prev) => [...prev, clip])}
               />
             ) : (
               <div style={{ flex: 1, overflow: "auto" }}>
