@@ -7,11 +7,11 @@ import { ChannelStrip } from "./ChannelStrip";
 import { useTimelineStore } from "../../lib/timelineStore";
 import {
   getAllChannelStates,
-  getMasterLevel,
-  getMasterPeak,
+  getMasterState,
   setMasterGain,
   getSendBuses,
   setSendBusLevel,
+  resetPeaks,
 } from "../../lib/audioMixer";
 import type { Track } from "../../../../../packages/core-models/index";
 
@@ -56,10 +56,12 @@ export const Mixer: React.FC<MixerProps> = ({
         nextLevels[st.id] = st.level;
         nextPeaks[st.id] = st.peak;
       }
+      const master = getMasterState();
       setLevels(nextLevels);
       setPeaks(nextPeaks);
-      setMasterLevel(getMasterLevel());
-      setMasterPeak(getMasterPeak());
+      setMasterLevel(master.level);
+      setMasterPeak(master.peak);
+      setMasterGainState(master.gain);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -153,11 +155,12 @@ export const Mixer: React.FC<MixerProps> = ({
           >
             {bus.name}
             <input
+              aria-label={`${bus.name} send level`}
               type="range"
               min={0}
               max={1}
               step={0.01}
-              value={sendLevels[bus.id] ?? 1}
+              value={sendLevels[bus.id] ?? bus.level}
               onChange={(e) => handleSendChange(bus.id, Number(e.target.value))}
               style={{ width: 50 }}
             />
@@ -210,6 +213,7 @@ export const Mixer: React.FC<MixerProps> = ({
 
         {/* Master channel */}
         <div
+          data-testid="master-strip"
           style={{
             width: 80,
             padding: "6px 4px",
@@ -271,6 +275,7 @@ export const Mixer: React.FC<MixerProps> = ({
           </div>
           {/* Master fader */}
           <input
+            aria-label="Master gain"
             type="range"
             min={0}
             max={1}
@@ -286,6 +291,24 @@ export const Mixer: React.FC<MixerProps> = ({
           <span style={{ fontSize: 8, color: COLORS.textMuted }}>
             {(masterGain * 100).toFixed(0)}%
           </span>
+          <span style={{ fontSize: 8, color: COLORS.textMuted }}>
+            L {(masterLevel * 100).toFixed(0)} P {(masterPeak * 100).toFixed(0)}
+          </span>
+          <button
+            type="button"
+            onClick={resetPeaks}
+            style={{
+              padding: "3px 5px",
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 4,
+              background: "transparent",
+              color: COLORS.textMuted,
+              fontSize: 8,
+              cursor: "pointer",
+            }}
+          >
+            Reset Peaks
+          </button>
         </div>
       </div>
     </div>

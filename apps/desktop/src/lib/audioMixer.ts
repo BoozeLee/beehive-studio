@@ -3,7 +3,7 @@ import * as Tone from "tone";
 let mixerInitialized = false;
 let audioCtx: AudioContext | null = null;
 
-interface MixerChannelState {
+export interface MixerChannelState {
   id: string;
   name: string;
   volume: number;
@@ -16,7 +16,19 @@ interface MixerChannelState {
   fxReturns: Record<string, number>;
 }
 
-type ChannelUpdate = Partial<Pick<MixerChannelState, "volume" | "pan" | "muted" | "solo" | "armed" | "fxReturns">>;
+export type ChannelUpdate = Partial<Pick<MixerChannelState, "volume" | "pan" | "muted" | "solo" | "armed" | "fxReturns">>;
+
+export interface SendBusState {
+  id: string;
+  name: string;
+  level: number;
+}
+
+export interface MasterState {
+  gain: number;
+  level: number;
+  peak: number;
+}
 
 interface SendBus {
   id: string;
@@ -41,8 +53,31 @@ const sendBuses = new Map<string, SendBus>();
 
 let masterGainNode: GainNode | null = null;
 let masterAnalyserNode: AnalyserNode | null = null;
+let masterGain = 0.9;
 let masterLevel = 0;
 let masterPeak = 0;
+
+export function clampUnit(value: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+export function clampPan(value: number): number {
+  return Math.max(-1, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+export function calculateRmsLevel(data: Uint8Array): number {
+  if (data.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) {
+    const val = Math.abs(data[i] - 128) / 128;
+    sum += val * val;
+  }
+  return Math.sqrt(sum / data.length);
+}
+
+export function decayPeak(currentPeak: number, currentLevel: number, decay = 0.995): number {
+  return Math.max(currentLevel, Math.max(0, currentPeak) * decay);
+}
 
 export function initMixer(): boolean {
   if (mixerInitialized) return true;
@@ -51,7 +86,7 @@ export function initMixer(): boolean {
     audioCtx = Tone.context.rawContext as AudioContext;
 
     masterGainNode = audioCtx.createGain();
-    masterGainNode.gain.value = 0.9;
+    masterGainNode.gain.value = masterGain;
     masterAnalyserNode = audioCtx.createAnalyser();
     masterAnalyserNode.fftSize = 256;
     masterGainNode.connect(masterAnalyserNode);
@@ -144,7 +179,8 @@ export function createChannel(id: string, name: string = "Track"): boolean {
   if (!audioCtx || channels.has(id)) return false;
 
   const gainNode = audioCtx.createGain();
-  gainNode.gain.value = 0.8;
+  const initialVolume = 0.8;
+  gainNode.gain.value = initialVolume;
   const panNode = audioCtx.createStereoPanner();
   panNode.pan.value = 0;
   const analyserNode = audioCtx.createAnalyser();
@@ -171,7 +207,7 @@ export function createChannel(id: string, name: string = "Track"): boolean {
 
   channels.set(id, {
     gainNode, panNode, analyserNode, muteGain, inputNode,
-    state: { id, name, volume: 0.8, pan: 0, muted: false, solo: false, armed: false, level: 0, peak: 0, fxReturns: {} },
+    state: { id, name, volume: initialVolume, pan: 0, muted: false, solo: false, armed: false, level: 0, peak: 0, fxReturns: {} },
     sendGains,
   });
 
@@ -197,12 +233,14 @@ export function updateChannel(id: string, update: ChannelUpdate): void {
   if (!ch) return;
 
   if (update.volume !== undefined) {
-    ch.gainNode.gain.linearRampToValueAtTime(update.volume, audioCtx!.currentTime + 0.05);
-    ch.state.volume = update.volume;
+    const volume = clampUnit(update.volume);
+    ch.gainNode.gain.linearRampToValueAtTime(volume, audioCtx!.currentTime + 0.05);
+    ch.state.volume = volume;
   }
   if (update.pan !== undefined) {
-    ch.panNode.pan.value = update.pan;
-    ch.state.pan = update.pan;
+    const pan = clampPan(update.pan);
+    ch.panNode.pan.value = pan;
+    ch.state.pan = pan;
   }
   if (update.muted !== undefined) {
     ch.state.muted = update.muted;
@@ -218,9 +256,11 @@ export function updateChannel(id: string, update: ChannelUpdate): void {
   if (update.fxReturns) {
     for (const [busId, value] of Object.entries(update.fxReturns)) {
       const sendGain = ch.sendGains.get(busId);
+      const sendLevel = clampUnit(value);
       if (sendGain) {
-        sendGain.gain.value = value;
+        sendGain.gain.value = sendLevel;
       }
+      update.fxReturns[busId] = sendLevel;
     }
     ch.state.fxReturns = { ...ch.state.fxReturns, ...update.fxReturns };
   }
@@ -258,9 +298,25 @@ export function getMasterPeak(): number {
   return masterPeak;
 }
 
+export function getMasterState(): MasterState {
+  return {
+    gain: masterGain,
+    level: masterLevel,
+    peak: masterPeak,
+  };
+}
+
 export function setMasterGain(gain: number): void {
+  masterGain = clampUnit(gain);
   if (masterGainNode) {
-    masterGainNode.gain.linearRampToValueAtTime(gain, audioCtx!.currentTime + 0.05);
+    masterGainNode.gain.linearRampToValueAtTime(masterGain, audioCtx!.currentTime + 0.05);
+  }
+}
+
+export function resetPeaks(): void {
+  masterPeak = masterLevel;
+  for (const [, ch] of channels) {
+    ch.state.peak = ch.state.level;
   }
 }
 
@@ -272,27 +328,15 @@ function startLevelPolling(): void {
     if (masterAnalyserNode) {
       const data = new Uint8Array(masterAnalyserNode.frequencyBinCount);
       masterAnalyserNode.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const val = Math.abs(data[i] - 128) / 128;
-        sum += val * val;
-      }
-      masterLevel = Math.sqrt(sum / data.length);
-      masterPeak = Math.max(masterPeak, masterLevel * 1.1);
-      masterPeak *= 0.995;
+      masterLevel = calculateRmsLevel(data);
+      masterPeak = decayPeak(masterPeak, masterLevel * 1.1);
     }
 
     for (const [, ch] of channels) {
       const data = new Uint8Array(ch.analyserNode.frequencyBinCount);
       ch.analyserNode.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const val = Math.abs(data[i] - 128) / 128;
-        sum += val * val;
-      }
-      ch.state.level = Math.sqrt(sum / data.length);
-      ch.state.peak = Math.max(ch.state.peak, ch.state.level * 1.1);
-      ch.state.peak *= 0.995;
+      ch.state.level = calculateRmsLevel(data);
+      ch.state.peak = decayPeak(ch.state.peak, ch.state.level * 1.1);
     }
 
     pollingId = requestAnimationFrame(poll);
@@ -318,17 +362,21 @@ export function disposeMixer(): void {
     try { masterAnalyserNode.disconnect(); } catch { /* ok */ }
     masterAnalyserNode = null;
   }
+  masterLevel = 0;
+  masterPeak = 0;
+  masterGain = 0.9;
   mixerInitialized = false;
 }
 
-export function getSendBuses(): Array<{ id: string; name: string }> {
-  return Array.from(sendBuses.values()).map(sb => ({ id: sb.id, name: sb.name }));
+export function getSendBuses(): SendBusState[] {
+  return Array.from(sendBuses.values()).map(sb => ({ id: sb.id, name: sb.name, level: sb.level }));
 }
 
 export function setSendBusLevel(id: string, level: number): void {
   const bus = sendBuses.get(id);
   if (bus) {
-    bus.inputGain.gain.value = level;
-    bus.level = level;
+    const nextLevel = clampUnit(level);
+    bus.inputGain.gain.value = nextLevel;
+    bus.level = nextLevel;
   }
 }
