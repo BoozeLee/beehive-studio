@@ -10,7 +10,7 @@ export interface RenderNote {
 export interface RenderClip {
   id: string;
   notes: RenderNote[];
-  channel?: number;
+  channel?: string | number;
 }
 
 export interface MixerTrackState {

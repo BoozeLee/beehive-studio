@@ -19,6 +19,7 @@ export interface ScheduledClip {
   startBeat: number; // When this clip starts in the transport timeline
   loop: boolean;
   channel: number;
+  instrument?: "synth" | "bass" | "pad" | "sample" | "drum";
 }
 
 let transportInitialized = false;
@@ -39,7 +40,7 @@ export function useTransport() {
   });
 
   const partsRef = useRef<Map<string, Tone.Part>>(new Map());
-  const synthsRef = useRef<Map<number, Tone.Synth>>(new Map());
+  const synthsRef = useRef<Map<string, Tone.Synth>>(new Map());
   const rafRef = useRef<number>(0);
 
   // Initialize on first use
@@ -64,15 +65,24 @@ export function useTransport() {
     };
   }, []);
 
-  const getOrCreateSynth = useCallback((channel: number) => {
-    if (!synthsRef.current.has(channel)) {
+  const getOrCreateSynth = useCallback((channel: number, instrument: ScheduledClip["instrument"] = "synth") => {
+    const key = `${channel}:${instrument}`;
+    if (!synthsRef.current.has(key)) {
+      const oscillator =
+        instrument === "drum"
+          ? "sine"
+          : instrument === "pad"
+          ? "triangle"
+          : instrument === "bass" || channel === 0
+          ? "sawtooth"
+          : "square";
       const synth = new Tone.Synth({
-        oscillator: { type: channel === 0 ? "sawtooth" : "triangle" },
+        oscillator: { type: oscillator },
         envelope: { attack: 0.003, decay: 0.08, sustain: 0.4, release: 0.35 },
       }).toDestination();
-      synthsRef.current.set(channel, synth);
+      synthsRef.current.set(key, synth);
     }
-    return synthsRef.current.get(channel)!;
+    return synthsRef.current.get(key)!;
   }, []);
 
   const scheduleClip = useCallback(
@@ -83,7 +93,7 @@ export function useTransport() {
         existing.dispose();
       }
 
-      const synth = getOrCreateSynth(clip.channel);
+      const synth = getOrCreateSynth(clip.channel, clip.instrument);
       const part = new Tone.Part(
         (time, note) => {
           const n = note as ScheduledClip["notes"][number];

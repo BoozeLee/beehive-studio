@@ -28,6 +28,14 @@ import {
   normalizeTimelineClip,
 } from "./lib/timelineClipAdapter";
 import type { Clip as TimelineClip, Track } from "../../../packages/core-models/index";
+import {
+  buildArrangementMidiPayload,
+  buildArrangementPlaybackClips,
+  buildArrangementRenderPayload,
+  parseProjectDocument,
+  serializeProjectDocument,
+  type ProjectDocumentV2,
+} from "./lib/arrangementAdapter";
 
 interface Clip {
   id: string;
@@ -80,6 +88,7 @@ function App() {
   const {
     tracks: timelineTracks,
     setClips: setTimelineClips,
+    setTracks: setTimelineTracks,
     addTrack,
     removeTrack,
     updateTrack,
@@ -93,6 +102,51 @@ function App() {
   const [showGit, setShowGit] = useState(false);
   const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
   const [renderPreset, setRenderPreset] = useState<"draft" | "club" | "festival">("festival");
+
+  const restoreProjectDocument = useCallback(
+    (document: ProjectDocumentV2) => {
+      const currentTracks = useTimelineStore.getState().tracks;
+      for (const track of currentTracks) removeChannel(track.id);
+
+      setClips(document.clips);
+      setTimelineTracks(document.timeline.tracks);
+      setTimelineClips(document.timeline.clips as never);
+      for (const track of document.timeline.tracks) {
+        createChannel(track.id, track.name);
+      }
+    },
+    [setTimelineClips, setTimelineTracks]
+  );
+
+  const currentProjectDocumentJson = useCallback(() => {
+    const timeline = useTimelineStore.getState();
+    return serializeProjectDocument(clips, timeline.tracks, timeline.clips as Record<string, TimelineClip>);
+  }, [clips]);
+
+  const playArrangement = useCallback(async () => {
+    const { tracks, clips: timelineClips } = useTimelineStore.getState();
+    const scheduled = buildArrangementPlaybackClips(tracks, timelineClips as Record<string, TimelineClip>);
+    if (scheduled.length === 0) {
+      setStatus("Nothing in arrangement to play");
+      return;
+    }
+
+    setStatus("Playing arrangement...");
+    transport.clearAll();
+    for (const clip of scheduled) {
+      transport.scheduleClip(clip);
+    }
+    transport.seek(0);
+    await transport.play();
+  }, [transport]);
+
+  const handleTransportPlay = useCallback(() => {
+    if (showTimeline) {
+      void playArrangement();
+    } else {
+      void transport.play();
+    }
+  }, [playArrangement, showTimeline, transport]);
 
   // Load saved projects on mount
   useEffect(() => {
@@ -111,7 +165,7 @@ function App() {
       if (e.code === "Space") {
         e.preventDefault();
         if (transport.isPlaying) transport.pause();
-        else transport.play();
+        else handleTransportPlay();
       } else if (e.key === "s" && e.ctrlKey) {
         e.preventDefault();
         handleSaveProject();
@@ -131,7 +185,7 @@ function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [transport.isPlaying, transport.play, transport.pause]);
+  }, [transport.isPlaying, transport.pause, handleTransportPlay]);
 
   // Sync generated/session clips into full timeline clips and assign any new
   // clips to the first track, preserving existing manual track assignments.
@@ -394,12 +448,12 @@ function App() {
       return;
     }
     try {
-      await saveProject(projectName, clips);
-      const clipJson = JSON.stringify(clips);
+      const projectDocumentJson = currentProjectDocumentJson();
+      await saveProject(projectName, projectDocumentJson);
       await ensureProjectInit(projectName);
       const hash = await saveSnapshot(
         projectName,
-        clipJson,
+        projectDocumentJson,
         `Save: ${projectName}`,
       );
       const projects = await listProjects();
@@ -459,9 +513,9 @@ function App() {
   async function handleLoadProject(name: string) {
     try {
       const loaded = await loadProject(name);
-      setClips(loaded);
+      restoreProjectDocument(loaded);
       setProjectName(name);
-      setStatus(`✓ Loaded "${name}" (${loaded.length} clips)`);
+      setStatus(`✓ Loaded "${name}" (${loaded.clips.length} clips)`);
     } catch (err) {
       setStatus(`Load failed: ${String(err)}`);
     }
@@ -475,12 +529,12 @@ function App() {
     const branchName = prompt("Fork branch name:", "experiment");
     if (!branchName) return;
     try {
-      const clipJson = JSON.stringify(clips);
+      const projectDocumentJson = currentProjectDocumentJson();
       await ensureProjectInit(projectName);
       const result = await forkSession(
         projectName,
         branchName,
-        clipJson,
+        projectDocumentJson,
         `Fork: ${projectName} → ${branchName}`,
       );
       setStatus(`✓ Forked to '${branchName}' (${result.slice(0, 7)})`);
@@ -492,10 +546,8 @@ function App() {
   async function handleBranchSwitch(_branch: string) {
     try {
       const raw = await readClips(projectName);
-      const loaded: Clip[] = JSON.parse(raw);
-      if (Array.isArray(loaded) && loaded.length > 0) {
-        setClips(loaded);
-      }
+      const loaded = parseProjectDocument(raw);
+      restoreProjectDocument(loaded);
     } catch {}
   }
 
@@ -506,8 +558,13 @@ function App() {
     }
     setStatus("Exporting MIDI...");
     try {
+      const { tracks, clips: timelineClips } = useTimelineStore.getState();
+      const midiClips =
+        tracks.length > 0
+          ? buildArrangementMidiPayload(tracks, timelineClips as Record<string, TimelineClip>)
+          : clips.map((c) => ({ ...c, midiData: c.midiData ?? {} }));
       const tempPath = await invoke<string>("export_midi", {
-        clips: clips.map((c) => ({ ...c, midiData: c.midiData ?? {} })),
+        clips: midiClips,
         bpm: transport.bpm,
         filename: projectName.replace(/\s+/g, "-").toLowerCase(),
       });
@@ -547,20 +604,15 @@ function App() {
     }
     setStatus(`Rendering audio (${renderPreset} preset)...`);
     try {
-      const renderClips = clips.map((c, i) => ({
-        id: c.id,
-        notes: c.midiData?.notes ?? [],
-        channel: i,
-      }));
-      const { tracks } = useTimelineStore.getState();
-      const mixerTracks = tracks.map((t) => ({
-        id: String(t.id),
-        volume: t.volume,
-        pan: t.pan,
-        muted: t.muted,
-        solo: t.solo,
-        instrument: t.type === "midi" ? ("bass" as const) : ("synth" as const),
-      }));
+      const { tracks, clips: timelineClips } = useTimelineStore.getState();
+      const { renderClips, mixerTracks } = buildArrangementRenderPayload(
+        tracks,
+        timelineClips as Record<string, TimelineClip>
+      );
+      if (renderClips.length === 0) {
+        setStatus("Nothing audible in arrangement to export");
+        return;
+      }
       const wavData = await exportProjectAudio(renderClips, transport.bpm, renderPreset, mixerTracks);
       const savePath = await save({
         defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}-${renderPreset}.wav`,
@@ -740,7 +792,7 @@ function App() {
         isPlaying={transport.isPlaying}
         bpm={transport.bpm}
         currentBeat={transport.currentBeat}
-        onPlay={transport.play}
+        onPlay={handleTransportPlay}
         onPause={transport.pause}
         onStop={transport.stop}
         onBpmChange={transport.setBpm}
