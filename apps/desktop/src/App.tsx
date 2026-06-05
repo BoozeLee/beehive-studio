@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import * as Tone from "tone";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { SessionViewGrid } from "./components/SessionView/SessionViewGrid";
 import { BackendHealth } from "./components/BackendHealth";
 import { TransportControls } from "./components/TransportControls";
@@ -517,7 +518,6 @@ function App() {
         filename: projectName.replace(/\s+/g, "-").toLowerCase(),
       });
       // Use Tauri dialog to let user pick save location
-      const { save } = await import("@tauri-apps/plugin-dialog");
       const savePath = await save({
         defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}.mid`,
         filters: [{ name: "MIDI", extensions: ["mid"] }],
@@ -568,7 +568,6 @@ function App() {
         instrument: t.type === "midi" ? ("bass" as const) : ("synth" as const),
       }));
       const wavData = await exportProjectAudio(renderClips, transport.bpm, renderPreset, mixerTracks);
-      const { save } = await import("@tauri-apps/plugin-dialog");
       const savePath = await save({
         defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}-${renderPreset}.wav`,
         filters: [{ name: "WAV", extensions: ["wav"] }],
