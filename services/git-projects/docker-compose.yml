@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  git-projects-api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "9876:9876"
+    environment:
+      - AI_API_KEY=${AI_API_KEY}
+      - STORAGE_PATH=/data/projects
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - project_data:/data/projects
+      - metadata_data:/data/ai-metadata
+      - repositories_data:/data/repositories
+    depends_on:
+      - redis
+    networks:
+      - beehive-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - beehive-network
+    restart: unless-stopped
+
+  # Optional: AI service (can be external)
+  ai-service:
+    image: beehive-ai-service:latest
+    ports:
+      - "8001:8001"
+    environment:
+      - MODEL=gpt-4
+      - API_KEY=${AI_API_KEY}
+    networks:
+      - beehive-network
+    restart: unless-stopped
+    # This service can be deployed separately or use external AI services
+
+  # Optional: PostgreSQL for advanced features
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=beehive_projects
+      - POSTGRES_USER=beehive
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - beehive-network
+    restart: unless-stopped
+
+  # Optional: Monitoring and logging
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - beehive-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - beehive-network
+    restart: unless-stopped
+
+volumes:
+  project_data:
+  metadata_data:
+  repositories_data:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  beehive-network:
+    driver: bridge
