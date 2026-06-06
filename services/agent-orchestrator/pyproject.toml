@@ -1,6 +1,6 @@
 [project]
 name = "beehive-studio-agent-orchestrator"
-version = "0.2.0"
+version = "0.3.0-alpha"
 description = "FastAPI + LangGraph multi-agent brain for Beehive Studio"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,6 +18,7 @@ dependencies = [
     "httpx>=0.28.1",
     "aiosqlite>=0.20",
     "pydub>=0.25",
+    "audioop-lts>=0.2.1; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]

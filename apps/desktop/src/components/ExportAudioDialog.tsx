@@ -9,8 +9,13 @@ interface ExportAudioDialogProps {
   progress: number;
   progressLabel: string;
   summary: RenderSummary;
+  renderEngine: "python" | "desktop";
+  outputMode: "master" | "master_and_stems";
   onPresetChange: (preset: RenderPreset) => void;
+  onRenderEngineChange: (engine: "python" | "desktop") => void;
+  onOutputModeChange: (mode: "master" | "master_and_stems") => void;
   onClose: () => void;
+  onCancelExport?: () => void;
   onExport: (revealAfterSave: boolean) => void;
 }
 
@@ -21,8 +26,13 @@ export function ExportAudioDialog({
   progress,
   progressLabel,
   summary,
+  renderEngine,
+  outputMode,
   onPresetChange,
+  onRenderEngineChange,
+  onOutputModeChange,
   onClose,
+  onCancelExport,
   onExport,
 }: ExportAudioDialogProps) {
   if (!isOpen) return null;
@@ -126,6 +136,37 @@ export function ExportAudioDialog({
             </div>
           </fieldset>
 
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <label style={{ fontSize: 11, color: BEEHIVE.textMuted }}>
+              Render engine
+              <select
+                value={renderEngine}
+                disabled={isExporting}
+                onChange={(event) =>
+                  onRenderEngineChange(event.target.value as "python" | "desktop")
+                }
+                style={{ display: "block", width: "100%", marginTop: 4, padding: 7 }}
+              >
+                <option value="python">Python HQ (desktop fallback)</option>
+                <option value="desktop">Desktop local</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 11, color: BEEHIVE.textMuted }}>
+              Output
+              <select
+                value={outputMode}
+                disabled={isExporting}
+                onChange={(event) =>
+                  onOutputModeChange(event.target.value as "master" | "master_and_stems")
+                }
+                style={{ display: "block", width: "100%", marginTop: 4, padding: 7 }}
+              >
+                <option value="master">Master WAV</option>
+                <option value="master_and_stems">Master + WAV stems</option>
+              </select>
+            </label>
+          </div>
+
           {isExporting && (
             <div>
               <div
@@ -164,11 +205,14 @@ export function ExportAudioDialog({
           }}
         >
           <button
-            onClick={onClose}
-            disabled={isExporting}
-            style={{ ...buttonStyle(BEEHIVE.smoke, isExporting), color: BEEHIVE.text }}
+            onClick={isExporting ? onCancelExport : onClose}
+            disabled={isExporting && !onCancelExport}
+            style={{
+              ...buttonStyle(BEEHIVE.smoke, isExporting && !onCancelExport),
+              color: BEEHIVE.text,
+            }}
           >
-            Cancel
+            {isExporting ? "Cancel Render" : "Cancel"}
           </button>
           <button
             onClick={() => onExport(false)}

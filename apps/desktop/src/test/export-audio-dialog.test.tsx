@@ -22,7 +22,11 @@ describe("ExportAudioDialog", () => {
         progress={0}
         progressLabel="Preparing"
         summary={summary}
+        renderEngine="python"
+        outputMode="master"
         onPresetChange={onPresetChange}
+        onRenderEngineChange={vi.fn()}
+        onOutputModeChange={vi.fn()}
         onClose={vi.fn()}
         onExport={onExport}
       />
@@ -45,7 +49,11 @@ describe("ExportAudioDialog", () => {
         progress={0.75}
         progressLabel="Applying master preset"
         summary={summary}
+        renderEngine="python"
+        outputMode="master_and_stems"
         onPresetChange={vi.fn()}
+        onRenderEngineChange={vi.fn()}
+        onOutputModeChange={vi.fn()}
         onClose={vi.fn()}
         onExport={vi.fn()}
       />
@@ -54,6 +62,6 @@ describe("ExportAudioDialog", () => {
     expect(screen.getByText("Applying master preset")).toBeInTheDocument();
     expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel Render" })).toBeDisabled();
   });
 });

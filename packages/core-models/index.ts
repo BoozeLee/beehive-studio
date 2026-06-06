@@ -68,6 +68,9 @@ export interface Clip {
   // Content
   midiData?: MidiClipData;
   audioFilePath?: string;   // relative or absolute local path
+  audioSourceOffset?: number; // seconds from source start
+  audioSourceDuration?: number; // seconds available from source
+  gain?: number; // 0-2 clip gain
   generativePrompt?: string;
 
   // Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)
@@ -92,6 +95,16 @@ export interface AutomationLane {
   id: ID;
   parameter: string;           // e.g. "volume", "filter.cutoff", "send.reverb"
   points: Array<{ time: number; value: number }>;
+  mode?: 'off' | 'read' | 'touch' | 'write';
+}
+
+export type TrackEffectType = 'reverb' | 'delay' | 'filter' | 'distortion';
+
+export interface TrackEffect {
+  id: ID;
+  type: TrackEffectType;
+  params: Record<string, number>;
+  bypass: boolean;
 }
 
 export interface Track {
@@ -109,6 +122,8 @@ export interface Track {
   clips: ID[];                 // ordered list of clip ids belonging to this track
 
   automationLanes: AutomationLane[];
+  effects?: TrackEffect[];
+  sends?: Record<string, number>;
 
   // For MIDI tracks
   instrument?: {

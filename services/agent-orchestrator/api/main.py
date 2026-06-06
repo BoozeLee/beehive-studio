@@ -11,14 +11,17 @@ Now includes:
 from __future__ import annotations
 
 import os
+import asyncio
+import tempfile
 import urllib.request
-from typing import Any
+import uuid
+from typing import Any, Callable
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-APP_VERSION = "0.2.0-alpha"
+APP_VERSION = "0.3.0-alpha"
 _OLLAMA_AVAILABLE_CACHE: bool | None = None
 
 app = FastAPI(title="Beehive Studio Agent Orchestrator", version=APP_VERSION)
@@ -528,72 +531,223 @@ async def agent_mix_master(req: BriefRequest):
 
 class RenderRequest(BaseModel):
     clips: list[dict[str, Any]]
+    tracks: list[dict[str, Any]] = []
     bpm: int = 142
     format: str = "wav"
+    preset: str = "festival"
+    output_mode: str = "master"
 
 
-@app.post("/render")
-async def render_audio(req: RenderRequest):
-    """Render MIDI clips to audio (basic sine synthesis via pydub)."""
-    import tempfile
+_render_jobs: dict[str, dict[str, Any]] = {}
+
+
+def _automation_value(track: dict[str, Any], parameter: str, beat: float, default: float) -> float:
+    lane = next(
+        (
+            item
+            for item in track.get("automationLanes", track.get("automation_lanes", []))
+            if item.get("parameter") == parameter and item.get("mode", "read") != "off"
+        ),
+        None,
+    )
+    points = sorted((lane or {}).get("points", []), key=lambda point: point.get("time", 0))
+    if not points:
+        return default
+    if beat <= points[0].get("time", 0):
+        return float(points[0].get("value", default))
+    if beat >= points[-1].get("time", 0):
+        return float(points[-1].get("value", default))
+    for left, right in zip(points, points[1:]):
+        if left.get("time", 0) <= beat <= right.get("time", 0):
+            span = max(0.0001, right.get("time", 0) - left.get("time", 0))
+            ratio = (beat - left.get("time", 0)) / span
+            return float(left.get("value", default)) + ratio * (
+                float(right.get("value", default)) - float(left.get("value", default))
+            )
+    return default
+
+
+def _apply_track_effects(segment: Any, track: dict[str, Any]) -> Any:
+    from pydub import AudioSegment
+
+    for effect in track.get("effects", []):
+        if effect.get("bypass"):
+            continue
+        params = dict(effect.get("params", {}))
+        effect_id = effect.get("id", "")
+        for param, value in list(params.items()):
+            params[param] = _automation_value(track, f"fx.{effect_id}.{param}", 0, float(value))
+        effect_type = effect.get("type")
+        if effect_type == "filter":
+            segment = segment.low_pass_filter(int(params.get("frequency", 1000)))
+        elif effect_type == "delay":
+            delayed = AudioSegment.silent(duration=int(float(params.get("delayTime", 0.25)) * 1000))
+            delayed += segment.apply_gain(-9 + float(params.get("feedback", 0.3)) * 6)
+            segment = segment.overlay(delayed)
+        elif effect_type == "reverb":
+            wet = float(params.get("wet", 0.5))
+            for delay_ms, gain_db in ((45, -10), (90, -14), (150, -18)):
+                echo = AudioSegment.silent(duration=delay_ms) + segment.apply_gain(gain_db)
+                segment = segment.overlay(echo.apply_gain(20 * __import__("math").log10(max(0.001, wet))))
+        elif effect_type == "distortion":
+            segment = segment.apply_gain(float(params.get("distortion", 0.4)) * 8)
+    return segment
+
+
+def _render_request(
+    req: RenderRequest, progress: Callable[[float, str], None] | None = None
+) -> dict[str, Any]:
+    """Render MIDI and referenced audio clips with track mixer state."""
     from pydub import AudioSegment
     from pydub.generators import Sine
-    
 
     sample_rate = 44100
     beat_duration = 60.0 / req.bpm
-
-    segments: list[AudioSegment] = []
+    tracks = {str(track.get("id")): track for track in req.tracks}
+    has_solo = any(bool(track.get("solo")) for track in req.tracks)
+    track_segments: dict[str, AudioSegment] = {}
     max_duration_ms = 0
 
-    for clip in req.clips:
-        notes = clip.get("midiData", {}).get("notes", [])
-        if not notes:
-            notes = clip.get("notes", [])
+    if progress:
+        progress(0.15, "Preparing tracks")
 
-        clip_segments = AudioSegment.silent(duration=0, frame_rate=sample_rate)
+    for index, clip in enumerate(req.clips):
+        track_id = str(clip.get("channel", clip.get("trackId", "0")))
+        track = tracks.get(track_id, {})
+        if track.get("muted") or (has_solo and not track.get("solo")):
+            continue
+
+        clip_start_beats = float(clip.get("start", 0))
+        notes = clip.get("midiData", {}).get("notes", []) or clip.get("notes", [])
+        segment = AudioSegment.silent(duration=0, frame_rate=sample_rate)
         clip_end_ms = 0
+
+        audio_path = clip.get("audioFilePath")
+        if audio_path and os.path.exists(audio_path):
+            source = AudioSegment.from_file(audio_path)
+            offset_ms = int(float(clip.get("sourceOffset", 0)) * 1000)
+            duration_beats = float(clip.get("duration", 0))
+            duration_ms = int(duration_beats * beat_duration * 1000) if duration_beats > 0 else len(source)
+            source = source[offset_ms : offset_ms + duration_ms]
+            gain = max(0.001, float(clip.get("gain", 1)))
+            source = source.apply_gain(20 * __import__("math").log10(gain))
+            audio_start_ms = int(clip_start_beats * beat_duration * 1000)
+            clip_end_ms = audio_start_ms + len(source)
+            segment += AudioSegment.silent(duration=max(0, clip_end_ms - len(segment)), frame_rate=sample_rate)
+            segment = segment.overlay(source, position=audio_start_ms)
 
         for note in notes:
             pitch = note.get("pitch", 60)
             velocity = note.get("velocity", 100)
             start = note.get("start", 0)
             duration = note.get("duration", 0.5)
-
             freq = 440.0 * (2 ** ((pitch - 69) / 12.0))
             vol_db = -30 + (velocity / 127) * 30
-
             note_start_ms = int(start * beat_duration * 1000)
             note_dur_ms = max(50, int(duration * beat_duration * 1000))
-
             tone = Sine(freq).to_audio_segment(duration=note_dur_ms, volume=vol_db)
-            clip_segments = clip_segments.overlay(tone, position=note_start_ms)
+            note_end_ms = note_start_ms + note_dur_ms
+            segment += AudioSegment.silent(duration=max(0, note_end_ms - len(segment)), frame_rate=sample_rate)
+            segment = segment.overlay(tone, position=note_start_ms)
+            clip_end_ms = max(clip_end_ms, note_end_ms)
 
-            note_end = note_start_ms + note_dur_ms
-            if note_end > clip_end_ms:
-                clip_end_ms = note_end
+        if clip_end_ms == 0:
+            continue
+        segment = _apply_track_effects(segment, track)
+        volume = max(0.001, _automation_value(track, "volume", clip_start_beats, float(track.get("volume", 1))))
+        segment = segment.apply_gain(20 * __import__("math").log10(volume))
+        pan = _automation_value(track, "pan", clip_start_beats, float(track.get("pan", 0)))
+        segment = segment.pan(max(-1, min(1, pan)))
+        track_segment = track_segments.get(track_id, AudioSegment.silent(duration=0, frame_rate=sample_rate))
+        track_segment += AudioSegment.silent(
+            duration=max(0, clip_end_ms - len(track_segment)), frame_rate=sample_rate
+        )
+        track_segments[track_id] = track_segment.overlay(segment)
+        max_duration_ms = max(max_duration_ms, clip_end_ms)
+        if progress:
+            progress(0.2 + 0.5 * ((index + 1) / max(1, len(req.clips))), "Rendering arrangement")
 
-        if len(clip_segments) > 0:
-            segments.append(clip_segments)
-            if clip_end_ms > max_duration_ms:
-                max_duration_ms = clip_end_ms
-
-    if not segments or max_duration_ms == 0:
-        return {"status": "error", "message": "No notes to render"}
+    if not track_segments or max_duration_ms == 0:
+        raise ValueError("No audible clips to render")
 
     mixed = AudioSegment.silent(duration=max_duration_ms, frame_rate=sample_rate)
-    for seg in segments:
-        mixed = mixed.overlay(seg)
+    for segment in track_segments.values():
+        mixed = mixed.overlay(segment)
 
-    output_dir = tempfile.gettempdir()
-    ext = "wav" if req.format == "wav" else "wav"
-    output_path = os.path.join(output_dir, f"beehive-render.{ext}")
+    preset_targets = {"draft": -14.0, "club": -9.5, "festival": -7.5}
+    target = preset_targets.get(req.preset, -7.5)
+    if mixed.dBFS != float("-inf"):
+        mixed = mixed.apply_gain(target - mixed.dBFS)
+    if progress:
+        progress(0.82, "Writing WAV outputs")
 
-    mixed.export(output_path, format=ext)
-
+    output_dir = tempfile.mkdtemp(prefix="beehive-render-")
+    master_path = os.path.join(output_dir, "master.wav")
+    mixed.export(master_path, format="wav")
+    stem_paths: list[str] = []
+    if req.output_mode in {"stems", "master_and_stems"}:
+        for track_id, segment in track_segments.items():
+            name = str(tracks.get(track_id, {}).get("name", track_id)).replace("/", "_")
+            path = os.path.join(output_dir, f"{name}.wav")
+            segment.export(path, format="wav")
+            stem_paths.append(path)
+    if progress:
+        progress(1.0, "Render complete")
     return {
-        "status": "ok",
-        "path": output_path,
+        "status": "completed",
+        "engine": "python",
+        "master_path": master_path,
+        "stem_paths": stem_paths,
         "duration_ms": len(mixed),
-        "format": ext,
+        "format": "wav",
     }
+
+
+async def _run_render_job(job_id: str, req: RenderRequest) -> None:
+    def update(value: float, stage: str) -> None:
+        if _render_jobs.get(job_id, {}).get("status") != "cancelled":
+            _render_jobs[job_id].update(progress=value, stage=stage)
+
+    try:
+        _render_jobs[job_id].update(status="running", stage="Starting renderer")
+        result = await asyncio.to_thread(_render_request, req, update)
+        if _render_jobs[job_id].get("status") != "cancelled":
+            _render_jobs[job_id].update(result, progress=1.0, stage="Render complete")
+    except Exception as exc:
+        _render_jobs[job_id].update(status="failed", error=str(exc), stage="Render failed")
+
+
+@app.post("/render/jobs")
+async def create_render_job(req: RenderRequest):
+    job_id = str(uuid.uuid4())
+    _render_jobs[job_id] = {
+        "id": job_id,
+        "status": "queued",
+        "progress": 0.0,
+        "stage": "Queued",
+        "engine": "python",
+    }
+    asyncio.create_task(_run_render_job(job_id, req))
+    return _render_jobs[job_id]
+
+
+@app.get("/render/jobs/{job_id}")
+async def get_render_job(job_id: str):
+    if job_id not in _render_jobs:
+        raise HTTPException(status_code=404, detail="Render job not found")
+    return _render_jobs[job_id]
+
+
+@app.delete("/render/jobs/{job_id}")
+async def cancel_render_job(job_id: str):
+    if job_id not in _render_jobs:
+        raise HTTPException(status_code=404, detail="Render job not found")
+    _render_jobs[job_id].update(status="cancelled", stage="Cancelled")
+    return _render_jobs[job_id]
+
+
+@app.post("/render")
+async def render_audio(req: RenderRequest):
+    """Compatibility render endpoint backed by the render-job engine."""
+    result = await asyncio.to_thread(_render_request, req)
+    return {**result, "status": "ok", "path": result["master_path"]}

@@ -107,4 +107,30 @@ describe("timeline store editing actions", () => {
       { pitch: 40, velocity: 90, start: 1, duration: 1 },
     ]);
   });
+
+  it("splits an audio clip non-destructively with adjusted source offset", () => {
+    useTimelineStore.setState({
+      clips: {
+        "clip-1": {
+          ...useTimelineStore.getState().clips["clip-1"],
+          type: "audio",
+          midiData: undefined,
+          audioFilePath: "/samples/loop.wav",
+          audioSourceOffset: 1,
+          duration: 8,
+        },
+      },
+    });
+
+    useTimelineStore.getState().splitClipAt("clip-1", 6, 0.5, "clip-2");
+
+    const state = useTimelineStore.getState();
+    expect(state.clips["clip-1"].duration).toBe(4);
+    expect(state.clips["clip-2"]).toMatchObject({
+      start: 6,
+      duration: 4,
+      audioFilePath: "/samples/loop.wav",
+      audioSourceOffset: 3,
+    });
+  });
 });

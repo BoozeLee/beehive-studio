@@ -12,6 +12,7 @@ import {
   getSendBuses,
   setSendBusLevel,
   resetPeaks,
+  updateChannel,
 } from "../../lib/audioMixer";
 import type { Track } from "../../../../../packages/core-models/index";
 
@@ -48,7 +49,13 @@ export const Mixer: React.FC<MixerProps> = ({
   // Real level metering from Web Audio analyser nodes
   useEffect(() => {
     let raf = 0;
-    const tick = () => {
+    let lastUpdate = 0;
+    const tick = (timestamp: number) => {
+      if (timestamp - lastUpdate < 1000 / 30) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      lastUpdate = timestamp;
       const states = getAllChannelStates();
       const nextLevels: Record<string, number> = {};
       const nextPeaks: Record<string, number> = {};
@@ -116,9 +123,15 @@ export const Mixer: React.FC<MixerProps> = ({
   }, []);
 
   const handleSendChange = useCallback((busId: string, level: number) => {
-    setSendBusLevel(busId, level);
+    if (selectedTrackId) {
+      const track = tracks.find((item) => item.id === selectedTrackId);
+      updateTrack(selectedTrackId, { sends: { ...track?.sends, [busId]: level } });
+      updateChannel(selectedTrackId, { fxReturns: { [busId]: level } });
+    } else {
+      setSendBusLevel(busId, level);
+    }
     setSendLevels((prev) => ({ ...prev, [busId]: level }));
-  }, []);
+  }, [selectedTrackId, tracks, updateTrack]);
 
   return (
     <div

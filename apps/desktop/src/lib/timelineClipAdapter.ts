@@ -9,6 +9,10 @@ export interface GeneratedClip {
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
   sourcePatternId?: ID;
+  audioFilePath?: string;
+  audioSourceOffset?: number;
+  audioSourceDuration?: number;
+  gain?: number;
 }
 
 export function inferClipDuration(clip: GeneratedClip): number {
@@ -53,6 +57,10 @@ export function normalizeTimelineClip(
     loop: existing?.loop ?? false,
     color: clip.color,
     midiData: clip.midiData,
+    audioFilePath: clip.audioFilePath ?? existing?.audioFilePath,
+    audioSourceOffset: clip.audioSourceOffset ?? existing?.audioSourceOffset ?? 0,
+    audioSourceDuration: clip.audioSourceDuration ?? existing?.audioSourceDuration,
+    gain: clip.gain ?? existing?.gain ?? 1,
     playback: {
       instrument: inferPlaybackInstrument(clip),
       preset: existing?.playback?.preset,

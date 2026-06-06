@@ -21,6 +21,7 @@ const RESIZE_HANDLE_WIDTH = 8;
 interface TimelineProps {
   isPlaying: boolean;
   currentBeat: number;
+  bpm?: number;
   onPlayClip?: (clipId: string) => void;
   onSeek?: (beat: number) => void;
   onAddTrack?: () => void;
@@ -32,6 +33,7 @@ interface TimelineProps {
 export const Timeline: React.FC<TimelineProps> = ({
   isPlaying,
   currentBeat,
+  bpm = 142,
   onPlayClip,
   onSeek,
   onAddTrack,
@@ -54,6 +56,7 @@ export const Timeline: React.FC<TimelineProps> = ({
     moveClipToTrack,
     resizeClip,
     duplicateClip,
+    splitClipAt,
     removeClip,
     setZoom,
     setScrollOffset,
@@ -240,6 +243,20 @@ export const Timeline: React.FC<TimelineProps> = ({
             style={{ ...menuItemStyle, color: "#ff9a9a" }}
           >
             Delete
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              const createdId = splitClipAt(contextMenu.clipId, currentBeat, 60 / bpm);
+              if (createdId) {
+                const createdClip = useTimelineStore.getState().clips[createdId];
+                if (createdClip) onDuplicateClip?.(createdClip);
+              }
+              setContextMenu(null);
+            }}
+            style={menuItemStyle}
+          >
+            Split at Playhead
           </button>
         </div>
       )}

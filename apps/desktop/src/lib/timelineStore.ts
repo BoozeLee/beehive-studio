@@ -24,6 +24,7 @@ export interface TimelineState {
   moveClipToTrack: (id: ID, trackId: ID, start: number) => void;
   resizeClip: (id: ID, duration: number) => void;
   duplicateClip: (id: ID, newId?: ID) => ID | null;
+  splitClipAt: (id: ID, beat: number, secondsPerBeat: number, newId?: ID) => ID | null;
   updateClipMidiNotes: (id: ID, notes: NonNullable<Clip["midiData"]>["notes"]) => void;
 
   selectTrack: (id: ID | null) => void;
@@ -165,6 +166,58 @@ export const useTimelineStore = create<TimelineState>((set) => ({
             : track
         ),
         selectedTrackId: null,
+        selectedClipId: newId,
+      };
+    });
+    return createdId;
+  },
+
+  splitClipAt: (id, beat, secondsPerBeat, newId = crypto.randomUUID()) => {
+    let createdId: ID | null = null;
+    set((state) => {
+      const clip = state.clips[id];
+      const splitOffset = beat - (clip?.start ?? beat);
+      if (!clip || splitOffset <= 0 || splitOffset >= clip.duration) return state;
+
+      const now = Date.now() / 1000;
+      const leftNotes = clip.midiData?.notes
+        .filter((note) => note.start < splitOffset)
+        .map((note) => ({ ...note, duration: Math.min(note.duration, splitOffset - note.start) }));
+      const rightNotes = clip.midiData?.notes
+        .filter((note) => note.start + note.duration > splitOffset)
+        .map((note) => ({
+          ...note,
+          start: Math.max(0, note.start - splitOffset),
+          duration: Math.min(note.duration, note.start + note.duration - splitOffset),
+        }));
+      const right: Clip = {
+        ...clip,
+        id: newId,
+        name: `${clip.name} Split`,
+        start: beat,
+        duration: clip.duration - splitOffset,
+        midiData: clip.midiData ? { ...clip.midiData, notes: rightNotes ?? [] } : undefined,
+        audioSourceOffset: (clip.audioSourceOffset ?? 0) + splitOffset * secondsPerBeat,
+        createdAt: now,
+        updatedAt: now,
+      };
+      createdId = newId;
+      return {
+        clips: {
+          ...state.clips,
+          [id]: {
+            ...clip,
+            duration: splitOffset,
+            midiData: clip.midiData ? { ...clip.midiData, notes: leftNotes ?? [] } : undefined,
+            updatedAt: now,
+          },
+          [newId]: right,
+        },
+        tracks: state.tracks.map((track) =>
+          track.id === clip.trackId
+            ? { ...track, clips: [...track.clips.filter((clipId) => clipId !== newId), newId] }
+            : track
+        ),
         selectedClipId: newId,
       };
     });

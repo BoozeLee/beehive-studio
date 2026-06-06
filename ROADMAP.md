@@ -6,7 +6,7 @@
 
 ## Current Status: Phase 2 Complete ✅
 
-**Version:** 0.2.0  
+**Version:** 0.3.0-alpha
 **Date:** 2026-05-30
 
 ---
@@ -55,13 +55,13 @@
 
 **Goal:** Build a real digital audio workstation.
 
-- [ ] **Timeline/Arrangement View**: Linear sequencer with tracks
-- [ ] **Pattern Editor**: Step sequencer for drums and percussion
-- [ ] **Audio Engine**: Offline rendering + multi-track export
-- [ ] **Sample Management**: Load, slice, and trigger audio samples
-- [ ] **Effects Chain**: Basic FX (reverb, delay, filter, distortion)
-- [ ] **Automation**: Parameter automation curves
-- [ ] **Mixer**: Track-level volume, pan, mute, solo
+- [x] **Timeline/Arrangement View**: Linear sequencer with tracks
+- [x] **Pattern Editor**: Step sequencer for drums and percussion
+- [x] **Audio Engine**: Hybrid offline rendering + master/stem export
+- [x] **Sample Management**: Load, non-destructively slice, trigger, and consolidate audio samples
+- [x] **Effects Chain**: Persistent FX chains (reverb, delay, filter, distortion)
+- [x] **Automation**: Persistent parameter automation curves
+- [x] **Mixer**: Track-level volume, pan, mute, solo, sends, meters, and master
 
 ### Phase 4: Collaboration
 
@@ -114,7 +114,7 @@
 - Arrangement Agent (song structure)
 - VST Plugin (NIH-plug CLAP)
 
-### Sprint 3 (Planned)
+### Sprint 3 (Completed)
 
 - Timeline/Arrangement View
 - Pattern Editor

@@ -14,7 +14,7 @@ package = manifest["package"]
 source = SOURCE.read_text()
 
 assert package["name"] == "beehive-studio-vst"
-assert package["version"] == "0.2.0"
+assert package["version"] == "0.3.0-alpha"
 assert "Beehive Studio" in package["description"]
 assert 'const NAME: &\'static str = "Beehive Studio"' in source
 assert 'const CLAP_ID: &\'static str = "studio.beehive"' in source

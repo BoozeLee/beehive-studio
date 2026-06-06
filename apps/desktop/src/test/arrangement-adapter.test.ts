@@ -123,7 +123,7 @@ describe("arrangement adapter", () => {
       serializeProjectDocument(appClips, tracks, timelineClips, patterns)
     );
 
-    expect(document.version).toBe(3);
+    expect(document.version).toBe(4);
     expect(document.timeline.tracks[0].clips).toEqual(["clip-1"]);
     expect(document.timeline.clips["clip-1"].start).toBe(8);
     expect(document.patterns[0].name).toBe("Pattern A");
@@ -135,5 +135,35 @@ describe("arrangement adapter", () => {
         timeline: { tracks, clips: timelineClips },
       }).patterns
     ).toEqual([]);
+    expect(document.settings.renderEngine).toBe("python");
+  });
+
+  it("includes audio clips and persistent track processing in render payloads", () => {
+    const audioTrack = track("audio-1", {
+      type: "audio",
+      clips: ["sample-1"],
+      effects: [{ id: "fx-1", type: "filter", params: { frequency: 1200 }, bypass: false }],
+      automationLanes: [
+        { id: "lane-1", parameter: "fx.fx-1.frequency", points: [{ time: 0, value: 800 }] },
+      ],
+    });
+    const audioClip = clip("sample-1", "audio-1", {
+      type: "audio",
+      midiData: undefined,
+      audioFilePath: "/samples/kick.wav",
+      audioSourceOffset: 0.25,
+      gain: 0.7,
+    });
+
+    const payload = buildArrangementRenderPayload([audioTrack], { "sample-1": audioClip });
+
+    expect(payload.renderClips[0]).toMatchObject({
+      audioFilePath: "/samples/kick.wav",
+      sourceOffset: 0.25,
+      gain: 0.7,
+      start: 8,
+    });
+    expect(payload.mixerTracks[0].effects?.[0].id).toBe("fx-1");
+    expect(payload.mixerTracks[0].automationLanes?.[0].parameter).toBe("fx.fx-1.frequency");
   });
 });

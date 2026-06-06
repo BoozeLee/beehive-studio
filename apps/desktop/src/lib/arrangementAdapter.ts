@@ -12,16 +12,24 @@ export interface AppClip {
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
   sourcePatternId?: ID;
+  audioFilePath?: string;
+  audioSourceOffset?: number;
+  audioSourceDuration?: number;
+  gain?: number;
 }
 
-export interface ProjectDocumentV3 {
-  version: 3;
+export interface ProjectDocumentV4 {
+  version: 4;
   clips: AppClip[];
   timeline: {
     tracks: Track[];
     clips: Record<ID, TimelineClip>;
   };
   patterns: PatternRecord[];
+  settings: {
+    masterGain: number;
+    renderEngine: "python" | "desktop";
+  };
 }
 
 export interface ArrangementPayload {
@@ -78,11 +86,15 @@ function sortedTimelineClips(tracks: Track[], clips: Record<ID, TimelineClip>): 
 export function buildMixerTrackState(tracks: Track[]): MixerTrackState[] {
   return tracks.map((track) => ({
     id: String(track.id),
+    name: track.name,
     volume: track.volume,
     pan: track.pan,
     muted: track.muted,
     solo: track.solo,
     instrument: instrumentForTrack(track),
+    effects: track.effects,
+    sends: track.sends,
+    automationLanes: track.automationLanes,
   }));
 }
 
@@ -104,12 +116,17 @@ export function buildArrangementRenderPayload(
       start: clip.start + note.start,
       duration: note.duration,
     }));
-    if (notes.length === 0) continue;
+    if (notes.length === 0 && !clip.audioFilePath) continue;
 
     renderClips.push({
       id: clip.id,
       notes,
       channel: track.id,
+      start: clip.start,
+      audioFilePath: clip.audioFilePath,
+      sourceOffset: clip.audioSourceOffset ?? 0,
+      duration: clip.duration,
+      gain: clip.gain ?? 1,
     });
   }
 
@@ -147,7 +164,7 @@ export function buildArrangementPlaybackClips(
     if (!entry || !isAudibleTrack(entry.track, hasSolo)) continue;
 
     const notes = clipNotesWithinDuration(clip);
-    if (notes.length === 0) continue;
+    if (notes.length === 0 && !clip.audioFilePath) continue;
 
     scheduled.push({
       id: clip.id,
@@ -155,7 +172,12 @@ export function buildArrangementPlaybackClips(
       startBeat: clip.start,
       loop: clip.loop,
       channel: entry.index,
+      channelId: String(entry.track.id),
       instrument: clip.playback?.instrument ?? instrumentForTrack(entry.track),
+      audioFilePath: clip.audioFilePath,
+      sourceOffset: clip.audioSourceOffset ?? 0,
+      duration: clip.duration,
+      gain: clip.gain ?? 1,
     });
   }
 
@@ -166,48 +188,56 @@ export function serializeProjectDocument(
   clips: AppClip[],
   tracks: Track[],
   timelineClips: Record<ID, TimelineClip>,
-  patterns: PatternRecord[] = []
+  patterns: PatternRecord[] = [],
+  settings: ProjectDocumentV4["settings"] = { masterGain: 0.9, renderEngine: "python" }
 ): string {
-  const document: ProjectDocumentV3 = {
-    version: 3,
+  const document: ProjectDocumentV4 = {
+    version: 4,
     clips,
     timeline: {
       tracks,
       clips: timelineClips,
     },
     patterns,
+    settings,
   };
   return JSON.stringify(document);
 }
 
-export function parseProjectDocument(raw: string | unknown): ProjectDocumentV3 {
+export function parseProjectDocument(raw: string | unknown): ProjectDocumentV4 {
   const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
   if (
     parsed &&
     typeof parsed === "object" &&
     !Array.isArray(parsed) &&
     ((parsed as { version?: unknown }).version === 2 ||
-      (parsed as { version?: unknown }).version === 3)
+      (parsed as { version?: unknown }).version === 3 ||
+      (parsed as { version?: unknown }).version === 4)
   ) {
-    const document = parsed as Partial<ProjectDocumentV3>;
+    const document = parsed as Partial<ProjectDocumentV4>;
     return {
-      version: 3,
+      version: 4,
       clips: document.clips ?? [],
       timeline: {
         tracks: document.timeline?.tracks ?? [],
         clips: document.timeline?.clips ?? {},
       },
       patterns: document.patterns ?? [],
+      settings: {
+        masterGain: document.settings?.masterGain ?? 0.9,
+        renderEngine: document.settings?.renderEngine ?? "python",
+      },
     };
   }
 
   return {
-    version: 3,
+    version: 4,
     clips: Array.isArray(parsed) ? (parsed as AppClip[]) : [],
     timeline: {
       tracks: [],
       clips: {},
     },
     patterns: [],
+    settings: { masterGain: 0.9, renderEngine: "python" },
   };
 }

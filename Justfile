@@ -38,7 +38,7 @@ render:
 
 # Full release readiness check.
 release-check:
-    bash scripts/release-check.sh 0.2.0
+    bash scripts/release-check.sh 0.3.0-alpha
 
 # Optional desktop/package build. AppImage is intentionally disabled on Arch.
 build-desktop:

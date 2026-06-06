@@ -16,13 +16,25 @@ import { PianoRoll } from "./components/PianoRoll/PianoRoll";
 import { exportProjectAudio } from "./lib/audioEngine";
 import { ExportAudioDialog } from "./components/ExportAudioDialog";
 import { summarizeRender, type RenderPreset } from "./lib/exportWorkflow";
-import { initMixer, createChannel, removeChannel, updateChannel } from "./lib/audioMixer";
+import {
+  initMixer,
+  createChannel,
+  getMasterState,
+  removeChannel,
+  setMasterGain,
+  updateChannel,
+} from "./lib/audioMixer";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
 import { EffectsChain } from "./components/Mixer/EffectsChain";
-import type { EffectInstance } from "./lib/effectEngine";
 import { AutomationLaneView } from "./components/Timeline/AutomationLane";
 import { Mixer } from "./components/Mixer/Mixer";
-import type { AutomationLane } from "./lib/automationEngine";
+import {
+  addAutomationPoint,
+  automationValuesAtBeat,
+  createAutomationLane,
+  removeAutomationPoint,
+  type AutomationLane,
+} from "./lib/automationEngine";
 import { BranchSelector } from "./components/BranchSelector";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { saveSnapshot, ensureProjectInit, forkSession, readClips } from "./lib/projectGit";
@@ -38,13 +50,15 @@ import {
   buildArrangementRenderPayload,
   parseProjectDocument,
   serializeProjectDocument,
-  type ProjectDocumentV3,
+  type ProjectDocumentV4,
 } from "./lib/arrangementAdapter";
 import {
   createDefaultPattern,
   resolvePatternTargetTrack,
   usePatternBankStore,
 } from "./lib/patternBankStore";
+import { consolidateProjectAssets, resolveProjectAsset } from "./lib/projectAssets";
+import { cancelRenderJob, createRenderJob, waitForRenderJob } from "./lib/renderJobs";
 
 interface Clip {
   id: string;
@@ -62,6 +76,10 @@ interface Clip {
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
   sourcePatternId?: string;
+  audioFilePath?: string;
+  audioSourceOffset?: number;
+  audioSourceDuration?: number;
+  gain?: number;
 }
 
 const COLORS = {
@@ -121,16 +139,26 @@ function App() {
   } = usePatternBankStore();
   const [showSamples, setShowSamples] = useState(false);
   const [showEffects, setShowEffects] = useState(false);
-  const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
   const [showMixer, setShowMixer] = useState(false);
   const [showGit, setShowGit] = useState(false);
-  const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
   const [renderPreset, setRenderPreset] = useState<RenderPreset>("festival");
+  const [renderEngine, setRenderEngine] = useState<"python" | "desktop">("python");
+  const [renderOutputMode, setRenderOutputMode] = useState<"master" | "master_and_stems">("master");
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [isExportingAudio, setIsExportingAudio] = useState(false);
+  const [activeRenderJobId, setActiveRenderJobId] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState({ progress: 0, label: "Preparing" });
   const selectedPattern = patterns.find((pattern) => pattern.id === selectedPatternId) ?? null;
   const selectedTimelineClip = selectedClipId ? timelineClips[selectedClipId] : undefined;
+  const selectedTimelineTrack = timelineTracks.find((track) => track.id === selectedTrackId);
+  const selectedTrackEffects = selectedTimelineTrack?.effects ?? [];
+  const automationLanes: AutomationLane[] = (selectedTimelineTrack?.automationLanes ?? []).map(
+    (lane) => ({
+      ...lane,
+      trackId: selectedTimelineTrack?.id ?? "",
+      mode: lane.mode ?? "read",
+    })
+  );
   const exportPayload = useMemo(
     () =>
       buildArrangementRenderPayload(
@@ -145,7 +173,7 @@ function App() {
   );
 
   const restoreProjectDocument = useCallback(
-    (document: ProjectDocumentV3) => {
+    (document: ProjectDocumentV4) => {
       const currentTracks = useTimelineStore.getState().tracks;
       for (const track of currentTracks) removeChannel(track.id);
 
@@ -153,6 +181,8 @@ function App() {
       setTimelineTracks(document.timeline.tracks);
       setTimelineClips(document.timeline.clips as never);
       setPatterns(document.patterns);
+      setRenderEngine(document.settings.renderEngine);
+      setMasterGain(document.settings.masterGain);
       for (const track of document.timeline.tracks) {
         createChannel(track.id, track.name);
       }
@@ -166,9 +196,10 @@ function App() {
       clips,
       timeline.tracks,
       timeline.clips as Record<string, TimelineClip>,
-      patterns
+      patterns,
+      { masterGain: getMasterState().gain, renderEngine }
     );
-  }, [clips, patterns]);
+  }, [clips, patterns, renderEngine]);
 
   const playArrangement = useCallback(async () => {
     const { tracks, clips: timelineClips } = useTimelineStore.getState();
@@ -181,11 +212,35 @@ function App() {
     setStatus("Playing arrangement...");
     transport.clearAll();
     for (const clip of scheduled) {
-      transport.scheduleClip(clip);
+      const audioFilePath = clip.audioFilePath
+        ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
+        : undefined;
+      transport.scheduleClip({ ...clip, audioFilePath });
     }
     transport.seek(0);
     await transport.play();
-  }, [transport]);
+  }, [projectName, transport]);
+
+  const handleConsolidateProject = useCallback(async () => {
+    try {
+      await ensureProjectInit(projectName);
+      const timeline = useTimelineStore.getState();
+      const result = await consolidateProjectAssets(
+        projectName,
+        timeline.clips as Record<string, TimelineClip>
+      );
+      setTimelineClips(result.clips as never);
+      setClips((prev) =>
+        prev.map((clip) => ({
+          ...clip,
+          audioFilePath: result.clips[clip.id]?.audioFilePath ?? clip.audioFilePath,
+        }))
+      );
+      setStatus(result.count > 0 ? `Consolidated ${result.count} sample assets` : "Project already consolidated");
+    } catch (err) {
+      setStatus(`Consolidation failed: ${String(err)}`);
+    }
+  }, [projectName, setTimelineClips]);
 
   const handleTransportPlay = useCallback(() => {
     if (showTimeline) {
@@ -320,9 +375,32 @@ function App() {
         volume: track.volume,
         pan: track.pan,
         armed: track.arm,
+        fxReturns: track.sends,
       });
     }
   }, [timelineTracks]);
+
+  useEffect(() => {
+    if (!transport.isPlaying) return;
+    for (const track of timelineTracks) {
+      const values = automationValuesAtBeat(
+        track.automationLanes.map((lane) => ({
+          ...lane,
+          trackId: track.id,
+          mode: lane.mode ?? "read",
+        })),
+        transport.currentBeat
+      );
+      updateChannel(track.id, {
+        volume: values.volume,
+        pan: values.pan,
+        fxReturns: {
+          ...(values["send.reverb"] !== undefined ? { reverb: values["send.reverb"] } : {}),
+          ...(values["send.delay"] !== undefined ? { delay: values["send.delay"] } : {}),
+        },
+      });
+    }
+  }, [timelineTracks, transport.currentBeat, transport.isPlaying]);
 
   const handleAddTrack = useCallback(() => {
     const trackId = crypto.randomUUID();
@@ -430,9 +508,9 @@ function App() {
 
   // Play a single clip using the transport
   const playClip = useCallback(
-    (clip: Clip) => {
-      if (!clip.midiData?.notes?.length) {
-        alert("No MIDI data in this clip");
+    async (clip: Clip) => {
+      if (!clip.midiData?.notes?.length && !clip.audioFilePath) {
+        setStatus("Clip has no playable content");
         return;
       }
 
@@ -440,18 +518,43 @@ function App() {
 
       const scheduled: ScheduledClip = {
         id: clip.id,
-        notes: clip.midiData.notes,
+        notes: clip.midiData?.notes ?? [],
         startBeat: 0,
         loop: false,
         channel: 0,
+        audioFilePath: clip.audioFilePath
+          ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
+          : undefined,
+        sourceOffset: clip.audioSourceOffset,
+        duration: clip.duration,
+        gain: clip.gain,
       };
 
       transport.clearAll();
       transport.scheduleClip(scheduled);
-      transport.play();
+      await transport.play();
     },
-    [transport]
+    [projectName, transport]
   );
+
+  const launchSessionScene = useCallback(async () => {
+    const state = useTimelineStore.getState();
+    const scheduled = buildArrangementPlaybackClips(
+      state.tracks,
+      state.clips as Record<string, TimelineClip>
+    );
+    const resolved = await Promise.all(
+      scheduled.map(async (clip) => ({
+        ...clip,
+        startBeat: 0,
+        audioFilePath: clip.audioFilePath
+          ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
+          : undefined,
+      }))
+    );
+    await transport.launchScene(resolved);
+    setStatus(`Launched scene with ${resolved.length} clips`);
+  }, [projectName, transport]);
 
   async function sendBrief(variationBrief?: string) {
     const text = variationBrief ?? brief;
@@ -744,18 +847,80 @@ function App() {
 
       setIsExportingAudio(true);
       setExportProgress({ progress: 0, label: "Preparing arrangement" });
-      setStatus(`Rendering audio (${renderPreset} preset)...`);
-      const wavData = await exportProjectAudio(
-        exportPayload.renderClips,
-        transport.bpm,
-        renderPreset,
-        exportPayload.mixerTracks,
-        setExportProgress
+      const resolvedClips = await Promise.all(
+        exportPayload.renderClips.map(async (clip) => ({
+          ...clip,
+          audioFilePath: clip.audioFilePath
+            ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
+            : undefined,
+        }))
       );
+      let wavData: Uint8Array;
+      let stemSources: string[] = [];
+      let usedEngine: "python" | "desktop" = renderEngine;
+      if (renderEngine === "python") {
+        try {
+          setStatus(`Rendering audio with Python HQ (${renderPreset})...`);
+          const created = await createRenderJob(
+            resolvedClips,
+            exportPayload.mixerTracks,
+            transport.bpm,
+            renderPreset,
+            renderOutputMode
+          );
+          setActiveRenderJobId(created.id);
+          const completed = await waitForRenderJob(created.id, (job) =>
+            setExportProgress({ progress: job.progress, label: job.stage })
+          );
+          if (!completed.master_path) throw new Error("Python renderer returned no master");
+          wavData = new Uint8Array(await invoke<number[]>("read_file_bytes", { path: completed.master_path }));
+          stemSources = completed.stem_paths ?? [];
+        } catch (error) {
+          usedEngine = "desktop";
+          setStatus(`Python renderer unavailable; using desktop fallback: ${String(error)}`);
+          wavData = await exportProjectAudio(
+            resolvedClips,
+            transport.bpm,
+            renderPreset,
+            exportPayload.mixerTracks,
+            setExportProgress
+          );
+        }
+      } else {
+        setStatus(`Rendering audio locally (${renderPreset})...`);
+        wavData = await exportProjectAudio(
+          resolvedClips,
+          transport.bpm,
+          renderPreset,
+          exportPayload.mixerTracks,
+          setExportProgress
+        );
+      }
       await invoke("write_file_bytes", {
         path: savePath,
         data: Array.from(wavData),
       });
+      const directory = savePath.replace(/[\\/][^\\/]+$/, "");
+      if (renderOutputMode === "master_and_stems") {
+        if (stemSources.length > 0) {
+          for (const stemPath of stemSources) {
+            const filename = stemPath.split(/[\\/]/).pop() ?? "stem.wav";
+            const data = await invoke<number[]>("read_file_bytes", { path: stemPath });
+            await invoke("write_file_bytes", { path: `${directory}/${filename}`, data });
+          }
+        } else {
+          for (const track of exportPayload.mixerTracks) {
+            const trackClips = resolvedClips.filter((clip) => String(clip.channel) === track.id);
+            if (trackClips.length === 0) continue;
+            const stem = await exportProjectAudio(trackClips, transport.bpm, renderPreset, [track]);
+            const filename = `${track.name ?? track.id}`.replace(/[^a-z0-9_-]+/gi, "_");
+            await invoke("write_file_bytes", {
+              path: `${directory}/${filename}.wav`,
+              data: Array.from(stem),
+            });
+          }
+        }
+      }
       let revealWarning = "";
       if (revealAfterSave) {
         try {
@@ -764,11 +929,12 @@ function App() {
           revealWarning = " (could not reveal file)";
         }
       }
-      setStatus(`✓ Audio exported to ${savePath}${revealWarning}`);
+      setStatus(`✓ Audio exported with ${usedEngine} renderer to ${savePath}${revealWarning}`);
       setShowExportDialog(false);
     } catch (err) {
       setStatus(`Audio export failed: ${String(err)}`);
     } finally {
+      setActiveRenderJobId(null);
       setIsExportingAudio(false);
     }
   }
@@ -1171,6 +1337,18 @@ function App() {
                 🆕 Template
               </button>
               <button
+                onClick={handleConsolidateProject}
+                disabled={!Object.values(timelineClips).some((clip) => clip.audioFilePath)}
+                style={{
+                  ...buttonStyle(!Object.values(timelineClips).some((clip) => clip.audioFilePath)),
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  background: "#2a4a5a",
+                }}
+              >
+                Consolidate
+              </button>
+              <button
                 onClick={handleFork}
                 disabled={clips.length === 0}
                 style={{
@@ -1336,6 +1514,30 @@ function App() {
                   snapToGrid
                   gridDivision={0.25}
                 />
+              ) : selectedTimelineClip?.audioFilePath ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <strong style={{ fontSize: 12 }}>{selectedTimelineClip.name}</strong>
+                  <label style={{ fontSize: 11, color: COLORS.textMuted }}>
+                    Clip gain
+                    <input
+                      aria-label="Audio clip gain"
+                      type="range"
+                      min={0}
+                      max={2}
+                      step={0.01}
+                      value={selectedTimelineClip.gain ?? 1}
+                      onChange={(event) =>
+                        useTimelineStore.getState().updateClip(selectedTimelineClip.id, {
+                          gain: Number(event.target.value),
+                          updatedAt: Date.now() / 1000,
+                        })
+                      }
+                    />
+                  </label>
+                  <span style={{ fontSize: 10, color: COLORS.textMuted }}>
+                    Source offset {(selectedTimelineClip.audioSourceOffset ?? 0).toFixed(2)}s
+                  </span>
+                </div>
               ) : (
                 <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
                   Select a MIDI clip in the Timeline to edit it in Piano Roll.
@@ -1364,14 +1566,60 @@ function App() {
 
           {showSamples && (
             <SampleBrowser
-              onSampleSelect={(_path, info) => {
+              onSampleSelect={(path, info) => {
+                const state = useTimelineStore.getState();
+                let targetTrack = state.tracks.find(
+                  (track) => track.id === state.selectedTrackId && track.type === "audio"
+                ) ?? state.tracks.find((track) => track.type === "audio");
+                if (!targetTrack) {
+                  targetTrack = {
+                    id: crypto.randomUUID(),
+                    name: "Audio",
+                    type: "audio",
+                    color: "#4ade80",
+                    volume: 0.8,
+                    pan: 0,
+                    muted: false,
+                    solo: false,
+                    arm: false,
+                    clips: [],
+                    automationLanes: [],
+                  };
+                  addTrack(targetTrack);
+                  createChannel(targetTrack.id, targetTrack.name);
+                }
+                const clipId = crypto.randomUUID();
+                const duration = info.duration_secs > 0 ? info.duration_secs * (transport.bpm / 60) : 4;
+                const now = Date.now() / 1000;
+                addTimelineClip({
+                  id: clipId,
+                  name: info.filename.replace(/\.[^.]+$/, ""),
+                  type: "audio",
+                  trackId: targetTrack.id,
+                  start: state.cursorPosition,
+                  duration,
+                  loop: false,
+                  color: "#4ade80",
+                  audioFilePath: path,
+                  audioSourceOffset: 0,
+                  audioSourceDuration: info.duration_secs || undefined,
+                  gain: 1,
+                  playback: { instrument: "sample" },
+                  metadata: { generative: false },
+                  createdAt: now,
+                  updatedAt: now,
+                });
                 setClips((prev) => [
                   ...prev,
                   {
-                    id: crypto.randomUUID(),
+                    id: clipId,
                     name: info.filename.replace(/\.[^.]+$/, ""),
-                    duration: info.duration_secs > 0 ? info.duration_secs * (transport.bpm / 60) : 2,
+                    duration,
                     color: "#3a5a2a",
+                    audioFilePath: path,
+                    audioSourceOffset: 0,
+                    audioSourceDuration: info.duration_secs || undefined,
+                    gain: 1,
                   },
                 ]);
                 setStatus(`Sample loaded: ${info.filename}`);
@@ -1380,10 +1628,55 @@ function App() {
           )}
 
           {showEffects && (
-            <EffectsChain
-              effects={selectedTrackEffects}
-              onChange={setSelectedTrackEffects}
-            />
+            <div style={panelStyle}>
+              {selectedTimelineTrack ? (
+                <>
+                  <EffectsChain
+                    effects={selectedTrackEffects}
+                    onChange={(effects) => updateTrack(selectedTimelineTrack.id, { effects })}
+                  />
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {[
+                      "volume",
+                      "pan",
+                      "send.reverb",
+                      "send.delay",
+                      ...selectedTrackEffects.flatMap((effect) =>
+                        Object.keys(effect.params).map((param) => `fx.${effect.id}.${param}`)
+                      ),
+                    ].map((parameter) => (
+                      <button
+                        key={parameter}
+                        disabled={selectedTimelineTrack.automationLanes.some(
+                          (lane) => lane.parameter === parameter
+                        )}
+                        onClick={() => {
+                          const lane = createAutomationLane(selectedTimelineTrack.id, parameter);
+                          updateTrack(selectedTimelineTrack.id, {
+                            automationLanes: [
+                              ...selectedTimelineTrack.automationLanes,
+                              {
+                                id: lane.id,
+                                parameter: lane.parameter,
+                                points: lane.points,
+                                mode: "read",
+                              },
+                            ],
+                          });
+                        }}
+                        style={{ ...buttonStyle(false), padding: "4px 8px", fontSize: 10 }}
+                      >
+                        Automate {parameter}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
+                  Select a track to edit its FX and automation.
+                </div>
+              )}
+            </div>
           )}
 
           {showMixer && (
@@ -1403,33 +1696,26 @@ function App() {
                 isPlaying={transport.isPlaying}
                 currentBeat={transport.currentBeat}
                 onAddPoint={(time: number, value: number) => {
-                  setAutomationLanes((prev) =>
-                    prev.map((l) =>
-                      l.id === lane.id
-                        ? {
-                            ...l,
-                            points: [
-                              ...l.points,
-                              { time, value },
-                            ].sort((a, b) => a.time - b.time),
-                          }
-                        : l
-                    )
-                  );
+                  if (!selectedTimelineTrack) return;
+                  const updated = addAutomationPoint(lane, time, value);
+                  updateTrack(selectedTimelineTrack.id, {
+                    automationLanes: selectedTimelineTrack.automationLanes.map((item) =>
+                      item.id === lane.id
+                        ? { id: updated.id, parameter: updated.parameter, points: updated.points, mode: updated.mode }
+                        : item
+                    ),
+                  });
                 }}
                 onRemovePoint={(time: number) => {
-                  setAutomationLanes((prev) =>
-                    prev.map((l) =>
-                      l.id === lane.id
-                        ? {
-                            ...l,
-                            points: l.points.filter(
-                              (p) => Math.abs(p.time - time) >= 0.01
-                            ),
-                          }
-                        : l
-                    )
-                  );
+                  if (!selectedTimelineTrack) return;
+                  const updated = removeAutomationPoint(lane, time);
+                  updateTrack(selectedTimelineTrack.id, {
+                    automationLanes: selectedTimelineTrack.automationLanes.map((item) =>
+                      item.id === lane.id
+                        ? { id: updated.id, parameter: updated.parameter, points: updated.points, mode: updated.mode }
+                        : item
+                    ),
+                  });
                 }}
               />
             ))}
@@ -1474,6 +1760,7 @@ function App() {
               <Timeline
                 isPlaying={transport.isPlaying}
                 currentBeat={transport.currentBeat}
+                bpm={transport.bpm}
                 onPlayClip={(id) => {
                   const clip = clips.find((c) => c.id === id);
                   if (clip) playClip(clip);
@@ -1488,6 +1775,7 @@ function App() {
               <div style={{ flex: 1, overflow: "auto" }}>
                 <SessionViewGrid
                   clips={clips}
+                  onLaunchScene={launchSessionScene}
                   onPlayClip={(id) => {
                     const clip = clips.find((c) => c.id === id);
                     if (clip) playClip(clip);
@@ -1674,8 +1962,20 @@ function App() {
         progress={exportProgress.progress}
         progressLabel={exportProgress.label}
         summary={exportSummary}
+        renderEngine={renderEngine}
+        outputMode={renderOutputMode}
         onPresetChange={setRenderPreset}
+        onRenderEngineChange={setRenderEngine}
+        onOutputModeChange={setRenderOutputMode}
         onClose={() => setShowExportDialog(false)}
+        onCancelExport={
+          activeRenderJobId
+            ? () => {
+                void cancelRenderJob(activeRenderJobId);
+                setStatus("Render cancellation requested");
+              }
+            : undefined
+        }
         onExport={handleExportAudio}
       />
 
@@ -1692,7 +1992,7 @@ function App() {
         <span>Backend: 9876</span>
         <span>Ollama: 11434</span>
         <span>Baker Street: 3001</span>
-        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.2.0</span>
+        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.3.0-alpha</span>
       </div>
     </div>
   );

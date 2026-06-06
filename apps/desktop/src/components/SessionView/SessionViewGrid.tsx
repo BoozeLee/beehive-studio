@@ -29,6 +29,7 @@ interface Props {
   onAccept?: (clipId: string) => void;
   onReject?: (clipId: string) => void;
   onVariations?: (clipId: string) => void;
+  onLaunchScene?: () => void;
 }
 
 const AGENT_COLORS: Record<string, string> = {
@@ -68,7 +69,14 @@ function noteDensityBars(notes: Note[], totalDuration: number, divisions: number
   return bucket.map((v) => v / max);
 }
 
-export function SessionViewGrid({ clips, onPlayClip, onAccept, onReject, onVariations }: Props) {
+export function SessionViewGrid({
+  clips,
+  onPlayClip,
+  onAccept,
+  onReject,
+  onVariations,
+  onLaunchScene,
+}: Props) {
   if (clips.length === 0) {
     return (
       <div
@@ -93,14 +101,18 @@ export function SessionViewGrid({ clips, onPlayClip, onAccept, onReject, onVaria
   }
 
   return (
-    <div
-      style={{
+    <>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 4px 8px" }}>
+        <ActionBtn onClick={onLaunchScene} accent={BEEHIVE.comb}>
+          Launch Scene
+        </ActionBtn>
+      </div>
+      <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
         gap: 12,
         padding: 4,
-      }}
-    >
+      }}>
       {clips.map((clip) => {
         const color = inferClipColor(clip.name, clip.color);
         const notes = clip.midiData?.notes ?? [];
@@ -260,7 +272,8 @@ export function SessionViewGrid({ clips, onPlayClip, onAccept, onReject, onVaria
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 

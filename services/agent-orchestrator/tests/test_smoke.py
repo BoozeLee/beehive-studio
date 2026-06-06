@@ -89,6 +89,41 @@ def test_midi_tools():
     assert validate_notes(notes) is True
 
 
+def test_render_job_engine_writes_master_and_stems():
+    """Python render jobs should honor the shared arrangement contract."""
+    from api.main import RenderRequest, _render_request
+
+    result = _render_request(
+        RenderRequest(
+            clips=[
+                {
+                    "id": "clip-1",
+                    "channel": "track-1",
+                    "notes": [{"pitch": 60, "velocity": 100, "start": 0, "duration": 0.25}],
+                }
+            ],
+            tracks=[
+                {
+                    "id": "track-1",
+                    "name": "Lead",
+                    "volume": 0.8,
+                    "pan": 0,
+                    "effects": [],
+                    "automationLanes": [],
+                }
+            ],
+            bpm=120,
+            preset="draft",
+            output_mode="master_and_stems",
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert Path(result["master_path"]).exists()
+    assert len(result["stem_paths"]) == 1
+    assert Path(result["stem_paths"][0]).exists()
+
+
 def test_agents_endpoint_lists_all_alpha_agents():
     """FastAPI /agents should expose all alpha agents."""
     from api.main import list_agents
@@ -108,9 +143,9 @@ def test_agents_endpoint_lists_all_alpha_agents():
 
 
 def test_health_version_is_alpha():
-    """Health response should identify the 0.2 alpha service."""
+    """Health response should identify the Phase 3 alpha service."""
     from api.main import health
 
     payload = asyncio.run(health())
     assert payload["status"] == "ok"
-    assert payload["version"] == "0.2.0-alpha"
+    assert payload["version"] == "0.3.0-alpha"

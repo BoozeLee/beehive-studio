@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio_commands;
+mod asset_commands;
 mod git_commands;
 mod sample_commands;
 
@@ -184,6 +185,31 @@ async fn send_agent_request(
     Ok(data)
 }
 
+#[tauri::command]
+async fn backend_request(
+    method: String,
+    endpoint: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:9876/{}", endpoint.trim_start_matches('/'));
+    let request = match method.to_uppercase().as_str() {
+        "GET" => client.get(&url),
+        "DELETE" => client.delete(&url),
+        _ => client.post(&url),
+    };
+    let response = if let Some(value) = body {
+        request.json(&value).send().await
+    } else {
+        request.send().await
+    }
+    .map_err(|e| format!("Failed to connect to backend: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Backend returned error: {}", response.status()));
+    }
+    response.json().await.map_err(|e| format!("Failed to parse backend response: {}", e))
+}
+
 /// Export MIDI file via backend, copy to user-selected location.
 #[tauri::command]
 async fn export_midi(
@@ -316,11 +342,14 @@ fn main() {
             read_file_bytes,
             write_file_bytes,
             send_agent_request,
+            backend_request,
             list_midi_ports,
             open_midi_input,
             close_midi_input,
             audio_commands::write_wav_file,
             audio_commands::export_audio_stems,
+            asset_commands::consolidate_project_assets,
+            asset_commands::resolve_project_asset,
             sample_commands::get_sample_info,
             sample_commands::load_sample,
             git_commands::git_init_project,

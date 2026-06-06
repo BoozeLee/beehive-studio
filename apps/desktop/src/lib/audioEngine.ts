@@ -1,4 +1,5 @@
 import * as Tone from "tone";
+import { invoke } from "@tauri-apps/api/core";
 import { RENDER_PRESETS, type RenderPreset } from "./exportWorkflow";
 
 export interface RenderNote {
@@ -12,15 +13,29 @@ export interface RenderClip {
   id: string;
   notes: RenderNote[];
   channel?: string | number;
+  start?: number;
+  audioFilePath?: string;
+  sourceOffset?: number;
+  duration?: number;
+  gain?: number;
 }
 
 export interface MixerTrackState {
   id: string;
+  name?: string;
   volume: number;
   pan: number;
   muted: boolean;
   solo: boolean;
   instrument?: "synth" | "bass" | "pad" | "drum";
+  effects?: Array<{ id: string; type: string; params: Record<string, number>; bypass: boolean }>;
+  sends?: Record<string, number>;
+  automationLanes?: Array<{
+    id: string;
+    parameter: string;
+    points: Array<{ time: number; value: number }>;
+    mode?: string;
+  }>;
 }
 
 export type { RenderPreset } from "./exportWorkflow";
@@ -39,6 +54,9 @@ export async function renderAudioBuffer(
   // Calculate total duration
   let totalBeats = 0;
   for (const clip of clips) {
+    if (clip.audioFilePath) {
+      totalBeats = Math.max(totalBeats, (clip.start ?? 0) + (clip.duration ?? 0));
+    }
     for (const note of clip.notes) {
       const end = note.start + note.duration;
       if (end > totalBeats) totalBeats = end;
@@ -91,7 +109,59 @@ export async function renderAudioBuffer(
   }
 
   const toneBuffer = await offline.render();
-  return toneBuffer.get() as AudioBuffer;
+  const rendered = toneBuffer.get() as AudioBuffer;
+  return mixAudioClips(rendered, clips, bpm, mixerTracks);
+}
+
+async function mixAudioClips(
+  buffer: AudioBuffer,
+  clips: RenderClip[],
+  bpm: number,
+  mixerTracks?: MixerTrackState[]
+): Promise<AudioBuffer> {
+  const audioClips = clips.filter((clip) => clip.audioFilePath);
+  if (audioClips.length === 0) return buffer;
+  const hasSolo = mixerTracks?.some((track) => track.solo) ?? false;
+
+  for (const clip of audioClips) {
+    const track = mixerTracks?.find((item) => item.id === String(clip.channel ?? 0));
+    if (track?.muted || (hasSolo && track && !track.solo)) continue;
+    const data = await invoke<{
+      info: { sample_rate: number; channels: number };
+      samples: number[];
+    }>("load_sample", { path: clip.audioFilePath }).catch(() => null);
+    if (!data || data.samples.length === 0) continue;
+    const sourceRate = data.info.sample_rate;
+    const sourceChannels = Math.max(1, data.info.channels);
+    const sourceOffset = Math.floor((clip.sourceOffset ?? 0) * sourceRate) * sourceChannels;
+    const targetOffset = Math.floor(((clip.start ?? 0) / (bpm / 60)) * buffer.sampleRate);
+    const maxFrames = Math.floor(((clip.duration ?? Infinity) / (bpm / 60)) * sourceRate);
+    const gain = (clip.gain ?? 1) * (track?.volume ?? 0.8);
+    const pan = track?.pan ?? 0;
+    const leftGain = gain * (pan > 0 ? 1 - pan : 1);
+    const rightGain = gain * (pan < 0 ? 1 + pan : 1);
+    const availableFrames = Math.floor((data.samples.length - sourceOffset) / sourceChannels);
+    const frames = Math.min(availableFrames, maxFrames);
+
+    for (let frame = 0; frame < frames; frame++) {
+      const target = targetOffset + Math.floor((frame / sourceRate) * buffer.sampleRate);
+      if (target >= buffer.length) break;
+      const source = sourceOffset + frame * sourceChannels;
+      const left = data.samples[source] ?? 0;
+      const right = sourceChannels > 1 ? data.samples[source + 1] ?? left : left;
+      buffer.getChannelData(0)[target] = Math.max(
+        -1,
+        Math.min(1, buffer.getChannelData(0)[target] + left * leftGain)
+      );
+      if (buffer.numberOfChannels > 1) {
+        buffer.getChannelData(1)[target] = Math.max(
+          -1,
+          Math.min(1, buffer.getChannelData(1)[target] + right * rightGain)
+        );
+      }
+    }
+  }
+  return buffer;
 }
 
 function integratedLufs(buffer: AudioBuffer): number {
