@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio_commands;
+mod audio_engine;
 mod asset_commands;
 mod git_commands;
 mod sample_commands;
@@ -333,6 +334,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .manage(AudioEngineState { 
+            mixer: std::sync::Mutex::new(None) 
+        })
         .invoke_handler(tauri::generate_handler![
             send_brief,
             check_backend_health,
@@ -348,6 +352,11 @@ fn main() {
             close_midi_input,
             audio_commands::write_wav_file,
             audio_commands::export_audio_stems,
+            audio_engine::audio_engine_init,
+            audio_engine::audio_engine_start,
+            audio_engine::audio_engine_stop,
+            audio_engine::audio_engine_add_track,
+            audio_engine::audio_engine_remove_track,
             asset_commands::consolidate_project_assets,
             asset_commands::resolve_project_asset,
             sample_commands::get_sample_info,
