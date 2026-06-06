@@ -1,0 +1,12 @@
+[project]
+name = "beehive-rhythm-groove-agent"
+version = "0.5.0-alpha"
+dependencies = [
+    "mcp>=1.27.1",
+    "pydantic>=2.0",
+    "httpx",
+]
+requires-python = ">=3.11"
+
+[project.scripts]
+beehive-rhythm-agent = "rhythm_groove.server:main"

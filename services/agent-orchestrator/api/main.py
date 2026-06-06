@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from api.inference import inference_client
+from api.mcp_client import fleet_client
 
 APP_VERSION = "0.4.0-beta"
 _OLLAMA_AVAILABLE_CACHE: bool | None = None
@@ -403,6 +404,16 @@ async def health():
 @app.get("/inference/health")
 async def inference_health():
     return await inference_client.health()
+
+
+@app.get("/agents/tools")
+async def list_agent_tools():
+    return await fleet_client.list_all_tools()
+
+
+@app.post("/agents/{agent}/tools/{tool}")
+async def call_agent_tool(agent: str, tool: str, arguments: dict):
+    return await fleet_client.call_tool(agent, tool, arguments)
 
 
 def _check_ollama() -> bool:
@@ -1407,10 +1418,24 @@ async def startup_event():
     """Initialize services on startup"""
     _render_worker_watchdog.start()
     print("Render worker watchdog started")
+    
+    # Connect MCP agent fleet
+    try:
+        import os
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        await fleet_client.connect_agent(
+            "rhythm-groove",
+            "uv",
+            ["run", "--directory", os.path.join(project_root, "..", "mcp-agents", "rhythm-groove"), "python", "-m", "rhythm_groove.server"],
+        )
+        print("MCP agent fleet connected")
+    except Exception as e:
+        print(f"Warning: Could not connect MCP agent fleet: {e}")
 
 # Stop watchdog on application shutdown
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup services on shutdown"""
     _render_worker_watchdog.stop()
+    await fleet_client.disconnect_all()
     print("Render worker watchdog stopped")
