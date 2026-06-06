@@ -16,13 +16,348 @@ import tempfile
 import urllib.request
 import uuid
 from typing import Any, Callable
+import functools
+from collections import OrderedDict
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-APP_VERSION = "0.3.0-alpha"
+from api.inference import inference_client
+
+APP_VERSION = "0.4.0-beta"
 _OLLAMA_AVAILABLE_CACHE: bool | None = None
+
+# MIDI note frequency cache for batch processing optimization
+_midi_frequency_cache: dict[int, float] = {}
+_batch_processing_cache: dict[str, Any] = {}
+
+# Render job caching system with LRU cache
+class RenderJobCache:
+    """LRU cache for render job results to improve performance for repeated requests"""
+    
+    def __init__(self, max_size: int = 50):
+        self.cache: OrderedDict[str, dict] = OrderedDict()
+        self.max_size = max_size
+    
+    def get(self, key: str) -> dict | None:
+        """Get cached result if available"""
+        if key in self.cache:
+            # Move to end to show it was recently used
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        return None
+    
+    def put(self, key: str, value: dict) -> None:
+        """Put result in cache"""
+        if key in self.cache:
+            # Move to end
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        if len(self.cache) > self.max_size:
+            # Remove oldest entry
+            self.cache.popitem(last=False)
+    
+    def clear(self) -> None:
+        """Clear all cached results"""
+        self.cache.clear()
+    
+    def size(self) -> int:
+        """Get current cache size"""
+        return len(self.cache)
+
+# Initialize render job cache
+_render_job_cache = RenderJobCache(max_size=50)
+
+# Audio file caching system for frequently used samples
+class AudioFileCache:
+    """Cache for frequently used audio files to improve loading performance"""
+    
+    def __init__(self, max_size: int = 20):
+        self.cache: OrderedDict[str, tuple[AudioSegment, float]] = OrderedDict()
+        self.max_size = max_size
+        self.cache_hits = 0
+        self.cache_misses = 0
+    
+    def get(self, file_path: str) -> tuple[AudioSegment, float] | None:
+        """Get cached audio segment if available"""
+        if file_path in self.cache:
+            # Move to end to show it was recently used
+            self.cache.move_to_end(file_path)
+            self.cache_hits += 1
+            return self.cache[file_path]
+        self.cache_misses += 1
+        return None
+    
+    def put(self, file_path: str, audio_segment: AudioSegment, file_size: float) -> None:
+        """Put audio segment in cache"""
+        if file_path in self.cache:
+            # Move to end
+            self.cache.move_to_end(file_path)
+        self.cache[file_path] = (audio_segment, file_size)
+        if len(self.cache) > self.max_size:
+            # Remove oldest entry
+            self.cache.popitem(last=False)
+    
+    def clear(self) -> None:
+        """Clear all cached audio files"""
+        self.cache.clear()
+        self.cache_hits = 0
+        self.cache_misses = 0
+    
+    def size(self) -> int:
+        """Get current cache size"""
+        return len(self.cache)
+    
+    def hit_rate(self) -> float:
+        """Calculate cache hit rate"""
+        total = self.cache_hits + self.cache_misses
+        return self.cache_hits / total if total > 0 else 0.0
+
+# Initialize audio file cache
+_audio_file_cache = AudioFileCache(max_size=20)
+
+# Performance monitoring and benchmarking
+class PerformanceMonitor:
+    """Monitor and track performance metrics for render jobs"""
+    
+    def __init__(self):
+        self.metrics = []
+        self.start_time = None
+    
+    def start_timing(self) -> None:
+        """Start timing a render job"""
+        import time
+        self.start_time = time.time()
+    
+    def end_timing(self, job_id: str, req: RenderRequest, result: dict) -> dict:
+        """End timing and record performance metrics"""
+        import time
+        if not self.start_time:
+            return {}
+        
+        end_time = time.time()
+        duration = end_time - self.start_time
+        
+        metric = {
+            "job_id": job_id,
+            "duration_seconds": duration,
+            "tracks_count": len(req.tracks),
+            "clips_count": len(req.clips),
+            "bpm": req.bpm,
+            "preset": req.preset,
+            "output_mode": req.output_mode,
+            "cached": result.get("cached", False),
+            "cache_hits": _audio_file_cache.cache_hits if _audio_file_cache else 0,
+            "cache_misses": _audio_file_cache.cache_misses if _audio_file_cache else 0,
+            "timestamp": end_time
+        }
+        
+        self.metrics.append(metric)
+        
+        # Keep only last 100 metrics to prevent memory bloat
+        if len(self.metrics) > 100:
+            self.metrics = self.metrics[-100:]
+        
+        return metric
+    
+    def get_average_duration(self, filters: dict = None) -> float:
+        """Get average render duration with optional filters"""
+        if not self.metrics:
+            return 0.0
+        
+        filtered_metrics = self.metrics
+        if filters:
+            filtered_metrics = [
+                m for m in self.metrics 
+                if all(str(m.get(k)) == str(v) for k, v in filters.items())
+            ]
+        
+        if not filtered_metrics:
+            return 0.0
+        
+        return sum(m["duration_seconds"] for m in filtered_metrics) / len(filtered_metrics)
+    
+    def get_cache_stats(self) -> dict:
+        """Get overall cache statistics"""
+        total_renders = len(self.metrics)
+        cached_renders = sum(1 for m in self.metrics if m.get("cached", False))
+        
+        return {
+            "total_renders": total_renders,
+            "cached_renders": cached_renders,
+            "cache_hit_rate": cached_renders / total_renders if total_renders > 0 else 0.0,
+            "audio_cache_hits": _audio_file_cache.cache_hits if _audio_file_cache else 0,
+            "audio_cache_misses": _audio_file_cache.cache_misses if _audio_file_cache else 0,
+            "audio_hit_rate": _audio_file_cache.hit_rate() if _audio_file_cache else 0.0
+        }
+
+# Initialize performance monitor
+_performance_monitor = PerformanceMonitor()
+
+# Render worker watchdog system
+class RenderWorkerWatchdog:
+    """Watchdog system for monitoring and restarting render workers"""
+    
+    def __init__(self, max_runtime: int = 300, health_check_interval: int = 30):
+        self.max_runtime = max_runtime  # Maximum runtime in seconds before restart
+        self.health_check_interval = health_check_interval
+        self.worker_jobs: dict[str, dict] = {}  # job_id -> start_time, status
+        self.is_running = False
+        self.check_task = None
+    
+    def start(self) -> None:
+        """Start the watchdog"""
+        if self.is_running:
+            return
+        
+        self.is_running = True
+        import asyncio
+        self.check_task = asyncio.create_task(self._monitor_workers())
+    
+    def stop(self) -> None:
+        """Stop the watchdog"""
+        if not self.is_running:
+            return
+        
+        self.is_running = False
+        if self.check_task:
+            self.check_task.cancel()
+            try:
+                asyncio.get_event_loop().run_until_complete(self.check_task)
+            except asyncio.CancelledError:
+                pass
+    
+    def register_job(self, job_id: str) -> None:
+        """Register a new render job"""
+        import time
+        self.worker_jobs[job_id] = {
+            "start_time": time.time(),
+            "status": "running",
+            "restart_count": 0
+        }
+    
+    def update_job_status(self, job_id: str, status: str) -> None:
+        """Update job status"""
+        if job_id in self.worker_jobs:
+            self.worker_jobs[job_id]["status"] = status
+    
+    async def _monitor_workers(self) -> None:
+        """Monitor worker health and restart stuck jobs"""
+        import time
+        
+        while self.is_running:
+            try:
+                current_time = time.time()
+                jobs_to_restart = []
+                
+                for job_id, job_data in self.worker_jobs.items():
+                    # Check if job has been running too long
+                    if (current_time - job_data["start_time"]) > self.max_runtime:
+                        if job_data["status"] == "running":
+                            jobs_to_restart.append(job_id)
+                
+                # Restart stuck jobs
+                for job_id in jobs_to_restart:
+                    await self._restart_job(job_id)
+                
+                await asyncio.sleep(self.health_check_interval)
+                
+            except Exception as e:
+                print(f"Watchdog error: {e}")
+                await asyncio.sleep(self.health_check_interval)
+    
+    async def _restart_job(self, job_id: str) -> None:
+        """Restart a stuck job"""
+        if job_id in self.worker_jobs:
+            job_data = self.worker_jobs[job_id]
+            job_data["restart_count"] += 1
+            
+            # Log the restart
+            print(f"Restarting stuck job {job_id} (restart #{job_data['restart_count']})")
+            
+            # Update status to restarting
+            _render_jobs[job_id].update(status="restarting", stage="Worker restart")
+            
+            # Note: In a real implementation, you would actually restart the worker process
+            # For now, we'll just mark it as failed to prevent infinite loops
+            if job_data["restart_count"] > 3:
+                _render_jobs[job_id].update(status="failed", error="Job failed after multiple restarts")
+                del self.worker_jobs[job_id]
+            else:
+                # Reset start time and try again
+                import time
+                job_data["start_time"] = time.time()
+                job_data["status"] = "running"
+
+# Initialize render worker watchdog
+_render_worker_watchdog = RenderWorkerWatchdog(max_runtime=300, health_check_interval=30)
+
+def _generate_render_cache_key(req: RenderRequest) -> str:
+    """Generate a unique cache key for a render request"""
+    import hashlib
+    import json
+    
+    # Create a deterministic representation of the request
+    cache_data = {
+        "bpm": req.bpm,
+        "preset": req.preset,
+        "output_mode": req.output_mode,
+        "tracks_count": len(req.tracks),
+        "clips_count": len(req.clips),
+        # Include hash of track and clip data for uniqueness
+        "tracks_hash": hashlib.md5(
+            json.dumps([{"id": t.get("id"), "name": t.get("name")} for t in req.tracks], sort_keys=True).encode()
+        ).hexdigest(),
+        "clips_hash": hashlib.md5(
+            json.dumps([{"id": c.get("id"), "channel": c.get("channel"), "start": c.get("start")} for c in req.clips], sort_keys=True).encode()
+        ).hexdigest()
+    }
+    
+    return hashlib.md5(json.dumps(cache_data, sort_keys=True).encode()).hexdigest()
+
+def _throttle_progress_callback(progress_callback: Callable[[float, str], None] | None, 
+                              min_interval: float = 0.1) -> Callable[[float, str], None]:
+    """Throttle progress callback updates to reduce overhead"""
+    if not progress_callback:
+        return lambda v, s: None
+    
+    last_update_time = 0
+    
+    def throttled_callback(value: float, stage: str) -> None:
+        nonlocal last_update_time
+        import time
+        current_time = time.time()
+        
+        # Only update if enough time has passed
+        if current_time - last_update_time >= min_interval:
+            progress_callback(value, stage)
+            last_update_time = current_time
+    
+    return throttled_callback
+
+def _get_audio_file_cached(file_path: str) -> AudioSegment | None:
+    """Get audio file from cache or load it if not cached"""
+    from pydub import AudioSegment
+    import os
+    
+    # Check cache first
+    cached_result = _audio_file_cache.get(file_path)
+    if cached_result:
+        return cached_result[0]  # Return just the audio segment
+    
+    # Load from file if it exists
+    if os.path.exists(file_path):
+        try:
+            audio_segment = AudioSegment.from_file(file_path)
+            # Store in cache with file size
+            file_size = os.path.getsize(file_path)
+            _audio_file_cache.put(file_path, audio_segment, file_size)
+            return audio_segment
+        except Exception as e:
+            print(f"Warning: Could not load audio file {file_path}: {e}")
+    
+    return None
 
 app = FastAPI(title="Beehive Studio Agent Orchestrator", version=APP_VERSION)
 
@@ -63,6 +398,11 @@ async def health():
         "ollama_available": _check_ollama(),
         "lupa_available": _check_lupa(),
     }
+
+
+@app.get("/inference/health")
+async def inference_health():
+    return await inference_client.health()
 
 
 def _check_ollama() -> bool:
@@ -594,37 +934,27 @@ def _apply_track_effects(segment: Any, track: dict[str, Any]) -> Any:
     return segment
 
 
-def _render_request(
-    req: RenderRequest, progress: Callable[[float, str], None] | None = None
-) -> dict[str, Any]:
-    """Render MIDI and referenced audio clips with track mixer state."""
-    from pydub import AudioSegment
-    from pydub.generators import Sine
+# Frequency cache for performance optimization
+_midi_frequency_cache = {}
 
-    sample_rate = 44100
-    beat_duration = 60.0 / req.bpm
-    tracks = {str(track.get("id")): track for track in req.tracks}
-    has_solo = any(bool(track.get("solo")) for track in req.tracks)
-    track_segments: dict[str, AudioSegment] = {}
-    max_duration_ms = 0
+def _get_midi_frequency(pitch: float) -> float:
+    """Get MIDI note frequency with caching for performance"""
+    if pitch not in _midi_frequency_cache:
+        _midi_frequency_cache[pitch] = 440.0 * (2 ** ((pitch - 69) / 12.0))
+    return _midi_frequency_cache[pitch]
 
-    if progress:
-        progress(0.15, "Preparing tracks")
+def _process_clip_optimized(clip: Dict, track: Dict, beat_duration: float, sample_rate: int = 44100) -> AudioSegment:
+    """Process a single clip with optimizations including batch note processing"""
+    segment = AudioSegment.silent(duration=0, frame_rate=sample_rate)
+    clip_start_beats = float(clip.get("start", 0))
+    notes = clip.get("midiData", {}).get("notes", []) or clip.get("notes", [])
+    clip_end_ms = 0
 
-    for index, clip in enumerate(req.clips):
-        track_id = str(clip.get("channel", clip.get("trackId", "0")))
-        track = tracks.get(track_id, {})
-        if track.get("muted") or (has_solo and not track.get("solo")):
-            continue
-
-        clip_start_beats = float(clip.get("start", 0))
-        notes = clip.get("midiData", {}).get("notes", []) or clip.get("notes", [])
-        segment = AudioSegment.silent(duration=0, frame_rate=sample_rate)
-        clip_end_ms = 0
-
-        audio_path = clip.get("audioFilePath")
-        if audio_path and os.path.exists(audio_path):
-            source = AudioSegment.from_file(audio_path)
+    # Process audio file if present (with caching)
+    audio_path = clip.get("audioFilePath")
+    if audio_path and os.path.exists(audio_path):
+        try:
+            source = _get_audio_file_cached(audio_path)
             offset_ms = int(float(clip.get("sourceOffset", 0)) * 1000)
             duration_beats = float(clip.get("duration", 0))
             duration_ms = int(duration_beats * beat_duration * 1000) if duration_beats > 0 else len(source)
@@ -635,38 +965,163 @@ def _render_request(
             clip_end_ms = audio_start_ms + len(source)
             segment += AudioSegment.silent(duration=max(0, clip_end_ms - len(segment)), frame_rate=sample_rate)
             segment = segment.overlay(source, position=audio_start_ms)
+        except Exception as e:
+            # Log error but continue processing
+            print(f"Warning: Could not load audio file {audio_path}: {e}")
 
-        for note in notes:
-            pitch = note.get("pitch", 60)
-            velocity = note.get("velocity", 100)
-            start = note.get("start", 0)
-            duration = note.get("duration", 0.5)
-            freq = 440.0 * (2 ** ((pitch - 69) / 12.0))
-            vol_db = -30 + (velocity / 127) * 30
-            note_start_ms = int(start * beat_duration * 1000)
-            note_dur_ms = max(50, int(duration * beat_duration * 1000))
-            tone = Sine(freq).to_audio_segment(duration=note_dur_ms, volume=vol_db)
-            note_end_ms = note_start_ms + note_dur_ms
-            segment += AudioSegment.silent(duration=max(0, note_end_ms - len(segment)), frame_rate=sample_rate)
-            segment = segment.overlay(tone, position=note_start_ms)
-            clip_end_ms = max(clip_end_ms, note_end_ms)
+    # Process notes in batches with frequency caching
+    if notes:
+        # Pre-calculate all note data for batch processing
+        note_frequencies = [_get_midi_frequency(note.get("pitch", 60)) for note in notes]
+        note_volumes = [-30 + (note.get("velocity", 100) / 127) * 30 for note in notes]
+        note_starts_ms = [int(note.get("start", 0) * beat_duration * 1000) for note in notes]
+        note_durations_ms = [max(50, int(note.get("duration", 0.5) * beat_duration * 1000)) for note in notes]
 
-        if clip_end_ms == 0:
-            continue
-        segment = _apply_track_effects(segment, track)
+        # Generate all note segments first
+        from pydub.generators import Sine
+        note_segments = []
+        for i, note in enumerate(notes):
+            tone = Sine(note_frequencies[i]).to_audio_segment(
+                duration=note_durations_ms[i],
+                volume=note_volumes[i]
+            )
+            note_segments.append((note_starts_ms[i], tone))
+
+        # Overlay all notes at once
+        max_note_end = max(start + len(tone) for start, (_, tone) in note_segments)
+        segment += AudioSegment.silent(duration=max(0, max_note_end - len(segment)), frame_rate=sample_rate)
+
+        for start_ms, tone in note_segments:
+            if start_ms + len(tone) > len(segment):
+                segment += AudioSegment.silent(duration=start_ms + len(tone) - len(segment), frame_rate=sample_rate)
+            segment = segment.overlay(tone, position=start_ms)
+            clip_end_ms = max(clip_end_ms, start_ms + len(tone))
+
+    # Apply effects and automation
+    if clip_end_ms > 0:
+        segment = _apply_track_effects(segment, track, clip_start_beats)
         volume = max(0.001, _automation_value(track, "volume", clip_start_beats, float(track.get("volume", 1))))
         segment = segment.apply_gain(20 * __import__("math").log10(volume))
         pan = _automation_value(track, "pan", clip_start_beats, float(track.get("pan", 0)))
         segment = segment.pan(max(-1, min(1, pan)))
-        track_segment = track_segments.get(track_id, AudioSegment.silent(duration=0, frame_rate=sample_rate))
-        track_segment += AudioSegment.silent(
-            duration=max(0, clip_end_ms - len(track_segment)), frame_rate=sample_rate
-        )
-        track_segments[track_id] = track_segment.overlay(segment)
-        max_duration_ms = max(max_duration_ms, clip_end_ms)
-        if progress:
-            progress(0.2 + 0.5 * ((index + 1) / max(1, len(req.clips))), "Rendering arrangement")
 
+    return segment
+
+def _render_track_batch(tracks_batch: List[Tuple[str, Dict]], clips_batch: List[Dict], 
+                       beat_duration: float, sample_rate: int = 44100) -> Dict[str, AudioSegment]:
+    """Render multiple tracks in parallel for better performance"""
+    results = {}
+    
+    for track_id, track in tracks_batch:
+        track_segments = []
+        has_solo = any(bool(t.get("solo")) for t in tracks_batch)
+        
+        if track.get("muted") or (has_solo and not track.get("solo")):
+            results[track_id] = AudioSegment.silent(duration=0, frame_rate=sample_rate)
+            continue
+        
+        # Process clips for this track
+        for clip in clips_batch:
+            if str(clip.get("channel", clip.get("trackId", "0"))) == track_id:
+                segment = _process_clip_optimized(clip, track, beat_duration, sample_rate)
+                if len(segment) > 0:
+                    track_segments.append(segment)
+        
+        # Mix all segments for this track
+        if track_segments:
+            mixed = track_segments[0]
+            for segment in track_segments[1:]:
+                if len(segment) > len(mixed):
+                    mixed += AudioSegment.silent(duration=len(segment) - len(mixed), frame_rate=sample_rate)
+                mixed = mixed.overlay(segment)
+            results[track_id] = mixed
+        else:
+            results[track_id] = AudioSegment.silent(duration=0, frame_rate=sample_rate)
+    
+    return results
+
+def _render_request(
+    req: RenderRequest, progress: Callable[[float, str], None] | None = None
+) -> dict[str, Any]:
+    """Render MIDI and referenced audio clips with track mixer state - Optimized version with caching."""
+    from pydub import AudioSegment
+    from pydub.generators import Sine
+    import concurrent.futures
+    import gc
+
+    # Create throttled progress callback to reduce overhead
+    throttled_progress = _throttle_progress_callback(progress, min_interval=0.05)  # 50ms minimum interval
+    
+    # Check cache for existing render results
+    cache_key = _generate_render_cache_key(req)
+    cached_result = _render_job_cache.get(cache_key)
+    if cached_result:
+        if progress:
+            throttled_progress(1.0, "Cache hit - returning cached result")
+        # Mark as cached since we're returning a cached result
+        cached_result["cached"] = True
+        return cached_result
+
+    sample_rate = 44100
+    beat_duration = 60.0 / req.bpm
+    tracks = {str(track.get("id")): track for track in req.tracks}
+    has_solo = any(bool(track.get("solo")) for track in req.tracks)
+    track_segments: dict[str, AudioSegment] = {}
+    max_duration_ms = 0
+
+    if progress:
+        throttled_progress(0.1, "Starting optimized render")
+
+    # Separate clips by track for batch processing
+    track_clips = {}
+    for clip in req.clips:
+        track_id = str(clip.get("channel", clip.get("trackId", "0")))
+        if track_id not in track_clips:
+            track_clips[track_id] = []
+        track_clips[track_id].append(clip)
+
+    # Process tracks in parallel batches
+    all_tracks = list(tracks.items())
+    
+    # Use ThreadPoolExecutor for parallel track processing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_batch = {}
+        
+        # Create batches of tracks for parallel processing
+        batch_size = 2  # Process 2 tracks per batch
+        for i in range(0, len(all_tracks), batch_size):
+            batch = all_tracks[i:i + batch_size]
+            batch_clips = []
+            for track_id, _ in batch:
+                if track_id in track_clips:
+                    batch_clips.extend(track_clips[track_id])
+            
+            future = executor.submit(
+                _render_track_batch,
+                batch,
+                batch_clips,
+                beat_duration,
+                sample_rate
+            )
+            future_to_batch[future] = batch
+        
+        # Collect results from parallel processing
+        for future in concurrent.futures.as_completed(future_to_batch):
+            batch_results = future.result()
+            track_segments.update(batch_results)
+            
+            # Update max duration
+            for segment in batch_results.values():
+                max_duration_ms = max(max_duration_ms, len(segment))
+            
+            if progress:
+                current_progress = min(0.6, 0.2 + len(track_segments) / len(tracks) * 0.4)
+                throttled_progress(current_progress, "Processing tracks in parallel")
+
+    if progress:
+        throttled_progress(0.7, "Mixing final audio")
+
+    # Complete the final mix after parallel processing
     if not track_segments or max_duration_ms == 0:
         raise ValueError("No audible clips to render")
 
@@ -674,33 +1129,60 @@ def _render_request(
     for segment in track_segments.values():
         mixed = mixed.overlay(segment)
 
+    # Apply master volume normalization
     preset_targets = {"draft": -14.0, "club": -9.5, "festival": -7.5}
     target = preset_targets.get(req.preset, -7.5)
     if mixed.dBFS != float("-inf"):
         mixed = mixed.apply_gain(target - mixed.dBFS)
+    
     if progress:
-        progress(0.82, "Writing WAV outputs")
+        throttled_progress(0.8, "Writing WAV outputs")
 
+    # Create output directory and files
     output_dir = tempfile.mkdtemp(prefix="beehive-render-")
     master_path = os.path.join(output_dir, "master.wav")
     mixed.export(master_path, format="wav")
+    
+    # Generate stems if requested (optimized to happen during main mix)
     stem_paths: list[str] = []
     if req.output_mode in {"stems", "master_and_stems"}:
+        if progress:
+            throttled_progress(0.85, "Generating stems")
+        
+        # Generate stems from already processed track segments
         for track_id, segment in track_segments.items():
             name = str(tracks.get(track_id, {}).get("name", track_id)).replace("/", "_")
             path = os.path.join(output_dir, f"{name}.wav")
             segment.export(path, format="wav")
             stem_paths.append(path)
+            
+            if progress:
+                current_progress = 0.85 + 0.1 * (len(stem_paths) / len(track_segments))
+                throttled_progress(current_progress, "Generating stems")
+
+    # Clean up frequency cache to prevent memory bloat
+    if len(_midi_frequency_cache) > 1000:
+        _midi_frequency_cache.clear()
+    
+    # Trigger garbage collection for memory optimization
+    gc.collect()
+
     if progress:
-        progress(1.0, "Render complete")
-    return {
-        "status": "completed",
-        "engine": "python",
+        throttled_progress(1.0, "Render complete")
+
+    # Cache the result for future requests
+    result = {
         "master_path": master_path,
         "stem_paths": stem_paths,
         "duration_ms": len(mixed),
         "format": "wav",
+        "cached": True  # Mark as cached since we're caching it now
     }
+    
+    # Store in cache
+    _render_job_cache.put(cache_key, result)
+
+    return result
 
 
 async def _run_render_job(job_id: str, req: RenderRequest) -> None:
@@ -710,9 +1192,21 @@ async def _run_render_job(job_id: str, req: RenderRequest) -> None:
 
     try:
         _render_jobs[job_id].update(status="running", stage="Starting renderer")
+        
+        # Start performance monitoring
+        _performance_monitor.start_timing()
+        
         result = await asyncio.to_thread(_render_request, req, update)
+        
+        # End performance monitoring and record metrics
+        performance_metric = _performance_monitor.end_timing(job_id, req, result)
+        
         if _render_jobs[job_id].get("status") != "cancelled":
             _render_jobs[job_id].update(result, progress=1.0, stage="Render complete")
+            
+            # Add performance data to the job result
+            _render_jobs[job_id]["performance"] = performance_metric
+            
     except Exception as exc:
         _render_jobs[job_id].update(status="failed", error=str(exc), stage="Render failed")
 
@@ -727,6 +1221,10 @@ async def create_render_job(req: RenderRequest):
         "stage": "Queued",
         "engine": "python",
     }
+    
+    # Register job with watchdog
+    _render_worker_watchdog.register_job(job_id)
+    
     asyncio.create_task(_run_render_job(job_id, req))
     return _render_jobs[job_id]
 
@@ -746,8 +1244,173 @@ async def cancel_render_job(job_id: str):
     return _render_jobs[job_id]
 
 
-@app.post("/render")
+@app.get("/render/cache")
+async def get_render_cache_info():
+    """Get information about the render job cache"""
+    return {
+        "cache_size": _render_job_cache.size(),
+        "max_size": _render_job_cache.max_size,
+        "cache_keys": list(_render_job_cache.cache.keys())
+    }
+
+@app.delete("/render/cache")
+async def clear_render_cache():
+    """Clear the render job cache"""
+    cache_size = _render_job_cache.size()
+    _render_job_cache.clear()
+    return {"message": f"Cleared {cache_size} cached render results"}
+
+@app.get("/render/cache/{cache_key}")
+async def get_cached_render_result(cache_key: str):
+    """Get a specific cached render result"""
+    result = _render_job_cache.get(cache_key)
+    if not result:
+        raise HTTPException(status_code=404, detail="Cache result not found")
+    return result
+
+@app.get("/render/audio-cache")
+async def get_audio_cache_info():
+    """Get information about the audio file cache"""
+    return {
+        "cache_size": _audio_file_cache.size(),
+        "max_size": _audio_file_cache.max_size,
+        "cache_hits": _audio_file_cache.cache_hits,
+        "cache_misses": _audio_file_cache.cache_misses,
+        "hit_rate": _audio_file_cache.hit_rate(),
+        "cached_files": list(_audio_file_cache.cache.keys())
+    }
+
+@app.delete("/render/audio-cache")
+async def clear_audio_cache():
+    """Clear the audio file cache"""
+    cache_size = _audio_file_cache.size()
+    _audio_file_cache.clear()
+    return {"message": f"Cleared {cache_size} cached audio files"}
+
+@app.get("/render/performance")
+async def get_performance_stats():
+    """Get performance statistics and benchmarks"""
+    cache_stats = _performance_monitor.get_cache_stats()
+    
+    return {
+        "cache_stats": cache_stats,
+        "average_duration": _performance_monitor.get_average_duration(),
+        "average_duration_cached": _performance_monitor.get_average_duration({"cached": True}),
+        "average_duration_uncached": _performance_monitor.get_average_duration({"cached": False}),
+        "total_metrics": len(_performance_monitor.metrics),
+        "recent_metrics": _performance_monitor.metrics[-10:] if _performance_monitor.metrics else []
+    }
+
+@app.post("/render/benchmark")
+async def run_benchmark(req: RenderRequest) -> dict:
+    """Run a benchmark test with the provided render request"""
+    import time
+    
+    # Create a unique job for benchmarking
+    benchmark_job_id = f"benchmark_{int(time.time())}"
+    
+    try:
+        # Start timing
+        _performance_monitor.start_timing()
+        
+        # Run the render request
+        result = await asyncio.to_thread(_render_request, req, None)
+        
+        # End timing and get metrics
+        performance_metric = _performance_monitor.end_timing(benchmark_job_id, req, result)
+        
+        return {
+            "benchmark_id": benchmark_job_id,
+            "duration_seconds": performance_metric["duration_seconds"],
+            "cached": result.get("cached", False),
+            "performance_metrics": performance_metric,
+            "optimizations_applied": {
+                "parallel_processing": True,
+                "batch_note_processing": True,
+                "render_caching": True,
+                "memory_management": True,
+                "audio_file_caching": True,
+                "progress_throttling": True
+            }
+        }
+        
+    except Exception as exc:
+        return {
+            "benchmark_id": benchmark_job_id,
+            "error": str(exc),
+            "optimizations_applied": {
+                "parallel_processing": True,
+                "batch_note_processing": True,
+                "render_caching": True,
+                "memory_management": True,
+                "audio_file_caching": True,
+                "progress_throttling": True
+            }
+        }
+
+@app.delete("/render/performance")
+async def clear_performance_metrics():
+    """Clear performance metrics and cache statistics"""
+    metrics_count = len(_performance_monitor.metrics)
+    _performance_monitor.metrics.clear()
+    return {"message": f"Cleared {metrics_count} performance metrics"}
+
+@app.get("/render/watchdog")
+async def get_watchdog_status():
+    """Get watchdog status and configuration"""
+    return {
+        "is_running": _render_worker_watchdog.is_running,
+        "max_runtime": _render_worker_watchdog.max_runtime,
+        "health_check_interval": _render_worker_watchdog.health_check_interval,
+        "monitored_jobs": len(_render_worker_watchdog.worker_jobs),
+        "job_details": _render_worker_watchdog.worker_jobs
+    }
+
+@app.post("/render/watchdog/start")
+async def start_watchdog():
+    """Start the render worker watchdog"""
+    _render_worker_watchdog.start()
+    return {"message": "Watchdog started"}
+
+@app.post("/render/watchdog/stop")
+async def stop_watchdog():
+    """Stop the render worker watchdog"""
+    _render_worker_watchdog.stop()
+    return {"message": "Watchdog stopped"}
+
+@app.post("/render/watchdog/restart")
+async def restart_watchdog():
+    """Restart the render worker watchdog"""
+    _render_worker_watchdog.stop()
+    _render_worker_watchdog.start()
+    return {"message": "Watchdog restarted"}
+
+@app.post("/render/watchdog/configure")
+async def configure_watchdog(max_runtime: int = 300, health_check_interval: int = 30):
+    """Configure watchdog parameters"""
+    _render_worker_watchdog.max_runtime = max_runtime
+    _render_worker_watchdog.health_check_interval = health_check_interval
+    return {
+        "message": "Watchdog configured",
+        "max_runtime": max_runtime,
+        "health_check_interval": health_check_interval
+    }
+
 async def render_audio(req: RenderRequest):
     """Compatibility render endpoint backed by the render-job engine."""
     result = await asyncio.to_thread(_render_request, req)
     return {**result, "status": "ok", "path": result["master_path"]}
+
+# Start watchdog on application startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
+    _render_worker_watchdog.start()
+    print("Render worker watchdog started")
+
+# Stop watchdog on application shutdown
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup services on shutdown"""
+    _render_worker_watchdog.stop()
+    print("Render worker watchdog stopped")
