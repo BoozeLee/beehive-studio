@@ -26,7 +26,7 @@ const COLORS = {
   warning: BEEHIVE.warning,
 };
 
-interface StepData {
+export interface StepData {
   active: boolean;
   velocity: number;
 }
@@ -38,7 +38,7 @@ interface Note {
   duration: number;
 }
 
-interface QaResult {
+export interface QaResult {
   pass: boolean;
   score: number;
   warnings: string[];
@@ -64,7 +64,13 @@ export interface PatternState {
 interface PatternEditorProps {
   isPlaying: boolean;
   currentBeat: number;
+  initialPattern?: PatternState;
+  initialSwing?: number;
+  initialQa?: QaResult;
+  initialReasoning?: string[];
   onPatternChange?: (pattern: PatternState) => void;
+  onSwingChange?: (swing: number) => void;
+  onMetadataChange?: (qa: QaResult | undefined, reasoning: string[]) => void;
   onSendToTimeline?: (notes: Note[], name: string, qa?: QaResult) => void;
 }
 
@@ -96,14 +102,21 @@ const AGENT_TO_EDITOR_ID: Record<string, string> = {
 export const PatternEditor: React.FC<PatternEditorProps> = ({
   isPlaying,
   currentBeat,
+  initialPattern,
+  initialSwing = 0,
+  initialQa,
+  initialReasoning = [],
   onPatternChange,
+  onSwingChange,
+  onMetadataChange,
   onSendToTimeline,
 }) => {
-  const [stepCount, setStepCount] = useState(16);
-  const [resolution] = useState(0.25);
+  const [stepCount, setStepCount] = useState(initialPattern?.stepCount ?? 16);
+  const [resolution] = useState(initialPattern?.resolution ?? 0.25);
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<"activate" | "deactivate">("activate");
   const [steps, setSteps] = useState<Record<string, StepData[]>>(() => {
+    if (initialPattern) return initialPattern.steps;
     const initial: Record<string, StepData[]> = {};
     for (const row of DEFAULT_ROWS) {
       initial[row.id] = Array.from({ length: 16 }, (_, i) => ({
@@ -113,11 +126,11 @@ export const PatternEditor: React.FC<PatternEditorProps> = ({
     }
     return initial;
   });
-  const [swing, setSwing] = useState(0);
+  const [swing, setSwing] = useState(initialSwing);
   const [brief, setBrief] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [qa, setQa] = useState<QaResult | undefined>();
-  const [reasoning, setReasoning] = useState<string[]>([]);
+  const [qa, setQa] = useState<QaResult | undefined>(initialQa);
+  const [reasoning, setReasoning] = useState<string[]>(initialReasoning);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const playheadStep = useMemo(() => {
@@ -131,6 +144,14 @@ export const PatternEditor: React.FC<PatternEditorProps> = ({
       onPatternChange({ rows: DEFAULT_ROWS.map((r) => r.id), steps, stepCount, resolution });
     }
   }, [steps, stepCount, resolution, onPatternChange]);
+
+  useEffect(() => {
+    onSwingChange?.(swing);
+  }, [swing, onSwingChange]);
+
+  useEffect(() => {
+    onMetadataChange?.(qa, reasoning);
+  }, [onMetadataChange, qa, reasoning]);
 
   const toggleStep = useCallback(
     (rowId: string, stepIdx: number, forceActive?: boolean, newVelocity?: number) => {

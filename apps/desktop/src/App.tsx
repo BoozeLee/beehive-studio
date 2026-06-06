@@ -10,7 +10,8 @@ import { MidiIoPanel } from "./components/MidiIoPanel";
 import { Timeline } from "./components/Timeline/Timeline";
 import { useTimelineStore } from "./lib/timelineStore";
 import { PatternEditor } from "./components/PatternEditor/PatternEditor";
-import type { PatternState } from "./components/PatternEditor/PatternEditor";
+import type { QaResult } from "./components/PatternEditor/PatternEditor";
+import { PianoRoll } from "./components/PianoRoll/PianoRoll";
 import { exportProjectAudio } from "./lib/audioEngine";
 import { initMixer, createChannel, removeChannel, updateChannel } from "./lib/audioMixer";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
@@ -34,8 +35,13 @@ import {
   buildArrangementRenderPayload,
   parseProjectDocument,
   serializeProjectDocument,
-  type ProjectDocumentV2,
+  type ProjectDocumentV3,
 } from "./lib/arrangementAdapter";
+import {
+  createDefaultPattern,
+  resolvePatternTargetTrack,
+  usePatternBankStore,
+} from "./lib/patternBankStore";
 
 interface Clip {
   id: string;
@@ -52,6 +58,7 @@ interface Clip {
   };
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
+  sourcePatternId?: string;
 }
 
 const COLORS = {
@@ -87,14 +94,28 @@ function App() {
   const [showTimeline, setShowTimeline] = useState(false);
   const {
     tracks: timelineTracks,
+    clips: timelineClips,
+    selectedTrackId,
+    selectedClipId,
     setClips: setTimelineClips,
     setTracks: setTimelineTracks,
     addTrack,
+    addClip: addTimelineClip,
     removeTrack,
     updateTrack,
+    updateClipMidiNotes,
   } = useTimelineStore();
   const [showPatternEditor, setShowPatternEditor] = useState(false);
-  const [_, setDrumPattern] = useState<PatternState | null>(null);
+  const {
+    patterns,
+    selectedPatternId,
+    setPatterns,
+    addPattern,
+    updatePattern,
+    duplicatePattern,
+    removePattern,
+    selectPattern,
+  } = usePatternBankStore();
   const [showSamples, setShowSamples] = useState(false);
   const [showEffects, setShowEffects] = useState(false);
   const [selectedTrackEffects, setSelectedTrackEffects] = useState<EffectInstance[]>([]);
@@ -102,26 +123,34 @@ function App() {
   const [showGit, setShowGit] = useState(false);
   const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
   const [renderPreset, setRenderPreset] = useState<"draft" | "club" | "festival">("festival");
+  const selectedPattern = patterns.find((pattern) => pattern.id === selectedPatternId) ?? null;
+  const selectedTimelineClip = selectedClipId ? timelineClips[selectedClipId] : undefined;
 
   const restoreProjectDocument = useCallback(
-    (document: ProjectDocumentV2) => {
+    (document: ProjectDocumentV3) => {
       const currentTracks = useTimelineStore.getState().tracks;
       for (const track of currentTracks) removeChannel(track.id);
 
       setClips(document.clips);
       setTimelineTracks(document.timeline.tracks);
       setTimelineClips(document.timeline.clips as never);
+      setPatterns(document.patterns);
       for (const track of document.timeline.tracks) {
         createChannel(track.id, track.name);
       }
     },
-    [setTimelineClips, setTimelineTracks]
+    [setPatterns, setTimelineClips, setTimelineTracks]
   );
 
   const currentProjectDocumentJson = useCallback(() => {
     const timeline = useTimelineStore.getState();
-    return serializeProjectDocument(clips, timeline.tracks, timeline.clips as Record<string, TimelineClip>);
-  }, [clips]);
+    return serializeProjectDocument(
+      clips,
+      timeline.tracks,
+      timeline.clips as Record<string, TimelineClip>,
+      patterns
+    );
+  }, [clips, patterns]);
 
   const playArrangement = useCallback(async () => {
     const { tracks, clips: timelineClips } = useTimelineStore.getState();
@@ -152,6 +181,12 @@ function App() {
   useEffect(() => {
     listProjects().then(setSavedProjects).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (showPatternEditor && patterns.length === 0) {
+      addPattern(createDefaultPattern());
+    }
+  }, [addPattern, patterns.length, showPatternEditor]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -294,6 +329,82 @@ function App() {
     removeTrack(trackId);
     removeChannel(trackId);
   }, [removeTrack]);
+
+  const sendPatternToTimeline = useCallback(
+    (
+      notes: NonNullable<TimelineClip["midiData"]>["notes"],
+      name: string,
+      qa?: QaResult
+    ) => {
+      const state = useTimelineStore.getState();
+      let targetTrack = resolvePatternTargetTrack(state.tracks, selectedTrackId);
+
+      if (!targetTrack) {
+        targetTrack = {
+          id: crypto.randomUUID(),
+          name: "Drums",
+          type: "midi",
+          color: "#ef4444",
+          volume: 0.8,
+          pan: 0,
+          muted: false,
+          solo: false,
+          arm: false,
+          clips: [],
+          automationLanes: [],
+          instrument: { type: "tonejs", preset: "drum" },
+        };
+        addTrack(targetTrack);
+        createChannel(targetTrack.id, targetTrack.name);
+      }
+
+      const start = targetTrack.clips.reduce((end, clipId) => {
+        const clip = useTimelineStore.getState().clips[clipId];
+        return clip ? Math.max(end, clip.start + clip.duration) : end;
+      }, 0);
+      const duration = Math.max(4, ...notes.map((note) => note.start + note.duration));
+      const clipId = crypto.randomUUID();
+      const now = Date.now() / 1000;
+      const timelineClip: TimelineClip = {
+        id: clipId,
+        name,
+        type: "midi",
+        trackId: targetTrack.id,
+        start,
+        duration,
+        loop: false,
+        color: "#ef4444",
+        midiData: { notes },
+        playback: { instrument: "drum" },
+        metadata: {
+          generative: Boolean(qa),
+          confidence: typeof qa?.score === "number" ? qa.score / 100 : undefined,
+          sourcePatternId: selectedPattern?.id,
+          tags: qa?.warnings?.length ? ["qa-warning"] : [],
+        },
+        createdAt: now,
+        updatedAt: now,
+      };
+      addTimelineClip(timelineClip);
+      setClips((prev) => [
+        ...prev,
+        {
+          id: clipId,
+          name,
+          duration,
+          color: "#ef4444",
+          midiData: { notes },
+          qa,
+          sourcePatternId: selectedPattern?.id,
+        },
+      ]);
+      if (selectedPattern) {
+        updatePattern(selectedPattern.id, { sourceClipId: clipId, qa });
+      }
+      setStatus(`Drum pattern "${name}" sent to ${targetTrack.name}`);
+    },
+    [addTimelineClip, addTrack, selectedPattern, selectedTrackId, updatePattern]
+  );
 
   const handleSeek = useCallback((beat: number) => {
     transport.seek(beat);
@@ -486,6 +597,7 @@ function App() {
     }
     setClips([]);
     setTimelineClips({});
+    setPatterns([]);
 
     // Create template tracks
     for (const tt of templateTracks) {
@@ -1110,24 +1222,114 @@ function App() {
 
           {/* Pattern Editor */}
           {showPatternEditor && (
-            <PatternEditor
-              isPlaying={transport.isPlaying}
-              currentBeat={transport.currentBeat}
-              onPatternChange={setDrumPattern}
-              onSendToTimeline={(notes, name, qa) => {
-                const clipId = crypto.randomUUID();
-                const newClip: Clip = {
-                  id: clipId,
-                  name,
-                  duration: Math.max(...notes.map((n) => n.start + n.duration), 4),
-                  color: "#ef4444",
-                  midiData: { notes },
-                  qa,
-                };
-                setClips((prev) => [...prev, newClip]);
-                setStatus(`Drum pattern "${name}" sent to timeline`);
-              }}
-            />
+            <>
+              <div
+                style={{
+                  ...panelStyle,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: 8,
+                }}
+              >
+                <select
+                  aria-label="Pattern Bank"
+                  value={selectedPatternId ?? ""}
+                  onChange={(event) => selectPattern(event.target.value || null)}
+                  style={{ ...buttonStyle(), padding: "6px 8px", background: COLORS.bg, color: COLORS.text }}
+                >
+                  {patterns.map((pattern) => (
+                    <option key={pattern.id} value={pattern.id}>
+                      {pattern.name}
+                    </option>
+                  ))}
+                </select>
+                <button onClick={() => addPattern(createDefaultPattern())} style={buttonStyle()}>
+                  New Pattern
+                </button>
+                <button
+                  onClick={() => selectedPatternId && duplicatePattern(selectedPatternId)}
+                  disabled={!selectedPatternId}
+                  style={buttonStyle(!selectedPatternId)}
+                >
+                  Duplicate
+                </button>
+                <button
+                  onClick={() => selectedPatternId && removePattern(selectedPatternId)}
+                  disabled={!selectedPatternId}
+                  style={buttonStyle(!selectedPatternId)}
+                >
+                  Delete
+                </button>
+                {selectedPattern && (
+                  <input
+                    aria-label="Pattern name"
+                    value={selectedPattern.name}
+                    onChange={(event) => updatePattern(selectedPattern.id, { name: event.target.value })}
+                    style={{
+                      flex: 1,
+                      minWidth: 120,
+                      padding: 7,
+                      background: COLORS.bg,
+                      color: COLORS.text,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: 4,
+                    }}
+                  />
+                )}
+              </div>
+              {selectedPattern && (
+                <PatternEditor
+                  key={selectedPattern.id}
+                  isPlaying={transport.isPlaying}
+                  currentBeat={transport.currentBeat}
+                  initialPattern={selectedPattern.pattern}
+                  initialSwing={selectedPattern.swing}
+                  initialQa={selectedPattern.qa}
+                  initialReasoning={selectedPattern.reasoning}
+                  onPatternChange={(pattern) => updatePattern(selectedPattern.id, { pattern })}
+                  onSwingChange={(swing) => updatePattern(selectedPattern.id, { swing })}
+                  onMetadataChange={(qa, reasoning) =>
+                    updatePattern(selectedPattern.id, { qa, reasoning })
+                  }
+                  onSendToTimeline={(notes, _name, qa) =>
+                    sendPatternToTimeline(notes, selectedPattern.name, qa)
+                  }
+                />
+              )}
+            </>
+          )}
+
+          {showTimeline && (
+            <div style={panelStyle}>
+              {selectedTimelineClip?.midiData ? (
+                <PianoRoll
+                  notes={selectedTimelineClip.midiData.notes.map((note, index) => ({
+                    ...note,
+                    id: `${selectedTimelineClip.id}-note-${index}`,
+                  }))}
+                  onChange={(notes) => {
+                    const nextNotes = notes.map(({ id: _id, ...note }) => note);
+                    updateClipMidiNotes(selectedTimelineClip.id, nextNotes);
+                    setClips((prev) =>
+                      prev.map((clip) =>
+                        clip.id === selectedTimelineClip.id
+                          ? { ...clip, midiData: { notes: nextNotes } }
+                          : clip
+                      )
+                    );
+                  }}
+                  isPlaying={transport.isPlaying}
+                  currentBeat={transport.currentBeat - selectedTimelineClip.start}
+                  snapToGrid
+                  gridDivision={0.25}
+                />
+              ) : (
+                <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
+                  Select a MIDI clip in the Timeline to edit it in Piano Roll.
+                </div>
+              )}
+            </div>
           )}
 
           {/* MIDI I/O */}

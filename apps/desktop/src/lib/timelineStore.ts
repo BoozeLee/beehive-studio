@@ -24,6 +24,7 @@ export interface TimelineState {
   moveClipToTrack: (id: ID, trackId: ID, start: number) => void;
   resizeClip: (id: ID, duration: number) => void;
   duplicateClip: (id: ID, newId?: ID) => ID | null;
+  updateClipMidiNotes: (id: ID, notes: NonNullable<Clip["midiData"]>["notes"]) => void;
 
   selectTrack: (id: ID | null) => void;
   selectClip: (id: ID | null) => void;
@@ -169,6 +170,28 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     });
     return createdId;
   },
+
+  updateClipMidiNotes: (id, notes) =>
+    set((state) => {
+      const clip = state.clips[id];
+      if (!clip?.midiData) return state;
+      const clampedNotes = notes
+        .filter((note) => note.start < clip.duration)
+        .map((note) => ({
+          ...note,
+          duration: Math.max(0.01, Math.min(note.duration, clip.duration - note.start)),
+        }));
+      return {
+        clips: {
+          ...state.clips,
+          [id]: {
+            ...clip,
+            midiData: { ...clip.midiData, notes: clampedNotes },
+            updatedAt: Date.now() / 1000,
+          },
+        },
+      };
+    }),
 
   selectTrack: (id) => set({ selectedTrackId: id, selectedClipId: null }),
   selectClip: (id) =>

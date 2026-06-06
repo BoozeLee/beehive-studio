@@ -1,5 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
-import { parseProjectDocument, type ProjectDocumentV2 } from "./arrangementAdapter";
+import { parseProjectDocument, type ProjectDocumentV3 } from "./arrangementAdapter";
 
 let db: Database | null = null;
 
@@ -76,7 +76,7 @@ export async function saveProject(name: string, documentJson: string): Promise<v
   }
 }
 
-export async function loadProject(name: string): Promise<ProjectDocumentV2> {
+export async function loadProject(name: string): Promise<ProjectDocumentV3> {
   const db = await initDb();
 
   const projects = await db.select<{ id: number; document_json: string | null }[]>(

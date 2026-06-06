@@ -89,6 +89,7 @@ class ClipMetadata(BaseModel):
     generative: bool = False
     agent_id: Optional[ID] = None
     prompt_id: Optional[ID] = None
+    source_pattern_id: Optional[ID] = None
     reasoning_trace: Optional[str] = None
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
     reference_ids: list[ID] = Field(default_factory=list)

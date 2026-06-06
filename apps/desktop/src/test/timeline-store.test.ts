@@ -93,4 +93,18 @@ describe("timeline store editing actions", () => {
     expect(state.tracks[0].clips).toEqual(["clip-1", "clip-2"]);
     expect(state.selectedClipId).toBe("clip-2");
   });
+
+  it("updates selected clip MIDI notes while preserving arrangement fields", () => {
+    useTimelineStore.getState().updateClipMidiNotes("clip-1", [
+      { pitch: 40, velocity: 90, start: 1, duration: 1 },
+      { pitch: 42, velocity: 80, start: 4, duration: 1 },
+    ]);
+
+    const updated = useTimelineStore.getState().clips["clip-1"];
+    expect(updated.start).toBe(2);
+    expect(updated.trackId).toBe("track-1");
+    expect(updated.midiData?.notes).toEqual([
+      { pitch: 40, velocity: 90, start: 1, duration: 1 },
+    ]);
+  });
 });

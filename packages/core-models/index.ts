@@ -29,6 +29,7 @@ export interface ClipMetadata {
   generative: boolean;
   agentId?: ID;
   promptId?: ID;
+  sourcePatternId?: ID;
   reasoningTrace?: string;   // Human-readable explanation from agent
   confidence?: number;       // 0-1
   referenceIds?: ID[];       // Links to Reference used

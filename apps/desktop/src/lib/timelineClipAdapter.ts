@@ -8,6 +8,7 @@ export interface GeneratedClip {
   midiData?: TimelineClip["midiData"];
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
+  sourcePatternId?: ID;
 }
 
 export function inferClipDuration(clip: GeneratedClip): number {
@@ -61,6 +62,7 @@ export function normalizeTimelineClip(
       reasoningTrace,
       confidence: typeof clip.qa?.score === "number" ? clip.qa.score / 100 : undefined,
       tags,
+      sourcePatternId: clip.sourcePatternId,
     },
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,

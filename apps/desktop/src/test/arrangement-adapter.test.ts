@@ -7,6 +7,7 @@ import {
   parseProjectDocument,
   serializeProjectDocument,
 } from "../lib/arrangementAdapter";
+import { createDefaultPattern } from "../lib/patternBankStore";
 
 function track(id: string, partial: Partial<Track> = {}): Track {
   return {
@@ -117,10 +118,22 @@ describe("arrangement adapter", () => {
     const timelineClips = { "clip-1": clip("clip-1") };
     const appClips = [{ id: "clip-1", name: "clip-1", midiData: timelineClips["clip-1"].midiData }];
 
-    const document = parseProjectDocument(serializeProjectDocument(appClips, tracks, timelineClips));
+    const patterns = [{ ...createDefaultPattern("Pattern A"), id: "pattern-1" }];
+    const document = parseProjectDocument(
+      serializeProjectDocument(appClips, tracks, timelineClips, patterns)
+    );
 
+    expect(document.version).toBe(3);
     expect(document.timeline.tracks[0].clips).toEqual(["clip-1"]);
     expect(document.timeline.clips["clip-1"].start).toBe(8);
+    expect(document.patterns[0].name).toBe("Pattern A");
     expect(parseProjectDocument(JSON.stringify(appClips)).clips).toEqual(appClips);
+    expect(
+      parseProjectDocument({
+        version: 2,
+        clips: appClips,
+        timeline: { tracks, clips: timelineClips },
+      }).patterns
+    ).toEqual([]);
   });
 });

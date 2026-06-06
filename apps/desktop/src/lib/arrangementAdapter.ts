@@ -1,6 +1,7 @@
 import type { Clip as TimelineClip, ID, Track } from "../../../../packages/core-models/index";
 import type { RenderClip, MixerTrackState } from "./audioEngine";
 import type { ScheduledClip } from "./transport";
+import type { PatternRecord } from "./patternBankStore";
 
 export interface AppClip {
   id: ID;
@@ -10,15 +11,17 @@ export interface AppClip {
   midiData?: TimelineClip["midiData"];
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
+  sourcePatternId?: ID;
 }
 
-export interface ProjectDocumentV2 {
-  version: 2;
+export interface ProjectDocumentV3 {
+  version: 3;
   clips: AppClip[];
   timeline: {
     tracks: Track[];
     clips: Record<ID, TimelineClip>;
   };
+  patterns: PatternRecord[];
 }
 
 export interface ArrangementPayload {
@@ -162,44 +165,49 @@ export function buildArrangementPlaybackClips(
 export function serializeProjectDocument(
   clips: AppClip[],
   tracks: Track[],
-  timelineClips: Record<ID, TimelineClip>
+  timelineClips: Record<ID, TimelineClip>,
+  patterns: PatternRecord[] = []
 ): string {
-  const document: ProjectDocumentV2 = {
-    version: 2,
+  const document: ProjectDocumentV3 = {
+    version: 3,
     clips,
     timeline: {
       tracks,
       clips: timelineClips,
     },
+    patterns,
   };
   return JSON.stringify(document);
 }
 
-export function parseProjectDocument(raw: string | unknown): ProjectDocumentV2 {
+export function parseProjectDocument(raw: string | unknown): ProjectDocumentV3 {
   const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
   if (
     parsed &&
     typeof parsed === "object" &&
     !Array.isArray(parsed) &&
-    (parsed as { version?: unknown }).version === 2
+    ((parsed as { version?: unknown }).version === 2 ||
+      (parsed as { version?: unknown }).version === 3)
   ) {
-    const document = parsed as ProjectDocumentV2;
+    const document = parsed as Partial<ProjectDocumentV3>;
     return {
-      version: 2,
+      version: 3,
       clips: document.clips ?? [],
       timeline: {
         tracks: document.timeline?.tracks ?? [],
         clips: document.timeline?.clips ?? {},
       },
+      patterns: document.patterns ?? [],
     };
   }
 
   return {
-    version: 2,
+    version: 3,
     clips: Array.isArray(parsed) ? (parsed as AppClip[]) : [],
     timeline: {
       tracks: [],
       clips: {},
     },
+    patterns: [],
   };
 }
