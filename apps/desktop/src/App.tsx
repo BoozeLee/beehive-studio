@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { SessionViewGrid } from "./components/SessionView/SessionViewGrid";
 import { BackendHealth } from "./components/BackendHealth";
 import { TransportControls } from "./components/TransportControls";
@@ -13,6 +14,8 @@ import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { QaResult } from "./components/PatternEditor/PatternEditor";
 import { PianoRoll } from "./components/PianoRoll/PianoRoll";
 import { exportProjectAudio } from "./lib/audioEngine";
+import { ExportAudioDialog } from "./components/ExportAudioDialog";
+import { summarizeRender, type RenderPreset } from "./lib/exportWorkflow";
 import { initMixer, createChannel, removeChannel, updateChannel } from "./lib/audioMixer";
 import { SampleBrowser } from "./components/SampleBrowser/SampleBrowser";
 import { EffectsChain } from "./components/Mixer/EffectsChain";
@@ -122,9 +125,24 @@ function App() {
   const [showMixer, setShowMixer] = useState(false);
   const [showGit, setShowGit] = useState(false);
   const [automationLanes, setAutomationLanes] = useState<AutomationLane[]>([]);
-  const [renderPreset, setRenderPreset] = useState<"draft" | "club" | "festival">("festival");
+  const [renderPreset, setRenderPreset] = useState<RenderPreset>("festival");
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [isExportingAudio, setIsExportingAudio] = useState(false);
+  const [exportProgress, setExportProgress] = useState({ progress: 0, label: "Preparing" });
   const selectedPattern = patterns.find((pattern) => pattern.id === selectedPatternId) ?? null;
   const selectedTimelineClip = selectedClipId ? timelineClips[selectedClipId] : undefined;
+  const exportPayload = useMemo(
+    () =>
+      buildArrangementRenderPayload(
+        timelineTracks,
+        timelineClips as Record<string, TimelineClip>
+      ),
+    [timelineClips, timelineTracks]
+  );
+  const exportSummary = useMemo(
+    () => summarizeRender(exportPayload.renderClips, transport.bpm),
+    [exportPayload.renderClips, transport.bpm]
+  );
 
   const restoreProjectDocument = useCallback(
     (document: ProjectDocumentV3) => {
@@ -206,7 +224,7 @@ function App() {
         handleSaveProject();
       } else if (e.key === "e" && e.ctrlKey) {
         e.preventDefault();
-        handleExportAudio();
+        setShowExportDialog(true);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const { selectedClipId, selectedTrackId, removeClip, removeTrack } = useTimelineStore.getState();
         if (selectedClipId) {
@@ -709,38 +727,49 @@ function App() {
     }
   }
 
-  async function handleExportAudio() {
-    if (clips.length === 0) {
-      setStatus("Nothing to export — generate some clips first");
+  async function handleExportAudio(revealAfterSave = false) {
+    if (exportPayload.renderClips.length === 0) {
+      setStatus("Nothing audible in arrangement to export");
       return;
     }
-    setStatus(`Rendering audio (${renderPreset} preset)...`);
     try {
-      const { tracks, clips: timelineClips } = useTimelineStore.getState();
-      const { renderClips, mixerTracks } = buildArrangementRenderPayload(
-        tracks,
-        timelineClips as Record<string, TimelineClip>
-      );
-      if (renderClips.length === 0) {
-        setStatus("Nothing audible in arrangement to export");
-        return;
-      }
-      const wavData = await exportProjectAudio(renderClips, transport.bpm, renderPreset, mixerTracks);
       const savePath = await save({
         defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}-${renderPreset}.wav`,
         filters: [{ name: "WAV", extensions: ["wav"] }],
       });
-      if (savePath) {
-        await invoke("write_file_bytes", {
-          path: savePath,
-          data: Array.from(wavData),
-        });
-        setStatus(`✓ Audio exported to ${savePath}`);
-      } else {
+      if (!savePath) {
         setStatus("Export cancelled");
+        return;
       }
+
+      setIsExportingAudio(true);
+      setExportProgress({ progress: 0, label: "Preparing arrangement" });
+      setStatus(`Rendering audio (${renderPreset} preset)...`);
+      const wavData = await exportProjectAudio(
+        exportPayload.renderClips,
+        transport.bpm,
+        renderPreset,
+        exportPayload.mixerTracks,
+        setExportProgress
+      );
+      await invoke("write_file_bytes", {
+        path: savePath,
+        data: Array.from(wavData),
+      });
+      let revealWarning = "";
+      if (revealAfterSave) {
+        try {
+          await revealItemInDir(savePath);
+        } catch {
+          revealWarning = " (could not reveal file)";
+        }
+      }
+      setStatus(`✓ Audio exported to ${savePath}${revealWarning}`);
+      setShowExportDialog(false);
     } catch (err) {
       setStatus(`Audio export failed: ${String(err)}`);
+    } finally {
+      setIsExportingAudio(false);
     }
   }
 
@@ -1165,28 +1194,11 @@ function App() {
               >
                 🎵 Export MIDI
               </button>
-              <select
-                value={renderPreset}
-                onChange={(e) => setRenderPreset(e.target.value as "draft" | "club" | "festival")}
-                disabled={clips.length === 0}
-                style={{
-                  padding: "6px 10px",
-                  fontSize: 12,
-                  background: COLORS.bg,
-                  color: COLORS.text,
-                  border: `1px solid ${COLORS.border}`,
-                  borderRadius: 4,
-                }}
-              >
-                <option value="draft">Draft (-14 LUFS)</option>
-                <option value="club">Club (-9.5 LUFS)</option>
-                <option value="festival">Festival (-7.5 LUFS)</option>
-              </select>
               <button
-                onClick={handleExportAudio}
-                disabled={clips.length === 0}
+                onClick={() => setShowExportDialog(true)}
+                disabled={exportPayload.renderClips.length === 0}
                 style={{
-                  ...buttonStyle(clips.length === 0),
+                  ...buttonStyle(exportPayload.renderClips.length === 0),
                   padding: "6px 14px",
                   fontSize: 12,
                   background: "#5a2a5a",
@@ -1654,6 +1666,18 @@ function App() {
           </div>
         )}
       </div>
+
+      <ExportAudioDialog
+        isOpen={showExportDialog}
+        isExporting={isExportingAudio}
+        preset={renderPreset}
+        progress={exportProgress.progress}
+        progressLabel={exportProgress.label}
+        summary={exportSummary}
+        onPresetChange={setRenderPreset}
+        onClose={() => setShowExportDialog(false)}
+        onExport={handleExportAudio}
+      />
 
       {/* Footer */}
       <div

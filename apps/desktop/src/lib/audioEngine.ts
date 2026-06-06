@@ -1,4 +1,5 @@
 import * as Tone from "tone";
+import { RENDER_PRESETS, type RenderPreset } from "./exportWorkflow";
 
 export interface RenderNote {
   pitch: number;
@@ -22,13 +23,12 @@ export interface MixerTrackState {
   instrument?: "synth" | "bass" | "pad" | "drum";
 }
 
-export type RenderPreset = "draft" | "club" | "festival";
+export type { RenderPreset } from "./exportWorkflow";
 
-const PRESET_TARGETS: Record<RenderPreset, number> = {
-  draft: -14.0,
-  club: -9.5,
-  festival: -7.5,
-};
+export interface RenderProgress {
+  progress: number;
+  label: string;
+}
 
 export async function renderAudioBuffer(
   clips: RenderClip[],
@@ -193,12 +193,20 @@ export async function exportProjectAudio(
   clips: RenderClip[],
   bpm: number,
   preset: RenderPreset = "festival",
-  mixerTracks?: MixerTrackState[]
+  mixerTracks?: MixerTrackState[],
+  onProgress?: (progress: RenderProgress) => void
 ): Promise<Uint8Array> {
+  onProgress?.({ progress: 0.1, label: "Preparing arrangement" });
+  await Promise.resolve();
+  onProgress?.({ progress: 0.25, label: "Rendering tracks" });
   const buffer = await renderAudioBuffer(clips, bpm, 44100, mixerTracks);
-  const targetLufs = PRESET_TARGETS[preset];
+  onProgress?.({ progress: 0.75, label: "Applying master preset" });
+  const targetLufs = RENDER_PRESETS[preset].targetLufs;
   const normalized = normalizeBuffer(buffer, targetLufs);
-  return audioBufferToWav(normalized);
+  onProgress?.({ progress: 0.9, label: "Encoding WAV" });
+  const wav = audioBufferToWav(normalized);
+  onProgress?.({ progress: 1, label: "Export ready" });
+  return wav;
 }
 
 export async function exportTrackStems(
