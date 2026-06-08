@@ -197,6 +197,24 @@ async def reset_lua_session(session_id: str = "default"):
     return {"status": "ok", "message": f"Lua session '{session_id}' reset"}
 
 
+_PRICING_TIERS = [
+    {"id": "free", "name": "Free", "price_monthly": 0, "currency": "EUR", "features": ["Basic agent workflows"]},
+    {"id": "personal", "name": "Personal", "price_monthly": 29, "currency": "EUR", "features": ["Advanced agent workflows", "Early access"]},
+    {"id": "studio", "name": "Studio", "price_monthly": 99, "currency": "EUR", "features": ["Full Beehive Studio integration", "Priority support"]},
+]
+
+
+@app.get("/pricing")
+async def list_pricing_tiers():
+    """Return marketplace pricing tiers."""
+    return {
+        "product": "Mixhive Pro Bundle",
+        "target": "Underground electronic music producers",
+        "tiers": _PRICING_TIERS,
+        "revenue_model": ["GitHub Sponsors", "Stripe checkout", "Beehive Studio premium features"],
+    }
+
+
 @app.websocket("/ws/agent")
 async def agent_websocket(websocket: WebSocket):
     """WebSocket for real-time agent streaming."""
@@ -744,3 +762,36 @@ async def render_audio(req: RenderRequest):
         "duration_ms": len(mixed),
         "format": ext,
     }
+
+
+_STRIPE_PUBLIC_KEY = None
+_STRIPE_SECRET_KEY = None
+
+
+def _stripe_configured() -> bool:
+    return all(
+        os.getenv(k) for k in ("STRIPE_PUBLIC_KEY", "STRIPE_SECRET_KEY")
+    )
+
+
+class StripeCheckoutRequest(BaseModel):
+    price_id: str
+    tier: str
+    success_url: str
+    cancel_url: str
+
+
+@app.post("/stripe/checkout")
+async def create_stripe_checkout(req: StripeCheckoutRequest):
+    """Create a Stripe checkout session with 70/30 revenue split placeholder."""
+    if not _stripe_configured():
+        return {"status": "not_configured", "message": "Stripe keys not set"}
+    stripe.api_key = _STRIPE_SECRET_KEY
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        line_items=[{"price": req.price_id, "quantity": 1}],
+        mode="subscription",
+        success_url=req.success_url,
+        cancel_url=req.cancel_url,
+    )
+    return {"status": "ok", "session_id": session.id, "url": session.url}

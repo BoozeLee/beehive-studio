@@ -7,3 +7,6 @@ python-multipart>=0.0.9
 
 # Optional for later
 # langgraph>=0.2
+
+# Paid-tiers / marketplace support
+stripe>=11.0
