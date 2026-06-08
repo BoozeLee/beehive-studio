@@ -1,0 +1,425 @@
+version: '3.8'
+
+# Production Deployment with Kubernetes-style scaling and monitoring
+
+services:
+  # Main Application
+  web:
+    image: beehive-studio/web:latest
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 2
+        delay: 10s
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=https://api.beehive.studio
+      - VITE_WS_URL=wss://api.beehive.studio
+    depends_on:
+      - api
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # API Gateway (Load Balanced)
+  api:
+    image: beehive-studio/api:latest
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    ports:
+      - "9876:9876"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres-primary:5432/beehive
+      - REDIS_URL=redis://redis-cluster:6379
+      - AI_API_KEY=${AI_API_KEY}
+      - VLLM_URL=http://vllm-cluster:8000
+      - OLLAMA_URL=http://ollama-cluster:11434
+      - SENTRY_DSN=${SENTRY_DSN}
+      - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY}
+    depends_on:
+      - postgres-primary
+      - postgres-replica
+      - redis-cluster
+      - vllm-cluster
+      - git-projects
+    volumes:
+      - /var/log/beehive:/app/logs
+      - model_cache:/app/models
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # High Availability PostgreSQL Cluster
+  postgres-primary:
+    image: postgres:15-alpine
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.labels.postgres.role == primary]
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=beehive
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}
+      - POSTGRES_PRIMARY_PORT=5432
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/postgres.conf:/etc/postgresql/postgresql.conf
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  postgres-replica:
+    image: postgres:15-alpine
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.labels.postgres.role == replica]
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=beehive
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPLICATION_PASSWORD}
+      - POSTGRES_PRIMARY_HOST=postgres-primary
+      - POSTGRES_PRIMARY_PORT=5432
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Redis Cluster
+  redis-cluster:
+    image: redis:7-alpine
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    ports:
+      - "6379:6379"
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_cluster_data:/data
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # vLLM Cluster (GPU Enabled)
+  vllm-cluster:
+    image: beehive-studio/vllm:latest
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.labels.gpu == true]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_NAME=microsoft/Phi-4-mini-instruct
+      - MAX_MODEL_LEN=4096
+      - GPU_MEMORY_UTILIZATION=0.85
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - vllm_cluster_models:/root/.cache/huggingface
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Git-Native Projects Service
+  git-projects:
+    image: beehive-studio/git-projects:latest
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    ports:
+      - "9877:9876"
+    environment:
+      - AI_API_KEY=${AI_API_KEY}
+      - STORAGE_PATH=/data/projects
+      - REDIS_URL=redis://redis-cluster:6379
+      - POSTGRES_URL=postgresql://postgres-primary:5432/beehive_projects
+      - SENTRY_DSN=${SENTRY_DSN}
+    volumes:
+      - git_projects_data:/data/projects
+      - git_metadata_data:/data/ai-metadata
+      - git_repositories_data:/data/repositories
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - web
+      - api
+      - git-projects
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.labels.monitoring == true]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.prod.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert.rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.labels.monitoring == true]
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning.prod:/etc/grafana/provisioning
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Monitoring Services
+  alertmanager:
+    image: prom/alertmanager:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.labels.monitoring == true]
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    deploy:
+      replicas: 3
+      placement:
+        constraints: [node.labels.node-exporter == true]
+    ports:
+      - "9100:9100"
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    deploy:
+      replicas: 3
+      placement:
+        constraints: [node.labels.cadvisor == true]
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Logging Stack
+  fluentd:
+    image: fluent/fluentd:v1.16-1
+    deploy:
+      replicas: 2
+    volumes:
+      - ./monitoring/fluentd/conf:/fluentd/etc
+      - /var/log/beehive:/var/log/beehive
+      - /var/lib/docker/containers:/var/lib/docker/containers
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    deploy:
+      replicas: 3
+      placement:
+        constraints: [node.labels.elasticsearch == true]
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.labels.kibana == true]
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    networks:
+      - beehive-prod-network
+    restart: unless-stopped
+
+  # Backup Services
+  postgres-backup:
+    image: postgres:15-alpine
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+    environment:
+      - POSTGRES_DB=beehive
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${BACKUP_S3_BUCKET}
+      - S3_PATH=backups/postgres
+    volumes:
+      - postgres_backup:/var/lib/postgresql/data
+    command: >
+      sh -c "
+        while true; do
+          pg_dump -h postgres-primary -U postgres beehive | gzip > /backup/postgres-$$(date +'%Y%m%d-%H%M%S').sql.gz
+          aws s3 cp /backup/postgres-$$(date +'%Y%m%d-%H%M%S').sql.gz s3://${BACKUP_S3_BUCKET}/${S3_PATH}/
+          sleep 86400
+        done
+      "
+    depends_on:
+      - postgres-primary
+    networks:
+      - beehive-prod-network
+
+  redis-backup:
+    image: minio/minio
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+    environment:
+      - MINIO_ROOT_USER=${BACKUP_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${BACKUP_SECRET_KEY}
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - redis_backup:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - beehive-prod-network
+
+volumes:
+  postgres_primary_data:
+  postgres_replica_data:
+  postgres_backup:
+  redis_cluster_data:
+  redis_backup:
+  vllm_cluster_models:
+  git_projects_data:
+  git_metadata_data:
+  git_repositories_data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+  elasticsearch_data:
+
+networks:
+  beehive-prod-network:
+    driver: overlay
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

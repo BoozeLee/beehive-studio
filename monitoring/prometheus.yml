@@ -1,0 +1,172 @@
+# Beehive Studio - Prometheus Configuration
+# Comprehensive monitoring for all services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'beehive-studio'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rule files
+rule_files:
+  - "alert_rules.yml"
+
+# Scrape configurations for all services
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # Beehive Studio API Gateway
+  - job_name: 'beehive-api'
+    static_configs:
+      - targets: ['api:9876']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'api:9876'
+
+  # Beehive Studio Web Application
+  - job_name: 'beehive-web'
+    static_configs:
+      - targets: ['web:3000']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'web:3000'
+
+  # Git-Native Projects Service
+  - job_name: 'beehive-git-projects'
+    static_configs:
+      - targets: ['git-projects:9876']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'git-projects:9876'
+
+  # vLLM Inference Service
+  - job_name: 'vllm'
+    static_configs:
+      - targets: ['vllm:8000']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'vllm:8000'
+
+  # Ollama Service
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama:11434']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'ollama:11434'
+
+  # PostgreSQL Database
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'postgres:5432'
+
+  # Redis Cache
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'redis:6379'
+
+  # Grafana Monitoring
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3001']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'grafana:3001'
+
+  # Nginx Reverse Proxy
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'nginx:80'
+
+  # MinIO File Storage
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['minio:9000']
+    scrape_interval: 60s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'minio:9000'
+
+  # Background Worker (Celery)
+  - job_name: 'celery-worker'
+    static_configs:
+      - targets: ['worker:9876']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'worker:9876'
+
+  # Scheduler (Celery Beat)
+  - job_name: 'celery-scheduler'
+    static_configs:
+      - targets: ['scheduler:9876']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'scheduler:9876'
+
+  # MCP Agents
+  - job_name: 'mcp-agents'
+    static_configs:
+      - targets: ['rhythm-groove:8000']
+    scrape_interval: 60s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __address__
+        replacement: 'rhythm-groove:8000'

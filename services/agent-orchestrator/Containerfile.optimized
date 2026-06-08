@@ -1,0 +1,60 @@
+# Beehive Studio Agent Orchestrator — Production Optimized Container
+# Built with enhanced Python render performance improvements
+
+FROM python:3.14-slim
+
+# Set environment variables for production
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ENVIRONMENT=production \
+    DEBUG=false
+
+WORKDIR /app
+
+# Install system dependencies (for lupa/LuaJIT compilation and performance tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    liblua5.4-dev \
+    curl \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast Python package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY api/ ./api/
+COPY agents/ ./agents/
+COPY tools/ ./tools/
+COPY lua/ ./lua/
+
+# Create directories for optimized performance
+RUN mkdir -p /app/{cache,logs,temp} && \
+    chown -R 1000:1000 /app
+
+# Install dependencies using uv with production optimizations
+RUN uv sync --no-dev --frozen
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+# Health check with timeout
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:9876/health || exit 1
+
+# Expose port
+EXPOSE 9876
+
+# Run the FastAPI app with production optimizations
+# Using uvicorn with optimized settings for performance
+CMD ["uv", "run", "uvicorn", "api.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "9876", \
+     "--workers", "1", \
+     "--limit-concurrency", "100", \
+     "--timeout-keep-alive", "30", \
+     "--log-level", "info"]

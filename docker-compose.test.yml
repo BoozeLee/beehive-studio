@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # Test API
+  api-test:
+    build:
+      context: ./services/agent-orchestrator
+      dockerfile: Dockerfile.test
+    ports:
+      - "9876:9876"
+    environment:
+      - ENVIRONMENT=test
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_TEST_PASSWORD}@postgres:5432/beehive_test
+      - REDIS_URL=redis://redis:6379
+      - AI_API_KEY=${AI_API_KEY}
+      - VLLM_URL=http://vllm-test:8000
+    volumes:
+      - ./services/agent-orchestrator:/app
+      - ./tests:/app/tests
+    depends_on:
+      - postgres-test
+      - redis-test
+      - vllm-test
+    command: pytest tests/ -v --tb=short
+    networks:
+      - beehive-test-network
+    restart: unless-stopped
+
+  # Test Git Projects
+  git-projects-test:
+    build:
+      context: ./services/git-projects
+      dockerfile: Dockerfile.test
+    ports:
+      - "9877:9876"
+    environment:
+      - AI_API_KEY=${AI_API_KEY}
+      - STORAGE_PATH=/data/projects
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://postgres:${POSTGRES_TEST_PASSWORD}@postgres:5432/beehive_projects_test
+    volumes:
+      - ./services/git-projects:/app
+      - ./tests:/app/tests
+    command: pytest tests/ -v --tb=short
+    depends_on:
+      - postgres-test
+      - redis-test
+    networks:
+      - beehive-test-network
+    restart: unless-stopped
+
+  # Test vLLM
+  vllm-test:
+    build:
+      context: ./services/inference/vllm
+      dockerfile: Containerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_NAME=microsoft/Phi-3-mini-instruct
+      - MAX_MODEL_LEN=2048
+      - GPU_MEMORY_UTILIZATION=0.5
+    volumes:
+      - vllm_test_models:/root/.cache/huggingface
+    networks:
+      - beehive-test-network
+    restart: unless-stopped
+
+  # Test PostgreSQL
+  postgres-test:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=beehive_test
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_TEST_PASSWORD}
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./database/test-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - beehive-test-network
+    restart: unless-stopped
+
+  # Test Redis
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6378:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_test_data:/data
+    networks:
+      - beehive-test-network
+    restart: unless-stopped
+
+  # Test Frontend
+  frontend-test:
+    build:
+      context: ./apps/desktop
+      dockerfile: Dockerfile.test
+    ports:
+      - "3001:3000"
+    environment:
+      - VITE_API_URL=http://api-test:9876
+      - VITE_WS_URL=ws://api-test:9876
+    volumes:
+      - ./apps/desktop:/app
+      - ./tests:/app/tests
+    command: npm test -- --watchAll=false
+    depends_on:
+      - api-test
+      - git-projects-test
+    networks:
+      - beehive-test-network
+    restart: unless-stopped
+
+  # Test Coverage Reporter
+  coverage:
+    build:
+      context: .
+      dockerfile: Dockerfile.coverage
+    volumes:
+      - ./coverage:/app/coverage
+    command: cat coverage/lcov.info | codacy --token=${CODACY_TOKEN} --verbose
+    depends_on:
+      - api-test
+      - git-projects-test
+      - frontend-test
+    networks:
+      - beehive-test-network
+    restart: "no"
+
+volumes:
+  postgres_test_data:
+  redis_test_data:
+  vllm_test_models:
+
+networks:
+  beehive-test-network:
+    driver: bridge

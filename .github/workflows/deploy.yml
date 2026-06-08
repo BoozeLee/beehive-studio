@@ -1,0 +1,137 @@
+name: Deploy Beehive Studio Production
+
+on:
+  push:
+    branches: [ main, production ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r services/agent-orchestrator/requirements.txt
+        cd apps/desktop && npm install
+
+    - name: Run tests
+      run: |
+        cd services/agent-orchestrator
+        python -m pytest tests/ -v
+        cd ../../apps/desktop
+        npm test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      web-image: ${{ steps.build-web.outputs.image }}
+      api-image: ${{ steps.build-api.outputs.image }}
+      vllm-image: ${{ steps.build-vllm.outputs.image }}
+      git-image: ${{ steps.build-git.outputs.image }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build Web App
+      id: build-web
+      run: |
+        docker build -f apps/desktop/Dockerfile.prod -t beehive-studio/web:latest apps/desktop/
+        echo "image=beehive-studio/web:latest" >> $GITHUB_OUTPUT
+
+    - name: Build API
+      id: build-api
+      run: |
+        docker build -f services/agent-orchestrator/Containerfile -t beehive-studio/api:latest services/agent-orchestrator/
+        echo "image=beehive-studio/api:latest" >> $GITHUB_OUTPUT
+
+    - name: Build vLLM
+      id: build-vllm
+      run: |
+        docker build -f services/inference/vllm/Containerfile -t beehive-studio/vllm:latest services/inference/vllm/
+        echo "image=beehive-studio/vllm:latest" >> $GITHUB_OUTPUT
+
+    - name: Build Git Projects
+      id: build-git
+      run: |
+        docker build -f services/git-projects/Dockerfile -t beehive-studio/git-projects:latest services/git-projects/
+        echo "image=beehive-studio/git-projects:latest" >> $GITHUB_OUTPUT
+
+    - name: Push images
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push beehive-studio/web:latest
+        docker push beehive-studio/api:latest
+        docker push beehive-studio/vllm:latest
+        docker push beehive-studio/git-projects:latest
+
+  deploy:
+    if: github.ref == 'refs/heads/production'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to Production
+      run: |
+        # Update docker-compose.prod.yml with new images
+        sed -i "s|beehive-studio/web:latest|${{ needs.build.outputs.web-image }}|g" docker-compose.prod.yml
+        sed -i "s|beehive-studio/api:latest|${{ needs.build.outputs.api-image }}|g" docker-compose.prod.yml
+        sed -i "s|beehive-studio/vllm:latest|${{ needs.build.outputs.vllm-image }}|g" docker-compose.prod.yml
+        sed -i "s|beehive-studio/git-projects:latest|${{ needs.build.outputs.git-image }}|g" docker-compose.prod.yml
+        
+        # Deploy to production server
+        ssh -i ${{ secrets.PRODUCTION_SSH_KEY }} ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} "
+          cd /opt/beehive-studio
+          docker-compose -f docker-compose.prod.yml pull
+          docker-compose -f docker-compose.prod.yml up -d
+        "

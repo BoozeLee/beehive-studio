@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # Development API
+  api:
+    build:
+      context: ./services/agent-orchestrator
+      dockerfile: Dockerfile.dev
+    ports:
+      - "9876:9876"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/beehive
+      - REDIS_URL=redis://redis:6379
+      - AI_API_KEY=${AI_API_KEY}
+      - VLLM_URL=http://localhost:8000
+      - OLLAMA_URL=http://localhost:11434
+    volumes:
+      - ./services/agent-orchestrator:/app
+      - ./services/agent-orchestrator:/app
+    command: uvicorn api.main:app --reload --host 0.0.0.0 --port 9876
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Development Git Projects
+  git-projects:
+    build:
+      context: ./services/git-projects
+      dockerfile: Dockerfile
+    ports:
+      - "9877:9876"
+    environment:
+      - AI_API_KEY=${AI_API_KEY}
+      - STORAGE_PATH=/data/projects
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/beehive_projects
+    volumes:
+      - ./services/git-projects:/app
+      - git_projects_data:/data/projects
+    depends_on:
+      - postgres
+      - redis
+    command: uvicorn api.main:app --reload --host 0.0.0.0 --port 9876
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Development vLLM (optional - can use local Ollama)
+  vllm:
+    build:
+      context: ./services/inference/vllm
+      dockerfile: Containerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_NAME=microsoft/Phi-4-mini-instruct
+      - MAX_MODEL_LEN=4096
+      - GPU_MEMORY_UTILIZATION=0.85
+    volumes:
+      - vllm_models:/root/.cache/huggingface
+    profiles:
+      - gpu
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Local Ollama (easier for development)
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Development PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=beehive
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Development Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Development Frontend (Tauri)
+  frontend:
+    build:
+      context: ./apps/desktop
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:9876
+      - VITE_WS_URL=ws://localhost:9876
+    volumes:
+      - ./apps/desktop:/app
+      - /app/node_modules
+    command: npm run dev
+    depends_on:
+      - api
+      - git-projects
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+  # Development Database Client (optional)
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - beehive-dev-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  vllm_models:
+  git_projects_data:
+  ollama_data:
+
+networks:
+  beehive-dev-network:
+    driver: bridge
