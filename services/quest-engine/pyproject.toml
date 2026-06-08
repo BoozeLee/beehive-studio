@@ -1,0 +1,12 @@
+[project]
+name = "quest-engine"
+version = "0.1.0"
+description = "Collab Quest + XP + Reputation system for MixHive marketplace"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
