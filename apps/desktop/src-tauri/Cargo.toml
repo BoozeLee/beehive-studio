@@ -1,11 +1,9 @@
 [package]
 name = "beehive-studio"
-version = "0.3.0-alpha"
+version = "0.4.0-beta"
 description = "Beehive Studio - AI Agent Music Production Environment"
 authors = ["Beehive Studio"]
 edition = "2021"
-
-[workspace]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -29,6 +27,7 @@ git2 = "0.19"
 flate2 = "1"
 tar = "0.4"
 dirs = "6"
+beehive-audio-engine = { path = "../../../crates/beehive-audio-engine" }
 
 [features]
 default = ["custom-protocol"]

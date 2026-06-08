@@ -1,7 +1,7 @@
 {
   "name": "beehive-studio-desktop",
   "private": true,
-  "version": "0.3.0-alpha",
+  "version": "0.4.0-beta",
   "type": "module",
   "scripts": {
     "dev": "vite",

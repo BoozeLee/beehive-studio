@@ -142,10 +142,10 @@ def test_agents_endpoint_lists_all_alpha_agents():
     }
 
 
-def test_health_version_is_alpha():
-    """Health response should identify the Phase 3 alpha service."""
+def test_health_version_is_beta():
+    """Health response should identify the Phase 3 beta service."""
     from api.main import health
 
     payload = asyncio.run(health())
     assert payload["status"] == "ok"
-    assert payload["version"] == "0.3.0-alpha"
+    assert payload["version"] == "0.4.0-beta"

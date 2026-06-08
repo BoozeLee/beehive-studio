@@ -175,45 +175,6 @@ function createImpulseResponse(ctx: AudioContext, duration: number, decay: numbe
   return impulse;
 }
 
-export function createChannel(id: string, name: string = "Track"): boolean {
-  if (!audioCtx || channels.has(id)) return false;
-
-  const gainNode = audioCtx.createGain();
-  const initialVolume = 0.8;
-  gainNode.gain.value = initialVolume;
-  const panNode = audioCtx.createStereoPanner();
-  panNode.pan.value = 0;
-  const analyserNode = audioCtx.createAnalyser();
-  analyserNode.fftSize = 256;
-  const muteGain = audioCtx.createGain();
-  muteGain.gain.value = 1;
-  const inputNode = audioCtx.createGain();
-  inputNode.gain.value = 1;
-
-  inputNode.connect(gainNode);
-  gainNode.connect(panNode);
-  panNode.connect(analyserNode);
-  analyserNode.connect(muteGain);
-  muteGain.connect(masterGainNode!);
-
-  const sendGains = new Map<string, GainNode>();
-  for (const [busId] of sendBuses) {
-    const sendGain = audioCtx.createGain();
-    sendGain.gain.value = 0;
-    muteGain.connect(sendGain);
-    sendGain.connect(sendBuses.get(busId)!.inputGain);
-    sendGains.set(busId, sendGain);
-  }
-
-  channels.set(id, {
-    gainNode, panNode, analyserNode, muteGain, inputNode,
-    state: { id, name, volume: initialVolume, pan: 0, muted: false, solo: false, armed: false, level: 0, peak: 0, fxReturns: {} },
-    sendGains,
-  });
-
-  return true;
-}
-
 export function removeChannel(id: string): void {
   const ch = channels.get(id);
   if (!ch) return;
@@ -228,13 +189,18 @@ export function removeChannel(id: string): void {
   channels.delete(id);
 }
 
-export function updateChannel(id: string, update: ChannelUpdate): void {
+export function updateChannel(id: string, update: ChannelUpdate, immediate = false): void {
   const ch = channels.get(id);
   if (!ch) return;
 
   if (update.volume !== undefined) {
     const volume = clampUnit(update.volume);
-    ch.gainNode.gain.linearRampToValueAtTime(volume, audioCtx!.currentTime + 0.05);
+    if (immediate) {
+      ch.gainNode.gain.setValueAtTime(volume, audioCtx!.currentTime);
+    } else {
+      // Reduced ramp time from 50ms to 10ms for better response
+      ch.gainNode.gain.linearRampToValueAtTime(volume, audioCtx!.currentTime + 0.01);
+    }
     ch.state.volume = volume;
   }
   if (update.pan !== undefined) {
@@ -264,6 +230,79 @@ export function updateChannel(id: string, update: ChannelUpdate): void {
     }
     ch.state.fxReturns = { ...ch.state.fxReturns, ...update.fxReturns };
   }
+}
+
+export function batchUpdateChannels(updates: Array<{id: string, update: ChannelUpdate}>): void {
+  if (!audioCtx) return;
+  
+  const now = audioCtx.currentTime;
+  
+  updates.forEach(({id, update}) => {
+    const ch = channels.get(id);
+    if (!ch) return;
+    
+    // Apply all updates in single audio thread tick
+    if (update.volume !== undefined) {
+      const volume = clampUnit(update.volume);
+      ch.gainNode.gain.setValueAtTime(volume, now);
+      ch.state.volume = volume;
+    }
+    if (update.pan !== undefined) {
+      const pan = clampPan(update.pan);
+      ch.panNode.pan.value = pan;
+      ch.state.pan = pan;
+    }
+    if (update.muted !== undefined) {
+      ch.state.muted = update.muted;
+    }
+    if (update.solo !== undefined) {
+      ch.state.solo = update.solo;
+    }
+    if (update.armed !== undefined) {
+      ch.state.armed = update.armed;
+    }
+    if (update.fxReturns) {
+      for (const [busId, value] of Object.entries(update.fxReturns)) {
+        const sendGain = ch.sendGains.get(busId);
+        const sendLevel = clampUnit(value);
+        if (sendGain) {
+          sendGain.gain.setValueAtTime(sendLevel, now);
+        }
+        update.fxReturns[busId] = sendLevel;
+      }
+      ch.state.fxReturns = { ...ch.state.fxReturns, ...update.fxReturns };
+    }
+  });
+  
+  // Apply mute/solo updates after all individual updates
+  applyChannelMuteSolo();
+}
+
+// Direct Web Audio API access for critical real-time operations
+export function setChannelVolumeImmediate(id: string, volume: number): void {
+  const ch = channels.get(id);
+  if (!ch || !audioCtx) return;
+  
+  // Direct Web Audio API access - bypass Tone.js
+  ch.gainNode.gain.setValueAtTime(clampUnit(volume), audioCtx.currentTime);
+  ch.state.volume = clampUnit(volume);
+}
+
+export function setChannelPanImmediate(id: string, pan: number): void {
+  const ch = channels.get(id);
+  if (!ch) return;
+  
+  // Direct Web Audio API access - bypass Tone.js
+  ch.panNode.pan.value = clampPan(pan);
+  ch.state.pan = clampPan(pan);
+}
+
+export function setMasterVolumeImmediate(gain: number): void {
+  if (!audioCtx || !masterGainNode) return;
+  
+  // Direct Web Audio API access - bypass Tone.js
+  masterGainNode.gain.setValueAtTime(clampUnit(gain), audioCtx.currentTime);
+  masterGain = clampUnit(gain);
 }
 
 function applyChannelMuteSolo(): void {
@@ -321,27 +360,78 @@ export function resetPeaks(): void {
 }
 
 let pollingId: number | null = null;
+let updateInterval: number = 60; // 60ms update interval instead of 16ms (60fps → ~16fps)
+let lastUpdateTime: number = 0;
 
+// Optimized level monitoring with reduced frequency and smaller fftSize
 function startLevelPolling(): void {
   if (pollingId !== null) return;
-  const poll = () => {
+  
+  const optimizedPoll = (timestamp: number) => {
+    if (timestamp - lastUpdateTime < updateInterval) {
+      pollingId = requestAnimationFrame(optimizedPoll);
+      return;
+    }
+    lastUpdateTime = timestamp;
+    
+    // Use smaller fftSize for faster processing
     if (masterAnalyserNode) {
-      const data = new Uint8Array(masterAnalyserNode.frequencyBinCount);
+      const data = new Uint8Array(16); // Much smaller buffer - 8x faster
       masterAnalyserNode.getByteTimeDomainData(data);
       masterLevel = calculateRmsLevel(data);
       masterPeak = decayPeak(masterPeak, masterLevel * 1.1);
     }
 
     for (const [, ch] of channels) {
-      const data = new Uint8Array(ch.analyserNode.frequencyBinCount);
+      const data = new Uint8Array(16); // Much smaller buffer - 8x faster
       ch.analyserNode.getByteTimeDomainData(data);
       ch.state.level = calculateRmsLevel(data);
       ch.state.peak = decayPeak(ch.state.peak, ch.state.level * 1.1);
     }
 
-    pollingId = requestAnimationFrame(poll);
+    pollingId = requestAnimationFrame(optimizedPoll);
   };
-  pollingId = requestAnimationFrame(poll);
+  pollingId = requestAnimationFrame(optimizedPoll);
+}
+
+// Optimized channel creation with smaller fftSize
+export function createChannel(id: string, name: string = "Track"): boolean {
+  if (!audioCtx || channels.has(id)) return false;
+
+  const gainNode = audioCtx.createGain();
+  const initialVolume = 0.8;
+  gainNode.gain.value = initialVolume;
+  const panNode = audioCtx.createStereoPanner();
+  panNode.pan.value = 0;
+  const analyserNode = audioCtx.createAnalyser();
+  analyserNode.fftSize = 32; // Reduced from 256 to 32 - 8x faster processing
+  const muteGain = audioCtx.createGain();
+  muteGain.gain.value = 1;
+  const inputNode = audioCtx.createGain();
+  inputNode.gain.value = 1;
+
+  inputNode.connect(gainNode);
+  gainNode.connect(panNode);
+  panNode.connect(analyserNode);
+  analyserNode.connect(muteGain);
+  muteGain.connect(masterGainNode!);
+
+  const sendGains = new Map<string, GainNode>();
+  for (const [busId] of sendBuses) {
+    const sendGain = audioCtx.createGain();
+    sendGain.gain.value = 0;
+    muteGain.connect(sendGain);
+    sendGain.connect(sendBuses.get(busId)!.inputGain);
+    sendGains.set(busId, sendGain);
+  }
+
+  channels.set(id, {
+    gainNode, panNode, analyserNode, muteGain, inputNode,
+    state: { id, name, volume: initialVolume, pan: 0, muted: false, solo: false, armed: false, level: 0, peak: 0, fxReturns: {} },
+    sendGains,
+  });
+
+  return true;
 }
 
 export function disposeMixer(): void {

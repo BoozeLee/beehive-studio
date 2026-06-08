@@ -1,7 +1,7 @@
 # Phase 3: The DAW — Implementation Plan
 
 **Date:** 2026-06-04  
-**Version:** 0.3.0-alpha
+**Version:** 0.4.0-beta
 **Status:** Completed
 **Goal:** Build a real digital audio workstation with timeline, pattern editor, mixer, and offline rendering.
 
@@ -251,7 +251,7 @@ Phase 3 is complete when:
 
 1. User can create a full arrangement: generate clips → arrange on timeline → mix → export audio
 2. `just test` passes all gates (frontend + backend + render)
-3. `just release-check` passes for v0.3.0-alpha
+3. `just release-check` passes for v0.4.0-beta
 4. No `any` types in new code (strict TypeScript)
 5. All new components have at least one unit test
 6. Export audio passes `render-smoke.py` QA at festival preset

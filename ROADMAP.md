@@ -6,7 +6,7 @@
 
 ## Current Status: Phase 2 Complete ✅
 
-**Version:** 0.3.0-alpha
+**Version:** 0.4.0-beta
 **Date:** 2026-05-30
 
 ---
