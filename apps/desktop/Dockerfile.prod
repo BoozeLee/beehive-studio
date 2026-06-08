@@ -1,0 +1,105 @@
+# Beehive Studio Desktop App - Production Dockerfile
+# Multi-stage build for optimized production image
+
+# Stage 1: Build frontend assets
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY pnpm-lock.yaml ./
+
+# Install pnpm and dependencies
+RUN npm install -g pnpm && \
+    pnpm install --frozen-lockfile
+
+# Copy source code
+COPY . .
+
+# Build frontend
+RUN pnpm run build
+
+# Stage 2: Build Tauri app
+FROM rust:1.75-slim AS tauri-builder
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libwebkit2gtk-4.1-0 \
+    libgtk-3-0 \
+    libappindicator3-1 \
+    libayatana-appindicator3-1 \
+    librsvg2-2 \
+    librsvg2-common \
+    libssl-dev \
+    libayatana-appindicator3-dev \
+    build-essential \
+    curl \
+    file \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo components
+RUN rustup target add x86_64-unknown-linux-gnu
+
+WORKDIR /app
+
+# Copy frontend build from previous stage
+COPY --from=frontend-builder /app/dist ./dist
+
+# Copy Tauri source
+COPY src-tauri/ ./src-tauri/
+COPY package.json ./
+COPY pnpm-lock.yaml ./
+
+# Install Node.js and pnpm
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g pnpm
+
+# Build Tauri app
+RUN pnpm install --frozen-lockfile && \
+    pnpm tauri build --target x86_64-unknown-linux-gnu
+
+# Stage 3: Production runtime image
+FROM ubuntu:22.04 AS runtime
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libwebkit2gtk-4.1-0 \
+    libgtk-3-0 \
+    libappindicator3-1 \
+    libayatana-appindicator3-1 \
+    librsvg2-2 \
+    librsvg2-common \
+    ca-certificates \
+    fonts-noto \
+    libasound2 \
+    libpulse0 \
+    && rm -rf /var/lib/apt/lists/* && \
+    useradd -m -u 1000 beehive
+
+# Create app directory
+WORKDIR /app
+
+# Copy built app from builder
+COPY --from=tauri-builder /app/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/dee/beehive-studio_0.4.0-beta_amd64.deb /app/
+
+# Extract app
+RUN dpkg -i /app/beehive-studio_0.4.0-beta_amd64.deb || true
+
+# Create data directory
+RUN mkdir -p /home/beehive/.beehive-studio && \
+    chown -R beehive:beehive /home/beehive/.beehive-studio
+
+# Switch to non-root user
+USER beehive
+
+# Expose port (for potential future web interface integration)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD pgrep beehive-studio || exit 1
+
+# Run the application
+CMD ["beehive-studio"]
