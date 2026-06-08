@@ -11,6 +11,7 @@ Now includes:
 from api.agent_cache import get_cached_result, set_cached_result, invalidate_cache, get_cache_stats
 
 import os
+import pathlib
 from typing import Any
 
 from fastapi import FastAPI, WebSocket
@@ -795,3 +796,16 @@ async def create_stripe_checkout(req: StripeCheckoutRequest):
         cancel_url=req.cancel_url,
     )
     return {"status": "ok", "session_id": session.id, "url": session.url}
+
+
+@app.get("/gear/listings")
+async def list_gear_listings():
+    """Return active gear listings for marketplace."""
+    try:
+        listings_path = pathlib.Path(__file__).parent.parent.parent.parent / "data" / "gear-listings.json"
+        if listings_path.exists():
+            data = json.loads(listings_path.read_text())
+            return {"status": "ok", "listings": data.get("gear_listings", [])}
+        return {"status": "no_listings", "message": "Gear listings file not found"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
