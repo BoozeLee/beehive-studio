@@ -64,3 +64,13 @@ async def get_user_xp(user_id: str) -> dict[str, Any]:
         "user_id": user_id,
         "total_xp": _XP_TOTAL.get(user_id, 0),
     }
+
+
+@app.get("/quests/leaderboard")
+async def get_leaderboard(limit: int = 10) -> list[dict[str, Any]]:
+    """Get top users by XP for scene ranking."""
+    sorted_users = sorted(_XP_TOTAL.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [
+        {"user_id": uid, "total_xp": xp, "rank": i + 1}
+        for i, (uid, xp) in enumerate(sorted_users)
+    ]
