@@ -1,0 +1,67 @@
+.quest-panel {
+  padding: 12px;
+  background: var(--bg-secondary, #181825);
+  border: 1px solid var(--border, #45475a);
+  border-radius: 8px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.quest-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.quest-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary, #cdd6f4);
+}
+
+.xp-badge {
+  background: var(--accent, #89b4fa);
+  color: var(--bg-primary, #1e1e2e);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.quest-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quest-item {
+  background: var(--bg-surface, #313244);
+  border: 1px solid var(--border, #45475a);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.quest-item h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--text-primary, #cdd6f4);
+}
+
+.quest-item p {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary, #a6adc8);
+}
+
+.quest-item footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-muted, #6c7086);
+}

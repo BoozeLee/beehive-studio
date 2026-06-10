@@ -1,3 +1,4 @@
+import { BEEHIVE } from "../../lib/theme";
 import React, { useRef, useEffect, useCallback } from "react";
 import {
   type AutomationLane,
@@ -5,13 +6,7 @@ import {
   PARAM_RANGES,
 } from "../../lib/automationEngine";
 
-const COLORS = {
-  bg: "#0f0f12",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  textMuted: "#888",
-  laneBg: "#141418",
-};
+const COLORS = { ...BEEHIVE, laneBg: "#141418" };
 
 interface AutomationLaneViewProps {
   lane: AutomationLane;

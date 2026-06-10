@@ -1,16 +1,10 @@
+import { BEEHIVE } from "../../lib/theme";
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { ChannelStrip } from "./ChannelStrip";
 import { useTimelineStore } from "../../lib/timelineStore";
 import type { Track } from "../../../../../packages/core-models/index";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-};
+const COLORS = BEEHIVE;
 
 interface MixerProps {
   onVolumeChange?: (trackId: string, volume: number) => void;

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Beehive Studio
+GenericName=AI Music Production
+Comment=Local-first AI music production. Human creative sovereignty.
+Exec=beehivestudio
+Icon=beehive-studio
+Terminal=false
+Type=Application
+Categories=Audio;AudioVideo;Music;Production;
+StartupNotify=true
+StartupWMClass=beehive-studio

@@ -125,7 +125,10 @@ jobs:
             libssl-dev \
             pkg-config \
             libasound2-dev \
-            libjack-jackd2-dev
+            libjack-jackd2-dev \
+            libx11-dev \
+            libxcb-xfixes0-dev \
+            libx11-xcb-dev
 
       - name: Install JS dependencies
         run: pnpm install
@@ -138,6 +141,10 @@ jobs:
       - name: Run Python tests
         run: uv run pytest -v
         working-directory: services/agent-orchestrator
+
+      - name: Run frontend tests
+        run: pnpm exec vitest run
+        working-directory: apps/desktop
 
       - name: Run Rust tests (Tauri)
         run: cargo test
@@ -176,7 +183,10 @@ jobs:
             libssl-dev \
             pkg-config \
             libasound2-dev \
-            libjack-jackd2-dev
+            libjack-jackd2-dev \
+            libx11-dev \
+            libxcb-xfixes0-dev \
+            libx11-xcb-dev
 
       - name: Install JS dependencies
         run: pnpm install

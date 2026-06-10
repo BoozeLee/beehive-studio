@@ -1,17 +1,8 @@
+import { BEEHIVE } from "../lib/theme";
 import { useState, useEffect } from "react";
 import { readClipsAt, type ClipDiffEntry } from "../lib/projectGit";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-  success: "#4ade80",
-  error: "#ef4444",
-  warning: "#fbbf24",
-};
+const COLORS = { ...BEEHIVE };
 
 interface Props {
   projectName: string;

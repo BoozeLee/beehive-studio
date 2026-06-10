@@ -4,6 +4,9 @@ mod audio_commands;
 mod git_commands;
 mod sample_commands;
 
+#[cfg(test)]
+mod tests;
+
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -300,6 +303,109 @@ fn close_midi_input() -> Result<(), String> {
     Ok(())
 }
 
+/// Orchestrate multiple agents via the backend orchestrator.
+#[tauri::command]
+async fn orchestrate_agents(
+    brief: String,
+    agents: Vec<String>,
+    chain_mode: bool,
+    session_context: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let url = "http://127.0.0.1:9876/orchestrate";
+
+    let body = serde_json::json!({
+        "brief": brief,
+        "agents": agents,
+        "chain_mode": chain_mode,
+        "session_context": session_context,
+    });
+
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to backend: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Backend returned error: {}", response.status()));
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    Ok(data)
+}
+
+/// Run the style reference agent to analyze MIDI data.
+#[tauri::command]
+async fn run_style_agent(
+    midi_data: serde_json::Value,
+    session_context: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let url = "http://127.0.0.1:9876/agents/style";
+
+    let body = serde_json::json!({
+        "midi_data": midi_data,
+        "session_context": session_context,
+    });
+
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to backend: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Backend returned error: {}", response.status()));
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    Ok(data)
+}
+
+/// Run the sound design agent to generate synth patches.
+#[tauri::command]
+async fn run_sound_design_agent(
+    brief: String,
+    session_context: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let url = "http://127.0.0.1:9876/agents/sound_design";
+
+    let body = serde_json::json!({
+        "brief": brief,
+        "session_context": session_context,
+    });
+
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to backend: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Backend returned error: {}", response.status()));
+    }
+
+    let data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    Ok(data)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -307,6 +413,12 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .setup(|_app| {
+            // Backend is spawned by the beehivestudio launcher script.
+            // When running standalone (just dev), the user starts it manually:
+            //   cd services/agent-orchestrator && just backend
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             send_brief,
             check_backend_health,
@@ -319,7 +431,11 @@ fn main() {
             list_midi_ports,
             open_midi_input,
             close_midi_input,
+            orchestrate_agents,
+            run_style_agent,
+            run_sound_design_agent,
             audio_commands::write_wav_file,
+            audio_commands::encode_mp3,
             audio_commands::export_audio_stems,
             sample_commands::get_sample_info,
             sample_commands::load_sample,

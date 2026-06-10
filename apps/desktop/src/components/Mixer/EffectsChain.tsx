@@ -1,3 +1,4 @@
+import { BEEHIVE } from "../../lib/theme";
 import React from "react";
 import {
   type EffectInstance,
@@ -8,14 +9,7 @@ import {
   EFFECT_PARAM_RANGE,
 } from "../../lib/effectEngine";
 
-const COLORS = {
-  bg: "#0f0f12",
-  panel: "#18181c",
-  border: "#2a2a30",
-  accent: "#ff8c42",
-  text: "#e0e0e0",
-  textMuted: "#888",
-};
+const COLORS = BEEHIVE;
 
 interface EffectsChainProps {
   effects: EffectInstance[];

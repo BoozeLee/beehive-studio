@@ -92,6 +92,18 @@ This is a portfolio project. Source is publicly viewable but not licensed for re
 
 ---
 
+## Monetization
+
+**Beehive Studio** is developed as part of the Bakery Street ecosystem.
+
+- **GitHub Sponsors**: Support development at [github.com/sponsors/BoozeLee](https://github.com/sponsors/BoozeLee)
+- **Mixhive Pro Bundle**: €29/month (Personal) | €99/month (Studio)
+- **Commercial Licensing**: Available for teams and enterprises
+
+See [COMMERCIAL.md](./COMMERCIAL.md) for details.
+
+---
+
 **This project exists because someone wanted a tool that treats underground ritual music generation with the same seriousness that professional developers treat code, and the same immediacy that Ableton Live gives performers.**
 
 Let's build it properly.

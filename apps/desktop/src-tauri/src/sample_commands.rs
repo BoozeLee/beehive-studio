@@ -59,7 +59,7 @@ pub async fn get_sample_info(path: String) -> Result<SampleInfo, String> {
         }
         "mp3" | "flac" | "ogg" | "aiff" | "aif" => {
             // For non-WAV formats, return basic info.
-            // The frontend will use Tone.js Player for decoding.
+            // The frontend uses Web Audio API decodeAudioData for playback.
             Ok(SampleInfo {
                 path,
                 filename,
@@ -97,7 +97,7 @@ pub async fn load_sample(path: String) -> Result<SampleData, String> {
             .map(|s| s.unwrap_or(0) as f32 / i16::MAX as f32)
             .collect()
     } else {
-        // Non-WAV: return empty — frontend uses Tone.js Player
+        // Non-WAV: return empty — frontend uses Web Audio API decodeAudioData
         Vec::new()
     };
 

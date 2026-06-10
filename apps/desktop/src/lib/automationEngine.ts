@@ -102,3 +102,35 @@ export const PARAM_RANGES: Record<
   "delay.wet": { min: 0, max: 1, default: 0.5, unit: "" },
   "distortion.wet": { min: 0, max: 1, default: 0.5, unit: "" },
 };
+
+type AutomationTarget = {
+  set: (value: number, time: number) => void;
+};
+
+const automationTargets = new Map<string, AutomationTarget>();
+
+export function registerAutomationTarget(
+  parameter: string,
+  target: AutomationTarget
+): void {
+  automationTargets.set(parameter, target);
+}
+
+export function unregisterAutomationTarget(parameter: string): void {
+  automationTargets.delete(parameter);
+}
+
+export function applyAutomationAtBeat(
+  lanes: AutomationLane[],
+  currentBeat: number,
+  audioTime: number
+): void {
+  for (const lane of lanes) {
+    if (lane.mode === "off" || lane.points.length === 0) continue;
+    const value = interpolateAutomation(lane.points, currentBeat);
+    const target = automationTargets.get(lane.parameter);
+    if (target) {
+      target.set(value, audioTime);
+    }
+  }
+}

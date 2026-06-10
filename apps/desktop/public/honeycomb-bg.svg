@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="52" viewBox="0 0 60 52">
+  <defs>
+    <pattern id="honeycomb" width="60" height="52" patternUnits="userSpaceOnUse" patternTransform="scale(0.5)">
+      <path d="M30 0 L60 15 L60 37 L30 52 L0 37 L0 15 Z"
+            fill="none" stroke="#2a241c" stroke-width="0.5" opacity="0.15"/>
+      <path d="M0 15 L30 0" fill="none" stroke="#2a241c" stroke-width="0.5" opacity="0.1"/>
+      <path d="M60 15 L30 0" fill="none" stroke="#2a241c" stroke-width="0.5" opacity="0.1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#honeycomb)"/>
+</svg>

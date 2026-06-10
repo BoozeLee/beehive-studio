@@ -1,0 +1,76 @@
+# Maintainer: Beehive Studio <dev@beehive.studio>
+# Contributor: Beehive Studio Team
+# Arch: x86_64
+# License: MIT
+
+pkgname=beehive-studio
+pkgver=1.0.0prep
+pkgrel=1
+pkgdesc="Local-first AI music production. Human creative sovereignty."
+arch=("x86_64")
+url="https://beehive.studio"
+license=("MIT")
+depends=(
+  "libwebkit2gtk-4.1"
+  "gtk3"
+  "libayatana-appindicator"
+  "librsvg"
+  "openssl"
+  "python"
+  "python-pip"
+  "uv"
+)
+makedepends=(
+  "cargo"
+  "nodejs"
+  "pnpm"
+  "npm"
+)
+optdepends=(
+  "ollama: local LLM inference for agent features"
+)
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/BoozeLee/beehive-studio/archive/v${pkgver}.tar.gz")
+sha256sums=("SKIP")
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # Install Python dependencies
+  cd services/agent-orchestrator
+  uv sync --frozen
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # Install Node dependencies
+  cd apps/desktop
+  pnpm install --frozen-lockfile
+
+  # Build the Tauri desktop app
+  pnpm tauri build --bundles deb
+  cd "${srcdir}/${pkgname}-${pkgver}"
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # Install desktop app
+  install -Dm755 "apps/desktop/src-tauri/target/release/beehive-studio" \
+    "${pkgdir}/usr/bin/beehive-studio"
+
+  # Install VST plugin
+  install -Dm755 "crates/beehive-studio-vst/target/release/libbeehive_studio_vst.so" \
+    "${pkgdir}/usr/lib/vst3/BeehiveStudio.vst3/Contents/x86_64-linux/BeehiveStudio.so"
+
+  # Install Python backend
+  install -dm755 "${pkgdir}/usr/lib/beehive-studio/backend"
+  cp -r services/agent-orchestrator/* "${pkgdir}/usr/lib/beehive-studio/backend/"
+  rm -rf "${pkgdir}/usr/lib/beehive-studio/backend/.venv"
+
+  # Install desktop entry
+  install -Dm644 "apps/desktop/src-tauri/icons/128x128.png" \
+    "${pkgdir}/usr/share/icons/hicolor/128x128/apps/beehive-studio.png"
+
+  install -Dm644 "${srcdir}/${pkgname}-${pkgver}/.aur/beehive-studio.desktop" \
+    "${pkgdir}/usr/share/applications/beehive-studio.desktop"
+}
+
+# vim:set ts=2 sw=2 et:
