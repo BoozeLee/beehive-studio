@@ -14,6 +14,7 @@ struct BackendResponse {
     status: String,
     reasoning: Vec<String>,
     clip_preview: serde_json::Value,
+    proposal: serde_json::Value,
 }
 
 /// Send a brief to the local agent orchestrator and return the generated clip.
@@ -57,12 +58,14 @@ async fn send_brief(
         })
         .unwrap_or_default();
     let clip_preview = data["clip_preview"].clone();
+    let proposal = data["proposal"].clone();
 
     Ok(BackendResponse {
         task_id,
         status,
         reasoning,
         clip_preview,
+        proposal,
     })
 }
 

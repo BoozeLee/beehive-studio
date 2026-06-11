@@ -25,7 +25,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://localhost:9876 http://127.0.0.1:9876 ws://localhost:1420; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; img-src 'self' data: asset: http: https:; media-src 'self' asset: http: https:; worker-src 'self' blob:; font-src 'self' data:;"
+      "csp": "default-src 'self'; connect-src ipc: http://localhost:9876 http://127.0.0.1:9876 http://localhost:9000 http://127.0.0.1:9000 ws://localhost:1420 ws://localhost:9000 ws://127.0.0.1:9000; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; img-src 'self' data: asset: http: https:; media-src 'self' asset: http: https:; worker-src 'self' blob:; font-src 'self' data:;",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/beehive-studio/projects/**",
+          "$HOME/.local/share/beehive-studio/projects/**"
+        ]
+      }
     }
   },
   "bundle": {
