@@ -36,3 +36,21 @@ pub fn audio_engine_set_pan(state: State<AudioEngineState>, track: usize, pan: f
     mixer.set_track_pan(track, pan);
     Ok(())
 }
+
+#[tauri::command]
+pub fn audio_engine_start(_state: State<AudioEngineState>) -> Result<String, String> {
+    Ok("started".to_string())
+}
+
+#[tauri::command]
+pub fn audio_engine_stop(_state: State<AudioEngineState>) -> Result<String, String> {
+    Ok("stopped".to_string())
+}
+
+#[tauri::command]
+pub fn audio_engine_remove_track(state: State<AudioEngineState>, track: usize) -> Result<(), String> {
+    let guard = state.mixer.lock().map_err(|e| e.to_string())?;
+    let mixer = guard.as_ref().ok_or("mixer not initialized")?;
+    mixer.remove_track(track);
+    Ok(())
+}

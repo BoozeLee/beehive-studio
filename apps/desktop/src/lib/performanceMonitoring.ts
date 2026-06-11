@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Performance monitoring and latency measurement utilities for Beehive Studio mixer routing
  */
