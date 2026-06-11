@@ -1,5 +1,6 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { Editor, type BeforeMount, type OnMount, type Monaco } from "@monaco-editor/react";
+import { validateJetBeeDsl } from "../../lib/dslDiagnostics";
 
 export interface PromptEditorProps {
   value: string;
@@ -196,6 +197,7 @@ export function PromptEditor({
   readOnly = false,
 }: PromptEditorProps) {
   const editorRef = useRef<Monaco["editor"]["IStandaloneCodeEditor"] | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
   const [position, setPosition] = useState({ line: 1, column: 1 });
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
@@ -210,6 +212,16 @@ export function PromptEditor({
         JETBEE_LANGUAGE_ID,
         JETBEE_TOKEN_PROVIDER as unknown as Monaco["languages"]["IMonarchLanguage"]
       );
+      monaco.languages.registerCompletionItemProvider(JETBEE_LANGUAGE_ID, {
+        provideCompletionItems: () => ({
+          suggestions: ["style", "bpm", "key", "duration", "mood", "instruments"].map((label) => ({
+            label,
+            kind: monaco.languages.CompletionItemKind.Property,
+            insertText: `${label}: `,
+            range: undefined as never,
+          })),
+        }),
+      });
     }
 
     // Register theme
@@ -219,6 +231,7 @@ export function PromptEditor({
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
       editorRef.current = editor;
+      monacoRef.current = monaco;
 
       // Track cursor for status bar
       editor.onDidChangeCursorPosition((e) => {
@@ -263,6 +276,27 @@ export function PromptEditor({
     },
     [onGenerate, onSendToCritic]
   );
+
+  useEffect(() => {
+    const model = editorRef.current?.getModel();
+    const monaco = monacoRef.current;
+    if (!model || !monaco) return;
+    const diagnostics = validateJetBeeDsl(value);
+    monaco.editor.setModelMarkers(
+      model,
+      JETBEE_LANGUAGE_ID,
+      diagnostics.map((item) => ({
+        startLineNumber: item.line,
+        endLineNumber: item.line,
+        startColumn: item.startColumn,
+        endColumn: item.endColumn,
+        message: item.message,
+        severity: item.severity === "error"
+          ? monaco.MarkerSeverity.Error
+          : monaco.MarkerSeverity.Warning,
+      })),
+    );
+  }, [value]);
 
   return (
     <div

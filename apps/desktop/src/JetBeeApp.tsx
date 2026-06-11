@@ -72,7 +72,12 @@ import { SwarmTrace } from "./components/SwarmTrace/SwarmTrace";
 import type { SwarmStep } from "./components/SwarmTrace/SwarmTrace";
 import { useProjectSocket } from "./lib/useProjectSocket";
 import { useBuildLogStore } from "./lib/buildLogStore";
+import { useHiveAdvisor } from "./lib/useHiveAdvisor";
 import { AgentDirector } from "./components/AgentDirector/AgentDirector";
+import { ProposalPanel } from "./components/ProposalPanel/ProposalPanel";
+import { BuildPlanReview } from "./components/BuildPlanReview/BuildPlanReview";
+import { useJetBeeBuild } from "./lib/useJetBeeBuild";
+import type { BuildEvent, PatchOperation } from "../../../packages/core-models/index";
 
 // JetBee theme
 import "./styles/jetbee-theme.css";
@@ -202,6 +207,19 @@ function JetBeeApp() {
   const buildLogs = useBuildLogStore((s) => s.logs);
   const addBuildLog = useBuildLogStore((s) => s.addLog);
   const [swarmSteps, setSwarmSteps] = useState<SwarmStep[]>([]);
+
+  // ── Hive 999 advisor ──
+  const { proposal: hiveProposal, isLoading: hiveLoading, error: hiveError, clearProposal } = useHiveAdvisor();
+  const {
+    job: activeBuild,
+    error: buildError,
+    loading: buildLoading,
+    request: requestBuild,
+    approve: approveBuild,
+    reject: rejectBuild,
+    consumeEvent: consumeBuildEvent,
+  } = useJetBeeBuild();
+  const [projectRevision, setProjectRevision] = useState(0);
 
   // ── WebSocket connection to JetBee backend ──
   const { connected: wsConnected, reconnecting: wsReconnecting, lastMessage } = useProjectSocket(projectName);
@@ -585,94 +603,62 @@ function JetBeeApp() {
 
     setIsLoading(true);
     setStreamLog([]);
-    setStatus(
-      variationBrief ? "Generating variation..." : "Agent thinking..."
-    );
+    setStatus(variationBrief ? "Planning variation build..." : "Planning build...");
 
     try {
-      // ── JetBee backend (FastAPI + ACE-Step) ──
-      const fastapiRes = await fetch(
-        `http://127.0.0.1:9000/projects/${encodeURIComponent(projectName)}/generate`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: text.trim(),
-            duration: 30,
-            audio_format: "mp3",
-            thinking: true,
-            backend: "acestep",
-          }),
-        }
-      );
-      if (fastapiRes.ok) {
-        const fastapiData = await fastapiRes.json();
-        addBuildLog({
-          level: "info",
-          message: "> FastAPI queued: " + (fastapiData.task_id || "unknown"),
-          taskId: fastapiData.task_id,
-          backend: "acestep",
-        });
-      }
-
-      // ── Legacy Tauri backend (port 9876) ──
-      const data = await invoke<{
-        task_id: string;
-        status: string;
-        reasoning: string[];
-        clip_preview: { notes: any[] };
-      }>("send_brief", {
-        brief: text.trim(),
-        sessionContext: {
-          bpm: transport.bpm,
-          swing: 0.68,
-          session_id: "demo-session-1",
-        },
+      const state = useTimelineStore.getState();
+      const artifacts = [
+        ...state.tracks.map((track) => ({
+          id: track.id,
+          kind: "track" as const,
+          owner: "visual" as const,
+          revision: projectRevision,
+          name: track.name,
+          summary: `${track.type} track with ${track.clips.length} clips`,
+        })),
+        ...Object.values(state.clips).map((clip) => ({
+          id: clip.id,
+          kind: "clip" as const,
+          owner: "visual" as const,
+          revision: projectRevision,
+          name: clip.name,
+          summary: `${clip.type} clip at beat ${clip.start}`,
+        })),
+      ];
+      const job = await requestBuild({
+        projectId: projectName,
+        projectRevision,
+        intent: text.trim(),
+        source: "keyboard",
+        selectedArtifactIds: selectedClipId ? [selectedClipId] : [],
+        artifacts,
+        compilerPreference: "auto",
+        allowCloud: false,
+        cloudApproved: false,
       });
-
-      addBuildLog({
-          level: "info",
-          message: "> Generating: " + text,
-          taskId: data.task_id,
-        });
-
-      const newClip: Clip = {
-        id: data.task_id || crypto.randomUUID(),
-        name: text.slice(0, 40) + (text.length > 40 ? "..." : ""),
-        midiData: data.clip_preview,
-        reasoning: data.reasoning,
-      };
-
-      setClips((prev) => [...prev, newClip]);
+      if (!job) throw new Error("Build plan request failed");
       if (!variationBrief) setBrief("");
-      setStatus(
-        variationBrief
-          ? "Variation ready"
-          : "Clip generated — click Play"
-      );
-      setStreamLog(data.reasoning || []);
-
+      setStatus("Build plan ready for review");
       addBuildLog({
-          level: "success",
-          message: "Generation complete: " + (data.task_id || "unknown"),
-          taskId: data.task_id,
-        });
-
+        level: job.plan.degraded ? "warn" : "info",
+        message: `Build plan ready: ${job.plan.summary}`,
+        taskId: job.id,
+      });
       setSwarmSteps((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
-          agentId: "composer",
-          agentLabel: "Composer",
+          agentId: "hive999",
+          agentLabel: "Hive 999 Supervisor",
           agentColor: "var(--jb-comb)",
           timestamp: Date.now(),
-          type: "complete" as const,
-          message: `Generated clip "${newClip.name}"`,
+          type: "thinking" as const,
+          message: job.plan.summary,
         },
       ]);
     } catch (err) {
       console.error(err);
-      setStatus("Backend error — is it running on port 9876?");
+      setStatus("Build planning failed — is JetBee API running on port 9000?");
 
       addBuildLog({
           level: "error",
@@ -694,7 +680,53 @@ function JetBeeApp() {
     } finally {
       setIsLoading(false);
     }
-  }, [brief, transport.bpm]);
+  }, [brief, projectName, projectRevision, requestBuild, selectedClipId]);
+
+  const validateApprovedOperations = useCallback((operations: PatchOperation[]) => {
+    for (const operation of operations) {
+      if (operation.op !== "set_parameter") {
+        throw new Error(`Unsupported Phase 1 patch operation: ${operation.op}`);
+      }
+      if (operation.path === "settings.bpm" || operation.path === "session.bpm") {
+        const bpm = Number(operation.value);
+        if (!Number.isFinite(bpm) || bpm < 40 || bpm > 240) throw new Error("Invalid BPM patch");
+        continue;
+      }
+      throw new Error(`Unsupported Phase 1 patch path: ${operation.path}`);
+    }
+  }, []);
+
+  const applyApprovedOperations = useCallback((operations: PatchOperation[]) => {
+    validateApprovedOperations(operations);
+    for (const operation of operations) {
+      if (operation.path === "settings.bpm" || operation.path === "session.bpm") {
+        transport.setBpm(Number(operation.value));
+      }
+    }
+  }, [transport, validateApprovedOperations]);
+
+  const handleApproveBuild = useCallback(async () => {
+    if (!activeBuild) return;
+    try {
+      const operations = activeBuild.plan.proposedPatches.flatMap((patch) => patch.operations);
+      validateApprovedOperations(operations);
+      await ensureProjectInit(projectName);
+      await saveSnapshot(projectName, currentProjectDocumentJson(), `Pre-build ${activeBuild.id}`);
+      const approved = await approveBuild(projectName, activeBuild.id, projectRevision);
+      if (!approved) throw new Error("Build approval failed");
+      applyApprovedOperations(operations);
+      setProjectRevision((revision) => revision + 1);
+      setStatus(`Build queued with ${approved.provider ?? "selected provider"}`);
+    } catch (err) {
+      setStatus(`Build approval failed: ${String(err)}`);
+    }
+  }, [activeBuild, applyApprovedOperations, approveBuild, currentProjectDocumentJson, projectName, projectRevision, validateApprovedOperations]);
+
+  const handleRejectBuild = useCallback(async () => {
+    if (!activeBuild) return;
+    await rejectBuild(projectName, activeBuild.id);
+    setStatus("Build plan rejected; project state unchanged");
+  }, [activeBuild, projectName, rejectBuild]);
 
   const doResearch = useCallback(async () => {
     if (!brief.trim()) return;
@@ -1058,8 +1090,9 @@ function JetBeeApp() {
     registerCommand({ id: "transport.stop", label: "Stop", category: "Transport", shortcut: "ctrl+space", action: () => transport.stop() });
     registerCommand({ id: "file.save", label: "Save Project", category: "File", shortcut: "ctrl+s", action: () => handleSaveProject() });
     registerCommand({ id: "file.export", label: "Export Audio", category: "File", shortcut: "ctrl+shift+e", action: () => setShowExportDialog(true) });
-    registerCommand({ id: "project.focusExplorer", label: "Focus Explorer", category: "Project", shortcut: "alt+1", action: () => {} });
-    registerCommand({ id: "project.focusInspector", label: "Focus Inspector", category: "Project", shortcut: "alt+4", action: () => {} });
+    registerCommand({ id: "project.focusExplorer", label: "Focus Explorer", category: "Project", shortcut: "alt+1", action: () => document.querySelector<HTMLElement>('[data-jetbee-pane="explorer"]')?.focus() });
+    registerCommand({ id: "project.focusInspector", label: "Focus Inspector", category: "Project", shortcut: "alt+2", action: () => document.querySelector<HTMLElement>('[data-jetbee-pane="inspector"]')?.focus() });
+    registerCommand({ id: "project.focusConsole", label: "Focus Build Console", category: "Project", shortcut: "alt+0", action: () => document.querySelector<HTMLElement>('[data-jetbee-pane="console"]')?.focus() });
     registerCommand({ id: "editor.intention", label: "Show Intentions", category: "Editor", shortcut: "alt+enter", action: () => {} });
     registerCommand({ id: "agent.sendBrief", label: "Send Brief", category: "Agent", shortcut: "ctrl+return", action: () => sendBrief() });
     registerCommand({ id: "agent.critic", label: "Send to Critic", category: "Agent", shortcut: "ctrl+shift+c", action: () => {} });
@@ -1076,7 +1109,7 @@ function JetBeeApp() {
         unbindShortcut(entry.shortcut);
       }
       unbindShortcut("ctrl+e");
-      const ids = ["palette.open", "generate.build", "transport.playPause", "transport.stop", "file.save", "file.export", "project.focusExplorer", "project.focusInspector", "editor.intention", "agent.sendBrief", "agent.critic", "git.commit", "window.reload"];
+      const ids = ["palette.open", "generate.build", "transport.playPause", "transport.stop", "file.save", "file.export", "project.focusExplorer", "project.focusInspector", "project.focusConsole", "editor.intention", "agent.sendBrief", "agent.critic", "git.commit", "window.reload"];
       for (const id of ids) {
         unregisterCommand(id);
       }
@@ -1096,6 +1129,36 @@ function JetBeeApp() {
   // ── WebSocket message processor ──
   useEffect(() => {
     if (!lastMessage) return;
+    if (lastMessage.type.startsWith("build.") || lastMessage.type === "patch.applied") {
+      const event = lastMessage as unknown as BuildEvent;
+      consumeBuildEvent(event);
+      const progress = Number(event.metadata?.progress ?? 0);
+      addBuildLog({
+        level: event.type === "build.failed" ? "error" : event.type === "build.completed" ? "success" : "info",
+        message: `${event.type}${progress ? ` (${Math.round(progress * 100)}%)` : ""}`,
+        taskId: event.buildId,
+        backend: String(event.metadata?.provider ?? "jetbee-gateway"),
+      });
+      if (event.type === "build.artifact_ready") {
+        const artifact = event.metadata?.artifact as { id?: string; path?: string } | undefined;
+        if (artifact?.path) {
+          const state = useTimelineStore.getState();
+          let track = state.tracks.find((item) => item.type === "audio");
+          if (!track) {
+            track = {
+              id: crypto.randomUUID(), name: "Generated Audio", type: "audio", color: COLORS.accent,
+              volume: 0.8, pan: 0, muted: false, solo: false, arm: false, clips: [], automationLanes: [],
+            };
+            addTrack(track);
+            createChannel(track.id, track.name);
+          }
+          const id = artifact.id ?? crypto.randomUUID();
+          if (!state.clips[id]) {
+            addTimelineClip(normalizeTimelineClip({ id, name: `Build ${event.buildId.slice(0, 8)}`, audioFilePath: artifact.path }, track.id, track.clips.length));
+          }
+        }
+      }
+    }
     if (lastMessage.type === "generation_status") {
       const msg = lastMessage as any;
       addBuildLog({
@@ -1112,7 +1175,7 @@ function JetBeeApp() {
       const step = (lastMessage as any).step;
       if (step) setSwarmSteps((prev) => [...prev, step]);
     }
-  }, [lastMessage, addBuildLog]);
+  }, [lastMessage, addBuildLog, addTimelineClip, addTrack, consumeBuildEvent]);
 
   // ── Layout construction ──
   const topBar = (
@@ -1546,6 +1609,33 @@ function JetBeeApp() {
           content: <SwarmTrace steps={swarmSteps} />,
         },
         {
+          id: "build-plan",
+          label: "Build Plan",
+          icon: "▶",
+          content: (
+            <BuildPlanReview
+              job={activeBuild}
+              loading={buildLoading}
+              error={buildError}
+              onApprove={handleApproveBuild}
+              onReject={handleRejectBuild}
+            />
+          ),
+        },
+        {
+          id: "proposal",
+          label: "Proposal",
+          icon: "🐝",
+          content: (
+            <ProposalPanel
+              proposal={hiveProposal}
+              isLoading={hiveLoading}
+              error={hiveError}
+              onDismiss={clearProposal}
+            />
+          ),
+        },
+        {
           id: "git",
           label: "Git",
           icon: "🌿",
@@ -1594,6 +1684,9 @@ function JetBeeApp() {
           {wsConnected ? "● WS" : wsReconnecting ? "◐ WS" : "○ WS"}
         </span>
         <span className="jetbee-statusbar-chip">Backend: 9876</span>
+        <span className="jetbee-statusbar-chip" style={{ color: hiveProposal && !hiveProposal.degraded ? "var(--jb-success)" : hiveLoading ? "var(--jb-warning)" : "var(--jb-text-muted)" }}>
+          {hiveLoading ? "◐ Hive" : hiveProposal && !hiveProposal.degraded ? "● Hive" : "○ Hive"}
+        </span>
         <span className="jetbee-statusbar-chip">Ollama: 11434</span>
         <span className="jetbee-statusbar-chip">Baker Street: 3001</span>
         <span>{transport.isPlaying ? "▶ Playing" : "⏹ Stopped"}</span>

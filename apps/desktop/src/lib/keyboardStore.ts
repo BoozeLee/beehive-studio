@@ -273,7 +273,7 @@ export const DEFAULT_KEYMAP: KeymapEntry[] = [
   { commandId: "palette.open", shortcut: "shift+shift" },
   { commandId: "generate.build", shortcut: "ctrl+shift+g" },
   { commandId: "project.focusExplorer", shortcut: "alt+1" },
-  { commandId: "project.focusInspector", shortcut: "alt+4" },
+  { commandId: "project.focusInspector", shortcut: "alt+2" },
   { commandId: "project.focusConsole", shortcut: "alt+0" },
   { commandId: "editor.intention", shortcut: "alt+enter" },
   { commandId: "transport.playPause", shortcut: "space" },

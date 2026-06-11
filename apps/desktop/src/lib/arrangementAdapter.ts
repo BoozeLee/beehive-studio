@@ -18,8 +18,16 @@ export interface AppClip {
   gain?: number;
 }
 
-export interface ProjectDocumentV4 {
-  version: 4;
+export interface ProjectArtifactRecord {
+  id: ID;
+  kind: "track" | "clip" | "pattern" | "arrangement" | "prompt" | "audio";
+  owner: "dsl" | "visual";
+  revision: number;
+  sourcePath?: string;
+}
+
+export interface ProjectDocumentV5 {
+  version: 5;
   clips: AppClip[];
   timeline: {
     tracks: Track[];
@@ -30,7 +38,15 @@ export interface ProjectDocumentV4 {
     masterGain: number;
     renderEngine: "python" | "desktop";
   };
+  artifacts: Record<ID, ProjectArtifactRecord>;
+  dslSources: Record<string, string>;
+  buildConfiguration: {
+    compilerPreference: "auto" | "ace-rest" | "ace-cpp" | "deapi-rest" | "deapi-mcp";
+    allowCloud: boolean;
+  };
 }
+
+export type ProjectDocumentV4 = ProjectDocumentV5;
 
 export interface ArrangementPayload {
   renderClips: RenderClip[];
@@ -191,8 +207,14 @@ export function serializeProjectDocument(
   patterns: PatternRecord[] = [],
   settings: ProjectDocumentV4["settings"] = { masterGain: 0.9, renderEngine: "python" }
 ): string {
-  const document: ProjectDocumentV4 = {
-    version: 4,
+  const artifacts: Record<ID, ProjectArtifactRecord> = {};
+  for (const track of tracks) artifacts[track.id] = { id: track.id, kind: "track", owner: "visual", revision: 0 };
+  for (const clip of Object.values(timelineClips)) {
+    artifacts[clip.id] = { id: clip.id, kind: clip.type === "audio" ? "audio" : "clip", owner: "visual", revision: 0 };
+  }
+  for (const pattern of patterns) artifacts[pattern.id] = { id: pattern.id, kind: "pattern", owner: "visual", revision: 0 };
+  const document: ProjectDocumentV5 = {
+    version: 5,
     clips,
     timeline: {
       tracks,
@@ -200,11 +222,14 @@ export function serializeProjectDocument(
     },
     patterns,
     settings,
+    artifacts,
+    dslSources: {},
+    buildConfiguration: { compilerPreference: "auto", allowCloud: false },
   };
   return JSON.stringify(document);
 }
 
-export function parseProjectDocument(raw: string | unknown): ProjectDocumentV4 {
+export function parseProjectDocument(raw: string | unknown): ProjectDocumentV5 {
   const parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
   if (
     parsed &&
@@ -212,26 +237,42 @@ export function parseProjectDocument(raw: string | unknown): ProjectDocumentV4 {
     !Array.isArray(parsed) &&
     ((parsed as { version?: unknown }).version === 2 ||
       (parsed as { version?: unknown }).version === 3 ||
-      (parsed as { version?: unknown }).version === 4)
+      (parsed as { version?: unknown }).version === 4 ||
+      (parsed as { version?: unknown }).version === 5)
   ) {
-    const document = parsed as Partial<ProjectDocumentV4>;
+    const document = parsed as Partial<ProjectDocumentV5>;
+    const tracks = document.timeline?.tracks ?? [];
+    const timelineClips = document.timeline?.clips ?? {};
+    const patterns = document.patterns ?? [];
+    const artifacts = { ...(document.artifacts ?? {}) };
+    for (const track of tracks) artifacts[track.id] ??= { id: track.id, kind: "track", owner: "visual", revision: 0 };
+    for (const clip of Object.values(timelineClips)) {
+      artifacts[clip.id] ??= { id: clip.id, kind: clip.type === "audio" ? "audio" : "clip", owner: "visual", revision: 0 };
+    }
+    for (const pattern of patterns) artifacts[pattern.id] ??= { id: pattern.id, kind: "pattern", owner: "visual", revision: 0 };
     return {
-      version: 4,
+      version: 5,
       clips: document.clips ?? [],
       timeline: {
-        tracks: document.timeline?.tracks ?? [],
-        clips: document.timeline?.clips ?? {},
+        tracks,
+        clips: timelineClips,
       },
-      patterns: document.patterns ?? [],
+      patterns,
       settings: {
         masterGain: document.settings?.masterGain ?? 0.9,
         renderEngine: document.settings?.renderEngine ?? "python",
+      },
+      artifacts,
+      dslSources: document.dslSources ?? {},
+      buildConfiguration: {
+        compilerPreference: document.buildConfiguration?.compilerPreference ?? "auto",
+        allowCloud: document.buildConfiguration?.allowCloud ?? false,
       },
     };
   }
 
   return {
-    version: 4,
+    version: 5,
     clips: Array.isArray(parsed) ? (parsed as AppClip[]) : [],
     timeline: {
       tracks: [],
@@ -239,5 +280,8 @@ export function parseProjectDocument(raw: string | unknown): ProjectDocumentV4 {
     },
     patterns: [],
     settings: { masterGain: 0.9, renderEngine: "python" },
+    artifacts: {},
+    dslSources: {},
+    buildConfiguration: { compilerPreference: "auto", allowCloud: false },
   };
 }

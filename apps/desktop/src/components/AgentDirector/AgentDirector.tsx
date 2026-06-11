@@ -3,7 +3,7 @@ import { BEEHIVE, commonStyles, panelStyle } from "../../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 
 interface ReasoningStep {
-  type: "status" | "reasoning" | "tool_call" | "midi" | "arrangement" | "qa_warning" | "complete" | "error";
+  type: "status" | "reasoning" | "tool_call" | "midi" | "arrangement" | "qa_warning" | "advisory" | "complete" | "error";
   text?: string;
   message?: string;
   name?: string;
@@ -11,6 +11,27 @@ interface ReasoningStep {
   data?: unknown;
   task_id?: string;
   clip_preview?: { notes: Array<{ pitch: number; velocity: number; start: number; duration: number }> };
+  proposal?: AdvisoryProposal;
+}
+
+interface AdvisoryProposal {
+  status?: string;
+  degraded?: boolean;
+  attribution?: {
+    service?: string;
+    model?: string;
+    profile?: string;
+    prompt_versions?: Record<string, string>;
+    latency_ms?: number;
+  };
+  creative_plan?: {
+    summary?: string;
+    rationale?: string[];
+    confidence?: Record<string, number>;
+    alternatives?: Array<{ direction?: string; why?: string; delta_summary?: string }>;
+    warnings?: string[];
+    evidence?: string[];
+  };
 }
 
 interface HistoryEntry {
@@ -186,6 +207,9 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
 
           if (data.clip_preview) {
             pushStep({ type: "midi", data: data.clip_preview, message: "Clip generated" });
+          }
+          if (data.proposal) {
+            pushStep({ type: "advisory", proposal: data.proposal as AdvisoryProposal });
           }
           if (data.arrangement) {
             pushStep({ type: "reasoning", text: `Arrangement: ${JSON.stringify(data.arrangement).slice(0, 200)}` });
@@ -571,6 +595,48 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
                   ⚠️ {step.text}
                 </div>
               );
+            case "advisory": {
+              const proposal = step.proposal;
+              const plan = proposal?.creative_plan;
+              const attribution = proposal?.attribution;
+              const confidence = plan?.confidence?.overall;
+              return (
+                <details
+                  key={i}
+                  style={{
+                    marginBottom: 6,
+                    padding: "7px 9px",
+                    borderRadius: 5,
+                    background: proposal?.degraded ? `${BEEHIVE.warning}11` : `${BEEHIVE.comb}11`,
+                    borderLeft: `3px solid ${proposal?.degraded ? BEEHIVE.warning : BEEHIVE.comb}`,
+                  }}
+                >
+                  <summary style={{ cursor: "pointer", color: BEEHIVE.text }}>
+                    {proposal?.degraded ? "Degraded tools-only proposal" : `${attribution?.model || "Hive 999"} advisory`}
+                    {typeof confidence === "number" ? ` · ${Math.round(confidence * 100)}% confidence` : ""}
+                    {plan?.summary ? ` · ${plan.summary}` : ""}
+                  </summary>
+                  <div style={{ marginTop: 7, color: BEEHIVE.textMuted, fontSize: 11 }}>
+                    <div>
+                      Service: {attribution?.service || "unknown"} · Profile: {attribution?.profile || "unknown"} ·
+                      Latency: {attribution?.latency_ms ?? 0}ms
+                    </div>
+                    {plan?.rationale?.map((item, index) => <div key={`r-${index}`}>Rationale: {item}</div>)}
+                    {plan?.warnings?.map((item, index) => <div key={`w-${index}`} style={{ color: BEEHIVE.warning }}>Warning: {item}</div>)}
+                    {plan?.alternatives?.map((item, index) => (
+                      <button
+                        key={`a-${index}`}
+                        onClick={() => streamAgent(`${brief}\nIteration direction: ${item.direction || item.delta_summary || "alternative"}`)}
+                        style={{ ...commonStyles.toolBtn, marginTop: 5, marginRight: 5, fontSize: 10 }}
+                      >
+                        Try: {item.direction || "alternative"}
+                      </button>
+                    ))}
+                    {plan?.evidence?.length ? <div style={{ marginTop: 5 }}>Evidence: {plan.evidence.join(" · ")}</div> : null}
+                  </div>
+                </details>
+              );
+            }
             case "complete":
               return (
                 <div

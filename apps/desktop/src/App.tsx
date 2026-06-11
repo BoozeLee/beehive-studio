@@ -1992,7 +1992,7 @@ function App() {
         <span>Backend: 9876</span>
         <span>Ollama: 11434</span>
         <span>Baker Street: 3001</span>
-        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.3.0-alpha</span>
+        <span style={{ marginLeft: "auto" }}>Beehive Studio v0.4.0-beta</span>
       </div>
     </div>
   );
