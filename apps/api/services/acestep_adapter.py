@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 ACESTEP_BASE_URL = os.environ.get("ACESTEP_URL", "http://127.0.0.1:8001")
 DEFAULT_TIMEOUT = 300.0
+HEALTH_TIMEOUT = 3.0
 
 
 @dataclass
@@ -46,7 +47,7 @@ class ACEStepAdapter:
 
     async def _client_ctx(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
+            self._client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT, trust_env=False)
         return self._client
 
     async def close(self) -> None:
@@ -197,7 +198,7 @@ class ACEStepAdapter:
         """List available ACE-Step models."""
         client = await self._client_ctx()
         try:
-            resp = await client.get(f"{self.base_url}/v1/models")
+            resp = await client.get(f"{self.base_url}/v1/models", timeout=HEALTH_TIMEOUT)
             resp.raise_for_status()
             data = resp.json()
             return data.get("data", data.get("models", []))
