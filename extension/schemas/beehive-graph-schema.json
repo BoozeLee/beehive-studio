@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Beehive Agent Graph",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string", "default": "1.0" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "enum": ["agent", "tool", "input", "output"] },
+          "agentId": { "type": "string" },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            },
+            "required": ["x", "y"]
+          },
+          "config": { "type": "object" }
+        },
+        "required": ["id", "type"]
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "type": "string" },
+          "target": { "type": "string" },
+          "label": { "type": "string" }
+        },
+        "required": ["id", "source", "target"]
+      }
+    }
+  },
+  "required": ["version", "nodes", "edges"]
+}

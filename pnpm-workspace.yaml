@@ -1,0 +1,4 @@
+packages:
+  - 'extension'
+  - 'extension/webview'
+  - 'packages/*'
