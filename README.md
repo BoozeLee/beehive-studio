@@ -63,6 +63,21 @@ just dev       # Tauri desktop app
 just test      # All alpha gates (frontend + backend + packaging)
 ```
 
+### Optional Hive 999 Marco-o1 Advisor
+
+Rhythm & Groove can use the local Hive 999 sidecar for attributed creative
+advice while Studio retains deterministic MIDI and QA authority:
+
+```bash
+cd /home/kilisan/beeai-hive-999
+scripts/install_advisor_service.sh
+curl http://127.0.0.1:17999/api/v1/health
+```
+
+Studio remains usable and displays a degraded proposal when the advisor is
+unavailable or times out. See
+[`docs/SPRINT_1_MARCO_INTEGRATION.md`](docs/SPRINT_1_MARCO_INTEGRATION.md).
+
 ### Project Template
 ```bash
 # Create new project with default template

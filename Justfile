@@ -15,9 +15,17 @@ install:
 backend:
     cd services/agent-orchestrator && PYTHONPATH=. uv run uvicorn api.main:app --host 127.0.0.1 --port 9876 --reload
 
-# Tauri dev app.
+# Canonical JetBee build gateway on port 9000.
+gateway:
+    cd apps/api && ../../services/agent-orchestrator/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 9000 --reload
+
+# VS Code extension dev (run in standard VS Code with extensionDevelopmentPath).
 dev:
-    cd apps/desktop && pnpm tauri dev
+    cd extension && pnpm run compile && pnpm --filter beehive-studio-webview run build
+
+# Build VS Code extension host + webview.
+build-extension:
+    cd extension && pnpm run package && pnpm --filter beehive-studio-webview run build
 
 # All alpha gates that do not require external cloud services.
 test:
