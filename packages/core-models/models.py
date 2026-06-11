@@ -250,6 +250,21 @@ class AgentTask(BaseModel):
     parent_task_id: Optional[ID] = None
 
 
+class AgentAttribution(BaseModel):
+    service: str
+    model: str
+    profile: str
+    prompt_versions: dict[str, str] = Field(default_factory=dict)
+    latency_ms: int = Field(0, ge=0)
+
+
+class AgentProposalEnvelope(BaseModel):
+    status: str
+    degraded: bool = False
+    attribution: AgentAttribution
+    creative_plan: dict[str, Any] = Field(default_factory=dict)
+
+
 # ============================================
 # Prompts
 # ============================================

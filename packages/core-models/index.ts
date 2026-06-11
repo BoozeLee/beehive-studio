@@ -226,6 +226,133 @@ export interface AgentTask {
   parentTaskId?: ID;                // For iteration trees
 }
 
+export interface AgentAttribution {
+  service: string;
+  model: string;
+  profile: string;
+  promptVersions: Record<string, string>;
+  latencyMs: number;
+}
+
+export interface AgentProposalEnvelope {
+  status: string;
+  degraded: boolean;
+  attribution: AgentAttribution;
+  creativePlan: {
+    summary?: string;
+    rationale?: string[];
+    confidence?: Record<string, number>;
+    alternatives?: Array<{
+      direction: string;
+      why: string;
+      delta_summary?: string;
+    }>;
+    warnings?: string[];
+    evidence?: string[];
+    recommended_parameters?: Record<string, number>;
+  };
+}
+
+// ============================================
+// JetBee Build Contracts
+// ============================================
+
+export type ArtifactOwner = "dsl" | "visual";
+export type CompilerPreference = "auto" | "ace-rest" | "ace-cpp" | "deapi-rest" | "deapi-mcp";
+export type BuildStatus =
+  | "planning"
+  | "awaiting_approval"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ArtifactSummary {
+  id: ID;
+  kind: "track" | "clip" | "pattern" | "arrangement" | "prompt" | "audio";
+  owner: ArtifactOwner;
+  revision: number;
+  name: string;
+  summary: string;
+}
+
+export interface JetBeeBuildRequest {
+  projectId: string;
+  projectRevision: number;
+  intent: string;
+  source: "keyboard" | "editor" | "agent" | "api";
+  selectedArtifactIds: ID[];
+  artifacts: ArtifactSummary[];
+  compilerPreference: CompilerPreference;
+  allowCloud: boolean;
+  cloudApproved: boolean;
+}
+
+export interface PatchOperation {
+  op: "set_parameter" | "add_artifact" | "replace_artifact" | "remove_artifact";
+  artifactId: ID;
+  path: string;
+  value?: unknown;
+}
+
+export interface ProjectPatch {
+  id: ID;
+  operations: PatchOperation[];
+  affectedArtifactIds: ID[];
+  risk: "low" | "medium" | "high";
+  rationale: string[];
+}
+
+export interface BuildStep {
+  id: ID;
+  kind: "patch" | "agent" | "qa" | "compile" | "ingest";
+  label: string;
+  agentRole?: string;
+  provider?: string;
+}
+
+export interface BuildPlan {
+  id: ID;
+  summary: string;
+  projectRevision: number;
+  proposedPatches: ProjectPatch[];
+  executionSteps: BuildStep[];
+  warnings: string[];
+  confidence: Record<string, number>;
+  attribution: Record<string, unknown>;
+  degraded: boolean;
+}
+
+export interface BuildArtifact {
+  id: ID;
+  kind: "audio" | "midi" | "manifest";
+  path: string;
+  provider: string;
+  checksum: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface BuildJob {
+  id: ID;
+  projectId: string;
+  plan: BuildPlan;
+  status: BuildStatus;
+  provider?: string;
+  progress: number;
+  artifacts: BuildArtifact[];
+  error?: string;
+}
+
+export interface BuildEvent {
+  type: string;
+  projectId: string;
+  buildId: string;
+  sourceService: string;
+  timestamp: number;
+  metadata: Record<string, unknown>;
+}
+
 // ============================================
 // Prompts & Versioning
 // ============================================
