@@ -70,6 +70,8 @@ import { BuildConsole } from "./components/BuildConsole/BuildConsole";
 import type { BuildLogEntry } from "./components/BuildConsole/BuildConsole";
 import { SwarmTrace } from "./components/SwarmTrace/SwarmTrace";
 import type { SwarmStep } from "./components/SwarmTrace/SwarmTrace";
+import { useProjectSocket } from "./lib/useProjectSocket";
+import { useBuildLogStore } from "./lib/buildLogStore";
 import { AgentDirector } from "./components/AgentDirector/AgentDirector";
 
 // JetBee theme
@@ -197,8 +199,12 @@ function JetBeeApp() {
   );
 
   // ── New JetBee state ──
-  const [buildLogs, setBuildLogs] = useState<BuildLogEntry[]>([]);
+  const buildLogs = useBuildLogStore((s) => s.logs);
+  const addBuildLog = useBuildLogStore((s) => s.addLog);
   const [swarmSteps, setSwarmSteps] = useState<SwarmStep[]>([]);
+
+  // ── WebSocket connection to JetBee backend ──
+  const { connected: wsConnected, reconnecting: wsReconnecting, lastMessage } = useProjectSocket(projectName);
   const [activeCenterTab, setActiveCenterTab] = useState("prompt");
 
   // ── Original callbacks (preserved exactly) ──
@@ -584,6 +590,32 @@ function JetBeeApp() {
     );
 
     try {
+      // ── JetBee backend (FastAPI + ACE-Step) ──
+      const fastapiRes = await fetch(
+        `http://127.0.0.1:9000/projects/${encodeURIComponent(projectName)}/generate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: text.trim(),
+            duration: 30,
+            audio_format: "mp3",
+            thinking: true,
+            backend: "acestep",
+          }),
+        }
+      );
+      if (fastapiRes.ok) {
+        const fastapiData = await fastapiRes.json();
+        addBuildLog({
+          level: "info",
+          message: "> FastAPI queued: " + (fastapiData.task_id || "unknown"),
+          taskId: fastapiData.task_id,
+          backend: "acestep",
+        });
+      }
+
+      // ── Legacy Tauri backend (port 9876) ──
       const data = await invoke<{
         task_id: string;
         status: string;
@@ -598,16 +630,11 @@ function JetBeeApp() {
         },
       });
 
-      setBuildLogs((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          level: "info" as const,
+      addBuildLog({
+          level: "info",
           message: "> Generating: " + text,
           taskId: data.task_id,
-        },
-      ]);
+        });
 
       const newClip: Clip = {
         id: data.task_id || crypto.randomUUID(),
@@ -625,16 +652,11 @@ function JetBeeApp() {
       );
       setStreamLog(data.reasoning || []);
 
-      setBuildLogs((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          level: "success" as const,
+      addBuildLog({
+          level: "success",
           message: "Generation complete: " + (data.task_id || "unknown"),
           taskId: data.task_id,
-        },
-      ]);
+        });
 
       setSwarmSteps((prev) => [
         ...prev,
@@ -652,15 +674,10 @@ function JetBeeApp() {
       console.error(err);
       setStatus("Backend error — is it running on port 9876?");
 
-      setBuildLogs((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          level: "error" as const,
+      addBuildLog({
+          level: "error",
           message: "Generation failed: " + String(err),
-        },
-      ]);
+        });
 
       setSwarmSteps((prev) => [
         ...prev,
@@ -1075,6 +1092,27 @@ function JetBeeApp() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // ── WebSocket message processor ──
+  useEffect(() => {
+    if (!lastMessage) return;
+    if (lastMessage.type === "generation_status") {
+      const msg = lastMessage as any;
+      addBuildLog({
+        level: msg.status === 1 ? "success" : msg.status === 2 ? "error" : "info",
+        message: `[${msg.backend}] ${msg.status_text} ${msg.progress ? "(" + Math.round(msg.progress * 100) + "%)" : ""}`,
+        taskId: msg.task_id,
+        backend: msg.backend,
+      });
+      if (msg.status === 1 || msg.status === 2) {
+        setIsLoading(false);
+      }
+    }
+    if (lastMessage.type === "agent_trace") {
+      const step = (lastMessage as any).step;
+      if (step) setSwarmSteps((prev) => [...prev, step]);
+    }
+  }, [lastMessage, addBuildLog]);
 
   // ── Layout construction ──
   const topBar = (
@@ -1524,7 +1562,7 @@ function JetBeeApp() {
           id: "console",
           label: "Console",
           icon: "🖥️",
-          content: <BuildConsole logs={buildLogs} onClear={() => setBuildLogs([])} />,
+          content: <BuildConsole logs={buildLogs} onClear={() => useBuildLogStore.getState().clearLogs()} />,
         },
         {
           id: "chat",
@@ -1552,6 +1590,9 @@ function JetBeeApp() {
   const statusBar = (
     <div className="jetbee-statusbar">
       <div className="jetbee-statusbar-section">
+        <span className="jetbee-statusbar-chip" style={{ color: wsConnected ? "var(--jb-success)" : wsReconnecting ? "var(--jb-warning)" : "var(--jb-error)" }}>
+          {wsConnected ? "● WS" : wsReconnecting ? "◐ WS" : "○ WS"}
+        </span>
         <span className="jetbee-statusbar-chip">Backend: 9876</span>
         <span className="jetbee-statusbar-chip">Ollama: 11434</span>
         <span className="jetbee-statusbar-chip">Baker Street: 3001</span>
