@@ -1,354 +1,170 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock Tauri API to avoid runtime errors
-vi.mock("@tauri-apps/api", () => ({
-  invoke: vi.fn().mockResolvedValue({ success: true, data: "mocked" }),
-}));
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
-// Mock the render job functions
-vi.mock("../lib/renderJobs", () => ({
-  exportProjectAudio: vi.fn().mockResolvedValue({ status: "completed", result: {} }),
-  createRenderJob: vi.fn().mockResolvedValue({
-    id: "mock-job-123",
-    status: "processing",
-    progress: 0.0,
-    stage: "Starting",
-    engine: "python",
-  }),
-  getRenderJob: vi.fn().mockReturnValue({
-    status: "processing",
-    progress: 0.5,
-    stage: "Loading samples",
-    engine: "python",
-  }),
-  waitForRenderJob: vi.fn().mockImplementation((jobId, callback) => {
-    return Promise.resolve();
-  }),
-}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-// Mock project assets
-vi.mock("../lib/projectAssets", () => ({
-  consolidateProjectAssets: vi.fn().mockResolvedValue({
-    count: 2,
-    assets: [{ path: "/test/kick.wav", filename: "kick.wav", size: 1024 }],
-    projectPath: "/test/project",
-  }),
-  resolveProjectAsset: vi.fn().mockImplementation((projectPath, assetPath) => {
-    if (assetPath.startsWith("/")) return assetPath;
-    return `${projectPath}/${assetPath}`;
-  }),
-}));
+import {
+  consolidateProjectAssets,
+  resolveProjectAsset,
+} from "../lib/projectAssets";
+import {
+  cancelRenderJob,
+  createRenderJob,
+  getRenderJob,
+  waitForRenderJob,
+  type RenderJob,
+} from "../lib/renderJobs";
 
-describe("Export Integration Tests", () => {
-  const mockRenderClips = [
-    {
-      id: "clip-1",
-      channel: "track-1",
-      notes: [
-        { pitch: 60, velocity: 100, start: 0, duration: 4 },
-        { pitch: 64, velocity: 110, start: 4, duration: 4 },
-      ],
-    },
-    {
-      id: "clip-2",
-      channel: "track-2",
-      notes: [
-        { pitch: 36, velocity: 120, start: 0, duration: 8 },
-      ],
-    },
-  ];
+const runningJob: RenderJob = {
+  id: "render-123",
+  status: "running",
+  progress: 0.5,
+  stage: "Rendering tracks",
+  engine: "python",
+};
 
-  const mockMixerTracks = [
-    {
-      id: "track-1",
-      name: "Lead Synth",
-      volume: 0.8,
-      pan: 0,
-      muted: false,
-      solo: false,
-      effects: [],
-      automationLanes: [],
-    },
-    {
-      id: "track-2",
-      name: "Kick Drum",
-      volume: 0.9,
-      pan: 0,
-      muted: false,
-      solo: false,
-      effects: [],
-      automationLanes: [],
-    },
-  ];
+const completedJob: RenderJob = {
+  ...runningJob,
+  status: "completed",
+  progress: 1,
+  stage: "Completed",
+  master_path: "/tmp/master.wav",
+  stem_paths: ["/tmp/lead.wav"],
+};
 
+describe("Export integration contracts", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    invoke.mockReset();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  it("creates a render job using the current backend request contract", async () => {
+    invoke.mockResolvedValueOnce(runningJob);
 
-  describe("Full Export Pipeline", () => {
-    it("completes full export workflow", async () => {
-      // Mock successful completion
-      const { exportProjectAudio, getRenderJob } = await import("../lib/renderJobs");
-      
-      vi.mocked(getRenderJob)
-        .mockReturnValueOnce({ status: "processing", progress: 0.5, stage: "Loading samples" })
-        .mockReturnValueOnce({ status: "processing", progress: 0.8, stage: "Rendering tracks" })
-        .mockReturnValueOnce({
-          status: "completed",
-          progress: 1.0,
-          stage: "Completed",
-          engine: "python",
-          master_path: "/tmp/test_master.wav",
-          stem_paths: ["/tmp/test_kick.wav", "/tmp/test_synth.wav"],
-        });
-
-      // Execute the export
-      const result = await exportProjectAudio(
-        mockRenderClips,
-        120,
-        "festival",
-        mockMixerTracks
-      );
-
-      // Verify the result
-      expect(result).toBeDefined();
-      expect(result.status).toBe("completed");
-    });
-
-    it("handles different render presets", async () => {
-      const { exportProjectAudio } = await import("../lib/renderJobs");
-      
-      const presets = ["draft", "club", "festival"] as const;
-
-      presets.forEach(preset => {
-        vi.mocked(exportProjectAudio).mockResolvedValue({
-          status: "completed",
-          result: { master_path: `/tmp/${preset}_master.wav` },
-        });
-      });
-
-      // Test each preset
-      for (const preset of presets) {
-        const result = await exportProjectAudio(
-          mockRenderClips,
-          120,
-          preset,
-          mockMixerTracks
-        );
-
-        expect(result).toBeDefined();
-        expect(result.status).toBe("completed");
-      }
-    });
-
-    it("supports stem output mode", async () => {
-      const { exportProjectAudio } = await import("../lib/renderJobs");
-      
-      vi.mocked(exportProjectAudio).mockResolvedValue({
-        status: "completed",
-        result: {
-          master_path: "/tmp/master.wav",
-          stem_paths: ["/tmp/track1.wav", "/tmp/track2.wav"],
-        },
-      });
-
-      const result = await exportProjectAudio(
-        mockRenderClips,
-        120,
-        "festival",
-        mockMixerTracks,
-        "master_and_stems"
-      );
-
-      expect(result).toBeDefined();
-      expect(result.status).toBe("completed");
+    await expect(
+      createRenderJob([], [], 124, "festival", "master_and_stems"),
+    ).resolves.toEqual(runningJob);
+    expect(invoke).toHaveBeenCalledWith("backend_request", {
+      method: "POST",
+      endpoint: "render/jobs",
+      body: {
+        clips: [],
+        tracks: [],
+        bpm: 124,
+        preset: "festival",
+        output_mode: "master_and_stems",
+      },
     });
   });
 
-  describe("Project Asset Management", () => {
-    it("consolidates external audio samples into project", async () => {
-      const { consolidateProjectAssets } = await import("../lib/projectAssets");
-      
-      const mockAssets = [
-        { path: "/external/kick.wav", filename: "kick.wav", size: 1024 },
-        { path: "/external/snare.wav", filename: "snare.wav", size: 2048 },
-      ];
-
-      vi.mocked(consolidateProjectAssets).mockResolvedValueOnce({
-        count: 2,
-        assets: mockAssets,
-        projectPath: "/test/project",
-      });
-
-      const result = await consolidateProjectAssets("/test/project", {
-        "clip-1": { audioFilePath: "/external/kick.wav" },
-        "clip-2": { audioFilePath: "/external/snare.wav" },
-      });
-
-      expect(result.count).toBe(2);
-      expect(consolidateProjectAssets).toHaveBeenCalledWith("/test/project", expect.any(Object));
+  it("gets and cancels render jobs through their lifecycle endpoints", async () => {
+    invoke.mockResolvedValueOnce(runningJob).mockResolvedValueOnce({
+      ...runningJob,
+      status: "cancelled",
+      stage: "Cancelled",
     });
 
-    it("resolves project-relative asset paths", async () => {
-      const { resolveProjectAsset } = await import("../lib/projectAssets");
-      
-      const projectPath = "/test/project";
-      const assetPath = "samples/kick.wav";
-
-      const resolved = resolveProjectAsset(projectPath, assetPath);
-      expect(resolved).toBe("/test/project/samples/kick.wav");
+    await expect(getRenderJob(runningJob.id)).resolves.toEqual(runningJob);
+    await expect(cancelRenderJob(runningJob.id)).resolves.toMatchObject({
+      status: "cancelled",
     });
-
-    it("handles absolute asset paths correctly", async () => {
-      const { resolveProjectAsset } = await import("../lib/projectAssets");
-      
-      const projectPath = "/test/project";
-      const absolutePath = "/external/samples/kick.wav";
-
-      const resolved = resolveProjectAsset(projectPath, absolutePath);
-      expect(resolved).toBe(absolutePath);
+    expect(invoke).toHaveBeenNthCalledWith(1, "backend_request", {
+      method: "GET",
+      endpoint: `render/jobs/${runningJob.id}`,
+      body: null,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "backend_request", {
+      method: "DELETE",
+      endpoint: `render/jobs/${runningJob.id}`,
+      body: null,
     });
   });
 
-  describe("Render Job Management", () => {
-    it("tracks render job progress", async () => {
-      const { createRenderJob, getRenderJob, waitForRenderJob } = await import("../lib/renderJobs");
-      
-      const jobId = "progress-test-123";
+  it("polls until a render completes and reports progress", async () => {
+    invoke.mockResolvedValueOnce(runningJob).mockResolvedValueOnce(completedJob);
+    const progress = vi.fn();
 
-      vi.mocked(createRenderJob).mockResolvedValue({
-        id: jobId,
-        status: "processing",
-        progress: 0.0,
-        stage: "Starting",
-        engine: "python",
-      });
+    await expect(waitForRenderJob(runningJob.id, progress, 0)).resolves.toEqual(
+      completedJob,
+    );
+    expect(progress).toHaveBeenNthCalledWith(1, runningJob);
+    expect(progress).toHaveBeenNthCalledWith(2, completedJob);
+  });
 
-      vi.mocked(getRenderJob)
-        .mockReturnValueOnce({ status: "processing", progress: 0.2, stage: "Loading samples" })
-        .mockReturnValueOnce({ status: "processing", progress: 0.5, stage: "Rendering tracks" })
-        .mockReturnValueOnce({ status: "processing", progress: 0.8, stage: "Applying effects" })
-        .mockReturnValueOnce({ status: "completed", progress: 1.0, stage: "Completed" });
-
-      await waitForRenderJob(jobId, (job) => {
-        expect(job.progress).toBeGreaterThan(0);
-        expect(job.stage).toBeDefined();
-        return job.status === "completed";
-      });
-
-      // Verify final state
-      const finalJob = await getRenderJob(jobId);
-      expect(finalJob.status).toBe("completed");
-      expect(finalJob.progress).toBe(1.0);
+  it("rejects failed and cancelled render jobs", async () => {
+    invoke.mockResolvedValueOnce({
+      ...runningJob,
+      status: "failed",
+      error: "Audio file not found",
     });
 
-    it("handles render job cancellation", async () => {
-      const { createRenderJob, getRenderJob } = await import("../lib/renderJobs");
-      
-      const jobId = "cancel-test-123";
+    await expect(waitForRenderJob(runningJob.id, vi.fn(), 0)).rejects.toThrow(
+      "Audio file not found",
+    );
+  });
 
-      vi.mocked(createRenderJob).mockResolvedValue({
-        id: jobId,
-        status: "processing",
-        progress: 0.3,
-        stage: "Rendering",
-        engine: "python",
-      });
+  it("resolves project assets through the native project boundary", async () => {
+    invoke.mockResolvedValueOnce("/projects/demo/assets/kick.wav");
 
-      // Simulate cancellation
-      vi.mocked(getRenderJob).mockReturnValue({
-        status: "cancelled",
-        progress: 0.3,
-        stage: "Cancelled",
-        engine: "python",
-      });
-
-      // Test cancellation
-      const job = await getRenderJob(jobId);
-      expect(job.status).toBe("cancelled");
+    await expect(
+      resolveProjectAsset("demo", "assets/kick.wav"),
+    ).resolves.toBe("/projects/demo/assets/kick.wav");
+    expect(invoke).toHaveBeenCalledWith("resolve_project_asset", {
+      projectName: "demo",
+      path: "assets/kick.wav",
     });
   });
 
-  describe("Error Handling", () => {
-    it("handles backend connection errors", async () => {
-      const { exportProjectAudio } = await import("../lib/renderJobs");
-      
-      vi.mocked(exportProjectAudio).mockRejectedValueOnce(new Error("Backend connection failed"));
-
-      // Should handle gracefully
-      try {
-        await exportProjectAudio(
-          mockRenderClips,
-          120,
-          "draft",
-          mockMixerTracks
-        );
-      } catch (error) {
-        expect(error).toBeInstanceOf(Error);
-        expect(error.message).toContain("Backend connection failed");
-      }
+  it("consolidates only absolute assets and relinks returned paths", async () => {
+    invoke.mockResolvedValueOnce({
+      "/external/kick.wav": "assets/kick.wav",
     });
+    const clips = {
+      external: {
+        id: "external",
+        trackId: "drums",
+        name: "Kick",
+        startBeat: 0,
+        lengthBeats: 4,
+        audioFilePath: "/external/kick.wav",
+      },
+      local: {
+        id: "local",
+        trackId: "drums",
+        name: "Snare",
+        startBeat: 4,
+        lengthBeats: 4,
+        audioFilePath: "assets/snare.wav",
+      },
+    } as const;
 
-    it("handles missing audio files", async () => {
-      const { exportProjectAudio } = await import("../lib/renderJobs");
-      
-      vi.mocked(exportProjectAudio).mockRejectedValueOnce(new Error("Audio file not found"));
+    const result = await consolidateProjectAssets("demo", clips);
 
-      expect(async () => {
-        await exportProjectAudio(
-          mockRenderClips,
-          120,
-          "draft",
-          mockMixerTracks
-        );
-      }).rejects.toThrow("Audio file not found");
-    });
-
-    it("handles invalid render parameters", async () => {
-      const { exportProjectAudio } = await import("../lib/renderJobs");
-      
-      const invalidClips = [
-        {
-          id: "clip-invalid",
-          channel: "invalid-track",
-          notes: [],
-        },
-      ];
-
-      // Should handle missing tracks gracefully
-      const result = await exportProjectAudio(
-        invalidClips,
-        120,
-        "draft",
-        []
-      );
-
-      expect(result).toBeDefined();
+    expect(result.count).toBe(1);
+    expect(result.clips.external.audioFilePath).toBe("assets/kick.wav");
+    expect(result.clips.local).toBe(clips.local);
+    expect(invoke).toHaveBeenCalledWith("consolidate_project_assets", {
+      projectName: "demo",
+      paths: ["/external/kick.wav"],
     });
   });
 
-  describe("Performance & Edge Cases", () => {
-    it("handles empty arrangement", async () => {
-      const { exportProjectAudio } = await import("../lib/renderJobs");
-      
-      vi.mocked(exportProjectAudio).mockResolvedValue({
-        status: "completed",
-        result: { master_path: "/tmp/empty_master.wav" },
-      });
+  it("avoids a native call when no external assets need consolidation", async () => {
+    const clips = {
+      local: {
+        id: "local",
+        trackId: "drums",
+        name: "Snare",
+        startBeat: 0,
+        lengthBeats: 4,
+        audioFilePath: "assets/snare.wav",
+      },
+    } as const;
 
-      const result = await exportProjectAudio(
-        [],
-        120,
-        "draft",
-        []
-      );
-
-      expect(result).toBeDefined();
-      expect(result.status).toBe("completed");
+    await expect(consolidateProjectAssets("demo", clips)).resolves.toEqual({
+      clips,
+      count: 0,
     });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

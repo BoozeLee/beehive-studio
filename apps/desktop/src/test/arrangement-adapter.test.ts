@@ -123,7 +123,7 @@ describe("arrangement adapter", () => {
       serializeProjectDocument(appClips, tracks, timelineClips, patterns)
     );
 
-    expect(document.version).toBe(4);
+    expect(document.version).toBe(5);
     expect(document.timeline.tracks[0].clips).toEqual(["clip-1"]);
     expect(document.timeline.clips["clip-1"].start).toBe(8);
     expect(document.patterns[0].name).toBe("Pattern A");
