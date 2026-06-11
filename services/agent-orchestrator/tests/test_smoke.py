@@ -149,3 +149,29 @@ def test_health_version_is_beta():
     payload = asyncio.run(health())
     assert payload["status"] == "ok"
     assert payload["version"] == "0.4.0-beta"
+
+
+def test_brief_response_includes_proposal_envelope(monkeypatch):
+    """The legacy brief route should remain compatible while exposing advice."""
+    from api import main
+    from agents import rhythm_groove
+
+    async def fake_run(*args, **kwargs):
+        return {
+            "id": "task-1",
+            "status": "completed",
+            "reasoning": ["generated"],
+            "_generated_midi_data": {"notes": []},
+            "proposal": {
+                "status": "degraded",
+                "degraded": True,
+                "attribution": {"model": "deterministic-tools"},
+                "creative_plan": {},
+            },
+        }
+
+    monkeypatch.setattr(rhythm_groove, "run_rhythm_groove_agent", fake_run)
+    payload = asyncio.run(main.submit_brief(main.BriefRequest(brief="test")))
+
+    assert payload["task_id"] == "task-1"
+    assert payload["proposal"]["degraded"] is True

@@ -9,11 +9,46 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from typing import Any
 
 from tools.midi_tools import generate_rolling_bass, validate_notes
 from tools.music_qa import analyze_notes
+from integrations.hive_999 import request_rhythm_advice
+
+
+def _resolve_parameters(
+    brief: str,
+    session_context: dict[str, Any],
+    advised: dict[str, Any],
+) -> tuple[int, float, float, float]:
+    """Resolve advisor suggestions, then enforce explicit brief constraints."""
+    brief_lower = brief.lower()
+    bpm = int(session_context.get("bpm", advised.get("bpm", 142)))
+    swing = float(session_context.get("swing", advised.get("swing", 0.68)))
+    darkness = float(advised.get("darkness", 0.75))
+    density = float(advised.get("density", 0.62))
+
+    bpm_match = re.search(r"\b(\d{2,3})\s*bpm\b", brief_lower)
+    if bpm_match:
+        bpm = max(40, min(240, int(bpm_match.group(1))))
+    if "swing" in brief_lower or "swung" in brief_lower or "shuffle" in brief_lower:
+        swing = max(swing, 0.72)
+    if "straight" in brief_lower:
+        swing = 0.5
+    if "dark" in brief_lower or "ritual" in brief_lower or "deep" in brief_lower:
+        darkness = 0.82
+    if "rolling" in brief_lower or "acid" in brief_lower:
+        density = 0.72
+    if "sparse" in brief_lower or "minimal" in brief_lower:
+        density = 0.45
+    if "dense" in brief_lower or "high density" in brief_lower or "busy" in brief_lower:
+        density = 0.85
+    if "bright" in brief_lower:
+        darkness = 0.45
+
+    return bpm, swing, darkness, density
 
 
 def _generate_notes_with_qa(
@@ -179,11 +214,6 @@ async def run_rhythm_groove_agent(
     Tries LangGraph + Ollama first. Falls back to pure tool-based generation
     if LLM is unavailable.
     """
-    async for event in run_rhythm_groove_agent_streaming(brief, session_context, style_references):
-        pass  # Drain the stream for the non-streaming API
-
-    # The last event should be the complete result
-    # For simplicity, we re-run the baseline logic here
     return await _generate_baseline(brief, session_context, style_references or [])
 
 
@@ -201,6 +231,8 @@ async def run_rhythm_groove_agent_streaming(
     swing = float(session_context.get("swing", 0.68))
 
     yield {"type": "status", "message": "Analyzing brief..."}
+    proposal = await request_rhythm_advice(brief, session_context, style_references)
+    yield {"type": "advisory", "proposal": proposal}
 
     # ── Try LLM-powered agent ──
     _llm_reasoning = None
@@ -260,18 +292,8 @@ async def run_rhythm_groove_agent_streaming(
     yield {"type": "status", "message": "Generating baseline MIDI..."}
 
     # ── Tool-based generation ──
-    brief_lower = brief.lower()
-    darkness = 0.75
-    density = 0.62
-
-    if "dark" in brief_lower or "ritual" in brief_lower or "deep" in brief_lower:
-        darkness = 0.82
-    if "rolling" in brief_lower or "acid" in brief_lower:
-        density = 0.72
-    if "sparse" in brief_lower or "minimal" in brief_lower:
-        density = 0.45
-    if "bright" in brief_lower:
-        darkness = 0.45
+    advised = proposal.get("creative_plan", {}).get("recommended_parameters", {})
+    bpm, swing, darkness, density = _resolve_parameters(brief, session_context, advised)
 
     notes, qa_warnings = _generate_notes_with_qa(
         bpm=int(bpm), swing=swing, darkness=darkness, density=density, bars=4
@@ -300,6 +322,7 @@ async def run_rhythm_groove_agent_streaming(
         "status": "completed",
         "reasoning": reasoning_lines,
         "clip_preview": midi_data,
+        "proposal": proposal,
     }
 
 
@@ -309,20 +332,9 @@ async def _generate_baseline(
     style_references: list[str],
 ) -> dict:
     """Non-streaming baseline generation."""
-    bpm = float(session_context.get("bpm", 142))
-    swing = float(session_context.get("swing", 0.68))
-    brief_lower = brief.lower()
-    darkness = 0.75
-    density = 0.62
-
-    if "dark" in brief_lower or "ritual" in brief_lower or "deep" in brief_lower:
-        darkness = 0.82
-    if "rolling" in brief_lower or "acid" in brief_lower:
-        density = 0.72
-    if "sparse" in brief_lower or "minimal" in brief_lower:
-        density = 0.45
-    if "bright" in brief_lower:
-        darkness = 0.45
+    proposal = await request_rhythm_advice(brief, session_context, style_references)
+    advised = proposal.get("creative_plan", {}).get("recommended_parameters", {})
+    bpm, swing, darkness, density = _resolve_parameters(brief, session_context, advised)
 
     notes, qa_warnings = _generate_notes_with_qa(
         bpm=int(bpm), swing=swing, darkness=darkness, density=density, bars=4
@@ -347,6 +359,7 @@ async def _generate_baseline(
         "reasoning": reasoning_lines,
         "_generated_midi_data": midi_data,
         "_bpm": bpm,
+        "proposal": proposal,
     }
 
 

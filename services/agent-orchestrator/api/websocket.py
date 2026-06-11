@@ -22,6 +22,7 @@ async def agent_websocket_handler(websocket: WebSocket):
                     {"type": "midi", "data": {...}}
                     {"type": "complete"}
                     {"type": "error", "message": "..."}
+                    {"type": "advisory", "proposal": {...}}
     """
     await websocket.accept()
 

@@ -403,7 +403,11 @@ async def health():
 
 @app.get("/inference/health")
 async def inference_health():
-    return await inference_client.health()
+    from integrations.hive_999 import hive_999_health
+
+    result = await inference_client.health()
+    result["hive_999"] = await hive_999_health()
+    return result
 
 
 @app.get("/agents/tools")
@@ -460,17 +464,20 @@ async def submit_brief(req: BriefRequest):
         task_id = task.get("id")
         status = task.get("status", "completed")
         reasoning = task.get("reasoning", [])
+        proposal = task.get("proposal")
     else:
         midi_data = getattr(task, "_generated_midi_data", None)
         task_id = getattr(task, "id", None)
         status = getattr(getattr(task, "status", None), "value", "completed")
         reasoning = getattr(task, "reasoning", [])
+        proposal = getattr(task, "proposal", None)
 
     return {
         "task_id": task_id,
         "status": status,
         "reasoning": reasoning,
         "clip_preview": midi_data,
+        "proposal": proposal,
     }
 
 
@@ -918,7 +925,7 @@ def _automation_value(track: dict[str, Any], parameter: str, beat: float, defaul
     return default
 
 
-def _apply_track_effects(segment: Any, track: dict[str, Any]) -> Any:
+def _apply_track_effects(segment: Any, track: dict[str, Any], beat: float = 0) -> Any:
     from pydub import AudioSegment
 
     for effect in track.get("effects", []):
@@ -927,7 +934,7 @@ def _apply_track_effects(segment: Any, track: dict[str, Any]) -> Any:
         params = dict(effect.get("params", {}))
         effect_id = effect.get("id", "")
         for param, value in list(params.items()):
-            params[param] = _automation_value(track, f"fx.{effect_id}.{param}", 0, float(value))
+            params[param] = _automation_value(track, f"fx.{effect_id}.{param}", beat, float(value))
         effect_type = effect.get("type")
         if effect_type == "filter":
             segment = segment.low_pass_filter(int(params.get("frequency", 1000)))
@@ -956,6 +963,8 @@ def _get_midi_frequency(pitch: float) -> float:
 
 def _process_clip_optimized(clip: Dict, track: Dict, beat_duration: float, sample_rate: int = 44100) -> AudioSegment:
     """Process a single clip with optimizations including batch note processing"""
+    from pydub import AudioSegment
+
     segment = AudioSegment.silent(duration=0, frame_rate=sample_rate)
     clip_start_beats = float(clip.get("start", 0))
     notes = clip.get("midiData", {}).get("notes", []) or clip.get("notes", [])
@@ -999,7 +1008,7 @@ def _process_clip_optimized(clip: Dict, track: Dict, beat_duration: float, sampl
             note_segments.append((note_starts_ms[i], tone))
 
         # Overlay all notes at once
-        max_note_end = max(start + len(tone) for start, (_, tone) in note_segments)
+        max_note_end = max(start + len(tone) for start, tone in note_segments)
         segment += AudioSegment.silent(duration=max(0, max_note_end - len(segment)), frame_rate=sample_rate)
 
         for start_ms, tone in note_segments:
@@ -1018,14 +1027,20 @@ def _process_clip_optimized(clip: Dict, track: Dict, beat_duration: float, sampl
 
     return segment
 
-def _render_track_batch(tracks_batch: List[Tuple[str, Dict]], clips_batch: List[Dict], 
-                       beat_duration: float, sample_rate: int = 44100) -> Dict[str, AudioSegment]:
+def _render_track_batch(
+    tracks_batch: List[Tuple[str, Dict]],
+    clips_batch: List[Dict],
+    beat_duration: float,
+    sample_rate: int = 44100,
+    has_solo: bool = False,
+) -> Dict[str, AudioSegment]:
     """Render multiple tracks in parallel for better performance"""
+    from pydub import AudioSegment
+
     results = {}
     
     for track_id, track in tracks_batch:
         track_segments = []
-        has_solo = any(bool(t.get("solo")) for t in tracks_batch)
         
         if track.get("muted") or (has_solo and not track.get("solo")):
             results[track_id] = AudioSegment.silent(duration=0, frame_rate=sample_rate)
@@ -1069,9 +1084,7 @@ def _render_request(
     if cached_result:
         if progress:
             throttled_progress(1.0, "Cache hit - returning cached result")
-        # Mark as cached since we're returning a cached result
-        cached_result["cached"] = True
-        return cached_result
+        return {**cached_result, "cached": True}
 
     sample_rate = 44100
     beat_duration = 60.0 / req.bpm
@@ -1112,7 +1125,8 @@ def _render_request(
                 batch,
                 batch_clips,
                 beat_duration,
-                sample_rate
+                sample_rate,
+                has_solo,
             )
             future_to_batch[future] = batch
         
@@ -1183,11 +1197,12 @@ def _render_request(
 
     # Cache the result for future requests
     result = {
+        "status": "completed",
         "master_path": master_path,
         "stem_paths": stem_paths,
         "duration_ms": len(mixed),
         "format": "wav",
-        "cached": True  # Mark as cached since we're caching it now
+        "cached": False,
     }
     
     # Store in cache
