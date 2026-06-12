@@ -1,0 +1,50 @@
+:root {
+  --vscode-font-family: var(--vscode-font-family);
+  --vscode-editor-font-family: var(--vscode-editor-font-family);
+  --vscode-foreground: var(--vscode-foreground);
+  --vscode-background: var(--vscode-editor-background);
+  --vscode-panel-background: var(--vscode-panel-background);
+  --vscode-panel-border: var(--vscode-panel-border);
+  --vscode-button-background: var(--vscode-button-background);
+  --vscode-button-foreground: var(--vscode-button-foreground);
+  --vscode-button-hoverBackground: var(--vscode-button-hoverBackground);
+  --vscode-input-background: var(--vscode-input-background);
+  --vscode-input-foreground: var(--vscode-input-foreground);
+  --vscode-input-border: var(--vscode-input-border);
+  --vscode-focusBorder: var(--vscode-focusBorder);
+  --vscode-list-activeSelectionBackground: var(--vscode-list-activeSelectionBackground);
+  --vscode-list-activeSelectionForeground: var(--vscode-list-activeSelectionForeground);
+  --vscode-list-hoverBackground: var(--vscode-list-hoverBackground);
+  --vscode-statusBar-background: var(--vscode-statusBar-background);
+  --vscode-statusBar-foreground: var(--vscode-statusBar-foreground);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+}

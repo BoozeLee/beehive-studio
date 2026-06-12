@@ -1,55 +1,62 @@
-import React, { useEffect, useState } from "react";
-import { Layout } from "./components/Layout/Layout";
+import { useEffect } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { handleMessage } from "./lib/vscode";
+import * as api from "./lib/api";
+import { useAppStore } from "./stores/appStore";
+import { useProjectStore } from "./stores/projectStore";
 import { Dashboard } from "./components/Dashboard";
-import { AgentConsole } from "./components/AgentConsole/AgentConsole";
-import { ProjectPanel } from "./components/Project/ProjectPanel";
-import { TimelinePage } from "./components/TimelinePage";
-import { PatternPage } from "./components/PatternPage";
-import { MixerPage } from "./components/MixerPage";
-import { SessionPage } from "./components/SessionPage";
-import { useUIStore } from "./stores/uiStore";
-
-function Router() {
-  const { activeRoute, setActiveRoute } = useUIStore();
-  const [route, setRoute] = useState(activeRoute);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      const path = window.location.pathname;
-      setRoute(path);
-      setActiveRoute(path);
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [setActiveRoute]);
-
-  useEffect(() => {
-    setRoute(activeRoute);
-  }, [activeRoute]);
-
-  switch (route) {
-    case "/agent":
-      return <AgentConsole />;
-    case "/project":
-      return <ProjectPanel projectName="default" visible={true} onClose={() => {}} />;
-    case "/timeline":
-      return <TimelinePage />;
-    case "/pattern":
-      return <PatternPage />;
-    case "/mixer":
-      return <MixerPage />;
-    case "/session":
-      return <SessionPage />;
-    default:
-      return <Dashboard />;
-  }
-}
+import { AgentConsole } from "./components/AgentConsole";
+import { Layout } from "./components/Layout";
+import { TastePage } from "./components/TastePage";
+import { SettingsPage } from "./components/SettingsPage";
+import "./App.css";
 
 function App() {
+  const { setGatewayHealth, setOrchestratorHealth, setAgents, addNotification } = useAppStore();
+  const { setProject } = useProjectStore();
+
+  useEffect(() => {
+    const listener = (event: MessageEvent) => {
+      handleMessage(event.data);
+    };
+    window.addEventListener("message", listener);
+
+    // Initial health check
+    api.gatewayHealth()
+      .then(setGatewayHealth)
+      .catch((err) => addNotification(`Gateway unreachable: ${String(err)}`, "error"));
+
+    api.orchestratorHealth()
+      .then(setOrchestratorHealth)
+      .catch((err) => addNotification(`Orchestrator unreachable: ${String(err)}`, "error"));
+
+    api.listAgents()
+      .then(setAgents)
+      .catch((err) => addNotification(`Failed to load agents: ${String(err)}`, "error"));
+
+    // Attempt to load project from state (set by extension host)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const initialState = (window as any).__INITIAL_STATE__;
+    if (initialState?.project) {
+      setProject(initialState.project);
+    }
+
+    return () => window.removeEventListener("message", listener);
+  }, [setGatewayHealth, setOrchestratorHealth, setAgents, addNotification, setProject]);
+
   return (
-    <Layout>
-      <Router />
-    </Layout>
+    <Router>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/agent" element={<AgentConsole />} />
+          <Route path="/taste" element={<TastePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Dashboard />} />
+        </Routes>
+      </Layout>
+    </Router>
   );
 }
 

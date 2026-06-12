@@ -1,26 +1,53 @@
 import { create } from "zustand";
+import * as Tone from "tone";
 
 interface TransportState {
-  isPlaying: boolean;
-  currentBeat: number;
-  totalBeats: number;
+  playing: boolean;
   bpm: number;
-  setPlaying: (playing: boolean) => void;
-  setCurrentBeat: (beat: number) => void;
+  currentBeat: number;
+
   setBpm: (bpm: number) => void;
-  tick: () => void;
+  play: () => Promise<void>;
+  pause: () => void;
+  stop: () => void;
+  toggle: () => Promise<void>;
+  setCurrentBeat: (beat: number) => void;
 }
 
-export const useTransportStore = create<TransportState>((set) => ({
-  isPlaying: false,
+export const useTransportStore = create<TransportState>((set, get) => ({
+  playing: false,
+  bpm: 140,
   currentBeat: 0,
-  totalBeats: 128,
-  bpm: 142,
-  setPlaying: (playing) => set({ isPlaying: playing }),
+
+  setBpm: (bpm) => {
+    Tone.Transport.bpm.value = bpm;
+    set({ bpm });
+  },
+
+  play: async () => {
+    await Tone.start();
+    Tone.Transport.start();
+    set({ playing: true });
+  },
+
+  pause: () => {
+    Tone.Transport.pause();
+    set({ playing: false });
+  },
+
+  stop: () => {
+    Tone.Transport.stop();
+    set({ playing: false, currentBeat: 0 });
+  },
+
+  toggle: async () => {
+    const { playing, play, pause } = get();
+    if (playing) {
+      pause();
+    } else {
+      await play();
+    }
+  },
+
   setCurrentBeat: (beat) => set({ currentBeat: beat }),
-  setBpm: (bpm) => set({ bpm }),
-  tick: () =>
-    set((s) => ({
-      currentBeat: (s.currentBeat + 1) % s.totalBeats,
-    })),
 }));

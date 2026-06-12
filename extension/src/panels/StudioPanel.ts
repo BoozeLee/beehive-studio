@@ -1,14 +1,16 @@
 import * as vscode from "vscode";
 import { getNonce } from "../bridge/util";
+import { BackendClient } from "../services/backendClient";
 
 export class StudioPanel {
   public static readonly viewType = "beehive.studio";
   private static currentPanel: StudioPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
+  private readonly _backend: BackendClient;
   private _disposables: vscode.Disposable[] = [];
 
-  public static createOrShow(extensionUri: vscode.Uri) {
+  public static createOrShow(extensionUri: vscode.Uri, backend: BackendClient) {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -31,13 +33,14 @@ export class StudioPanel {
       }
     );
 
-    StudioPanel.currentPanel = new StudioPanel(panel, extensionUri);
+    StudioPanel.currentPanel = new StudioPanel(panel, extensionUri, backend);
     return StudioPanel.currentPanel;
   }
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri, backend: BackendClient) {
     this._panel = panel;
     this._extensionUri = extensionUri;
+    this._backend = backend;
 
     this._update();
 
@@ -46,6 +49,61 @@ export class StudioPanel {
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.type) {
+          case "gatewayRequest": {
+            try {
+              const response = await this._backend.gateway.client.request({
+                method: message.method,
+                url: message.path,
+                data: message.body,
+                timeout: message.timeout || 30000,
+              });
+              this._panel.webview.postMessage({
+                id: message.id,
+                result: response.data,
+              });
+            } catch (err: any) {
+              this._panel.webview.postMessage({
+                id: message.id,
+                error: err?.response?.data?.detail || err?.message || String(err),
+              });
+            }
+            break;
+          }
+          case "orchestratorRequest": {
+            try {
+              const response = await this._backend.orchestrator.client.request({
+                method: message.method,
+                url: message.path,
+                data: message.body,
+                timeout: message.timeout || 30000,
+              });
+              this._panel.webview.postMessage({
+                id: message.id,
+                result: response.data,
+              });
+            } catch (err: any) {
+              this._panel.webview.postMessage({
+                id: message.id,
+                error: err?.response?.data?.detail || err?.message || String(err),
+              });
+            }
+            break;
+          }
+          case "executeCommand": {
+            try {
+              const result = await vscode.commands.executeCommand(message.command, ...(message.args || []));
+              this._panel.webview.postMessage({
+                id: message.id,
+                result,
+              });
+            } catch (err: any) {
+              this._panel.webview.postMessage({
+                id: message.id,
+                error: err?.message || String(err),
+              });
+            }
+            break;
+          }
           case "showSaveDialog": {
             const uri = await vscode.window.showSaveDialog(message.options);
             this._panel.webview.postMessage({

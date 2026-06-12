@@ -10,8 +10,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Initialize backend client
   const config = vscode.workspace.getConfiguration('beehive');
-  const backendUrl = config.get<string>('backendUrl', 'http://127.0.0.1:9876');
-  const backend = new BackendClient(backendUrl);
+  const gatewayUrl = config.get<string>('gatewayUrl', 'http://127.0.0.1:9000');
+  const orchestratorUrl = config.get<string>('backendUrl', 'http://127.0.0.1:9876');
+  const backend = new BackendClient(gatewayUrl, orchestratorUrl);
 
   // Set context for view visibility
   vscode.commands.executeCommand(
@@ -24,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
   const openStudio = vscode.commands.registerCommand(
     "beehive.openStudio",
     () => {
-      StudioPanel.createOrShow(context.extensionUri);
+      StudioPanel.createOrShow(context.extensionUri, backend);
     }
   );
   context.subscriptions.push(openStudio);
@@ -33,7 +34,7 @@ export function activate(context: vscode.ExtensionContext) {
   const openSessionConsole = vscode.commands.registerCommand(
     "beehive.openSessionConsole",
     () => {
-      StudioPanel.createOrShow(context.extensionUri);
+      StudioPanel.createOrShow(context.extensionUri, backend);
     }
   );
   context.subscriptions.push(openSessionConsole);
@@ -53,7 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
   const openTaskDashboard = vscode.commands.registerCommand(
     "beehive.openTaskDashboard",
     () => {
-      StudioPanel.createOrShow(context.extensionUri);
+      StudioPanel.createOrShow(context.extensionUri, backend);
     }
   );
   context.subscriptions.push(openTaskDashboard);
@@ -82,7 +83,7 @@ export function activate(context: vscode.ExtensionContext) {
         placeHolder: "What should the agent do?",
       });
       if (!prompt) { return; }
-      const panel = StudioPanel.createOrShow(context.extensionUri);
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
       // TODO: send prompt to webview
     }
   );
@@ -175,15 +176,15 @@ export function activate(context: vscode.ExtensionContext) {
 
   const updateHealth = async () => {
     try {
-      const health = await backend.health();
+      const health = await backend.gateway.health();
       const providers = health.providers || [];
       const readyCount = providers.filter((p: any) => p.ready).length;
       statusBarItem.text = `$(hive) Beehive: ${readyCount}/${providers.length} ready`;
-      statusBarItem.tooltip = `Backend: ${health.status}\nVersion: ${health.version}`;
+      statusBarItem.tooltip = `Gateway: ${health.status}\nVersion: ${health.version}`;
       statusBarItem.backgroundColor = undefined;
     } catch (err) {
       statusBarItem.text = `$(hive) Beehive: offline`;
-      statusBarItem.tooltip = `Backend unreachable at ${backendUrl}`;
+      statusBarItem.tooltip = `Gateway unreachable at ${gatewayUrl}`;
       statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     }
     statusBarItem.show();

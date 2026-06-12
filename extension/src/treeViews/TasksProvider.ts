@@ -34,7 +34,7 @@ export class TasksProvider implements vscode.TreeDataProvider<TaskTreeItem> {
   async pollTasks(): Promise<void> {
     if (!this.backend) { return; }
     try {
-      const health = await this.backend.health();
+      const health = await this.backend.gateway.health();
       const providers = (health.providers || []).map((p: any) => ({
         id: p.provider || p.name || "unknown",
         label: p.provider || p.name || "Unknown Provider",
