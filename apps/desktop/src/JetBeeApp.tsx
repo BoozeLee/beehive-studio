@@ -16,6 +16,7 @@ import { PianoRoll } from "./components/PianoRoll/PianoRoll";
 import { exportProjectAudio } from "./lib/audioEngine";
 import { ExportAudioDialog } from "./components/ExportAudioDialog";
 import { PublishDialog } from "./components/PublishDialog/PublishDialog";
+import { ExploreDialog } from "./components/ExploreDialog/ExploreDialog";
 import { summarizeRender, type RenderPreset } from "./lib/exportWorkflow";
 import {
   initMixer,
@@ -178,6 +179,7 @@ function JetBeeApp() {
   const [renderOutputMode, setRenderOutputMode] = useState<"master" | "master_and_stems">("master");
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showExploreDialog, setShowExploreDialog] = useState(false);
   const [publishAudioBlob, setPublishAudioBlob] = useState<Blob | null>(null);
   const [publishDuration, setPublishDuration] = useState<number | undefined>(undefined);
   const [isExportingAudio, setIsExportingAudio] = useState(false);
@@ -1247,6 +1249,9 @@ function JetBeeApp() {
       <button className="jetbee-toolbtn" onClick={() => void handlePublishFromExport()} disabled={exportPayload.renderClips.length === 0}>
         🌐 Publish
       </button>
+      <button className="jetbee-toolbtn" onClick={() => setShowExploreDialog(true)}>
+        🔍 Explore
+      </button>
       <button className="jetbee-toolbtn" onClick={() => setShowTimeline(!showTimeline)}>
         {showTimeline ? "Grid" : "Timeline"}
       </button>
@@ -1779,6 +1784,7 @@ function JetBeeApp() {
         audioBlob={publishAudioBlob}
         durationSecs={publishDuration}
       />
+      <ExploreDialog isOpen={showExploreDialog} onClose={() => setShowExploreDialog(false)} />
     </>
   );
 }
