@@ -104,7 +104,7 @@ class BuildCoordinator:
 
     async def _request_plan(self, request: BuildRequest) -> BuildPlan:
         try:
-            async with httpx.AsyncClient(timeout=95.0, trust_env=False) as client:
+            async with httpx.AsyncClient(timeout=245.0, trust_env=False) as client:
                 response = await client.post(
                     f"{self.hive_url}/api/v1/supervise/build",
                     json=request.model_dump(by_alias=True),
@@ -128,7 +128,8 @@ class BuildCoordinator:
 
     async def _select_provider(self, request: BuildRequest) -> CompilerProvider:
         names = (
-            ["ace-rest", "ace-cpp"]
+            # Prefer deterministic local provider in dev; fall back to ACE-Step when available.
+            ["beehive-local", "ace-rest", "ace-cpp"]
             if request.compiler_preference == "auto"
             else [request.compiler_preference]
         )

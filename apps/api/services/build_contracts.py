@@ -37,7 +37,7 @@ class BuildRequest(WireModel):
     selected_artifact_ids: list[str] = Field(default_factory=list)
     artifacts: list[ArtifactSummary] = Field(default_factory=list)
     compiler_preference: Literal[
-        "auto", "ace-rest", "ace-cpp", "deapi-rest", "deapi-mcp"
+        "auto", "beehive-local", "ace-rest", "ace-cpp", "deapi-rest", "deapi-mcp"
     ] = "auto"
     allow_cloud: bool = False
     cloud_approved: bool = False
