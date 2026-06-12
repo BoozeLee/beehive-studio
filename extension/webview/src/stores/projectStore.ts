@@ -1,21 +1,6 @@
 import { create } from "zustand";
-import type {
-  BuildJob,
-  CreativeBranch,
-  TasteEdge,
-  TasteNode,
-  TimelineClip,
-} from "../../../src/services/types";
-
-export interface Track {
-  id: string;
-  name: string;
-  color?: string;
-  muted: boolean;
-  solo: boolean;
-  volume: number;
-  pan: number;
-}
+import type { BuildJob, CreativeBranch, TasteEdge, TasteNode } from "../../../src/services/types";
+import type { Clip, Track } from "../lib/desktopTypes";
 
 export interface BeehiveProject {
   id: string;
@@ -29,9 +14,11 @@ export interface BeehiveProject {
   updatedAt: number;
 }
 
+export type { Clip, Track };
+
 interface ProjectState {
   project: BeehiveProject | null;
-  clips: TimelineClip[];
+  clips: Clip[];
   tracks: Track[];
   selectedClipId?: string;
   selectedTrackId?: string;
@@ -41,10 +28,10 @@ interface ProjectState {
   tasteEdges: TasteEdge[];
 
   setProject: (project: BeehiveProject | null) => void;
-  setClips: (clips: TimelineClip[]) => void;
+  setClips: (clips: Clip[]) => void;
   setTracks: (tracks: Track[]) => void;
-  addClip: (clip: TimelineClip) => void;
-  updateClip: (clip: TimelineClip) => void;
+  addClip: (clip: Clip) => void;
+  updateClip: (clip: Clip) => void;
   removeClip: (id: string) => void;
   selectClip: (id?: string) => void;
   selectTrack: (id?: string) => void;
