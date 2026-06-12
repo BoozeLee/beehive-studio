@@ -400,3 +400,58 @@ export interface WorkspaceState {
   currentBeat: number;
   zoom: number;                     // for timeline/piano roll
 }
+
+// ============================================
+// Taste Graph (self-evolving agent memory)
+// ============================================
+
+export type TasteNodeKind =
+  | 'reference_track'
+  | 'midi_motif'
+  | 'groove_pattern'
+  | 'sound_texture'
+  | 'rejected_idea';
+
+export type TasteEdgeKind =
+  | 'sounds_like'
+  | 'evolved_from'
+  | 'rejected_because'
+  | 'used_in'
+  | 'inspired_by';
+
+export interface TasteNode {
+  id: ID;
+  kind: TasteNodeKind;
+  label: string;
+  createdAt: number;
+  projectId: string;
+  sourceArtifactId?: ID;
+  featureVector?: number[];
+  tags: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface TasteEdge {
+  id: ID;
+  sourceId: ID;
+  targetId: ID;
+  kind: TasteEdgeKind;
+  weight: number;
+  updatedAt: number;
+}
+
+export interface TasteQueryResult {
+  nodes: TasteNode[];
+  summary: string;
+}
+
+export interface TasteFeedbackPayload {
+  projectId: string;
+  clipId: ID;
+  verdict: 'like' | 'never_again';
+  nodeKind?: TasteNodeKind;
+  label?: string;
+  featureVector?: number[];
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
