@@ -16,6 +16,7 @@ from typing import Any
 from tools.midi_tools import generate_rolling_bass, validate_notes
 from tools.music_qa import analyze_notes
 from integrations.hive_999 import request_rhythm_advice
+from taste_graph import TasteGraph, extract_midi_features
 
 
 def _resolve_parameters(
@@ -332,6 +333,11 @@ async def _generate_baseline(
     style_references: list[str],
 ) -> dict:
     """Non-streaming baseline generation."""
+    project_id = session_context.get("project_id", "default")
+    graph = TasteGraph(project_id)
+    taste_result = graph.query(brief, top_k=2)
+    taste_refs = taste_result["nodes"]
+
     proposal = await request_rhythm_advice(brief, session_context, style_references)
     advised = proposal.get("creative_plan", {}).get("recommended_parameters", {})
     bpm, swing, darkness, density = _resolve_parameters(brief, session_context, advised)
@@ -345,11 +351,24 @@ async def _generate_baseline(
         "tempo_automation": [],
     }
 
+    features = extract_midi_features(notes)
+    motif = graph.add_node(
+        kind="groove_pattern",
+        label=brief or "rolling bass",
+        feature_vector=features,
+        tags=["bass"],
+    )
+    for ref in taste_refs:
+        graph.add_edge(ref["id"], motif["id"], "inspired_by", weight=1.0)
+    graph.save()
+
     reasoning_lines = [
         f"Analyzed brief: '{brief[:70]}...'",
         f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
         f"Generated 4-bar pattern at {int(bpm)} BPM",
     ]
+    if taste_refs:
+        reasoning_lines.append(taste_result["summary"])
     if qa_warnings:
         reasoning_lines.append("QA warnings: " + "; ".join(qa_warnings[:3]))
 
@@ -360,6 +379,7 @@ async def _generate_baseline(
         "_generated_midi_data": midi_data,
         "_bpm": bpm,
         "proposal": proposal,
+        "taste_references": [n["id"] for n in taste_refs],
     }
 
 
