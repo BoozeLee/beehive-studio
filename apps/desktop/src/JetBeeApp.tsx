@@ -15,6 +15,7 @@ import type { QaResult } from "./components/PatternEditor/PatternEditor";
 import { PianoRoll } from "./components/PianoRoll/PianoRoll";
 import { exportProjectAudio } from "./lib/audioEngine";
 import { ExportAudioDialog } from "./components/ExportAudioDialog";
+import { PublishDialog } from "./components/PublishDialog/PublishDialog";
 import { summarizeRender, type RenderPreset } from "./lib/exportWorkflow";
 import {
   initMixer,
@@ -176,6 +177,9 @@ function JetBeeApp() {
   const [renderEngine, setRenderEngine] = useState<"python" | "desktop">("python");
   const [renderOutputMode, setRenderOutputMode] = useState<"master" | "master_and_stems">("master");
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [publishAudioBlob, setPublishAudioBlob] = useState<Blob | null>(null);
+  const [publishDuration, setPublishDuration] = useState<number | undefined>(undefined);
   const [isExportingAudio, setIsExportingAudio] = useState(false);
   const [activeRenderJobId, setActiveRenderJobId] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState({ progress: 0, label: "Preparing" });
@@ -1060,6 +1064,37 @@ function JetBeeApp() {
     }
   }
 
+  const handlePublishFromExport = useCallback(async () => {
+    if (exportPayload.renderClips.length === 0) {
+      setStatus("Nothing audible to publish — arrange some clips first");
+      return;
+    }
+    setStatus("Preparing audio for MixHive...");
+    try {
+      const resolvedClips = await Promise.all(
+        exportPayload.renderClips.map(async (clip) => ({
+          ...clip,
+          audioFilePath: clip.audioFilePath
+            ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
+            : undefined,
+        }))
+      );
+      const wavData = await exportProjectAudio(
+        resolvedClips,
+        transport.bpm,
+        renderPreset,
+        exportPayload.mixerTracks
+      );
+      const blob = new Blob([wavData.buffer as ArrayBuffer], { type: "audio/wav" });
+      setPublishAudioBlob(blob);
+      setPublishDuration(exportSummary.durationSeconds);
+      setShowPublishDialog(true);
+      setStatus("Publish dialog open");
+    } catch (err) {
+      setStatus(`Publish prep failed: ${String(err)}`);
+    }
+  }, [exportPayload, exportSummary, projectName, renderPreset, transport.bpm]);
+
   const buttonStyle = (disabled = false): React.CSSProperties => ({
     padding: "10px 20px",
     fontSize: 14,
@@ -1208,6 +1243,9 @@ function JetBeeApp() {
       </button>
       <button className="jetbee-toolbtn" onClick={() => setShowExportDialog(true)} disabled={exportPayload.renderClips.length === 0}>
         🔊 Export
+      </button>
+      <button className="jetbee-toolbtn" onClick={() => void handlePublishFromExport()} disabled={exportPayload.renderClips.length === 0}>
+        🌐 Publish
       </button>
       <button className="jetbee-toolbtn" onClick={() => setShowTimeline(!showTimeline)}>
         {showTimeline ? "Grid" : "Timeline"}
@@ -1731,6 +1769,15 @@ function JetBeeApp() {
             : undefined
         }
         onExport={handleExportAudio}
+      />
+      <PublishDialog
+        isOpen={showPublishDialog}
+        onClose={() => setShowPublishDialog(false)}
+        defaultTitle={projectName}
+        defaultBpm={Math.round(transport.bpm)}
+        defaultGenre="techno"
+        audioBlob={publishAudioBlob}
+        durationSecs={publishDuration}
       />
     </>
   );
