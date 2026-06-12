@@ -1,0 +1,110 @@
+name: Beehive Studio Monitoring
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Every 15 minutes
+  workflow_dispatch:
+
+jobs:
+  collect-metrics:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install monitoring tools
+      run: |
+        pip install requests prometheus-client
+
+    - name: Collect API metrics
+      id: api-metrics
+      run: |
+        python -c "
+        import requests
+        import time
+        from prometheus_client import Gauge
+        
+        # API Health Check
+        try:
+            response = requests.get('https://localhost:443/api/health', timeout=10, verify=False)
+            api_health = 1 if response.status_code == 200 else 0
+        except:
+            api_health = 0
+        
+        # Response Time
+        start_time = time.time()
+        try:
+            requests.get('https://localhost:443/api/health', timeout=10, verify=False)
+            response_time = (time.time() - start_time) * 1000
+        except:
+            response_time = 0
+        
+        # Store metrics
+        with open('metrics.txt', 'w') as f:
+            f.write(f'api_health {api_health}\n')
+            f.write(f'api_response_time_ms {response_time}\n')
+        "
+
+    - name: Collect database metrics
+      id: db-metrics
+      run: |
+        python -c "
+        import requests
+        import time
+        
+        # Database connectivity
+        try:
+            response = requests.get('https://localhost:443/api/health', timeout=10, verify=False)
+            db_health = 1 if response.status_code == 200 else 0
+        except:
+            db_health = 0
+        
+        # Store metrics
+        with open('metrics.txt', 'a') as f:
+            f.write(f'db_health {db_health}\n')
+        "
+
+    - name: Upload metrics
+      uses: actions/upload-artifact@v3
+      with:
+        name: monitoring-metrics
+        path: metrics.txt
+
+  alert-on-issues:
+    needs: collect-metrics
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/download-artifact@v3
+      with:
+        name: monitoring-metrics
+        path: metrics/
+
+    - name: Check metrics and alert
+      run: |
+        if [ -f metrics/metrics.txt ]; then
+            api_health=$(grep 'api_health' metrics/metrics.txt | awk '{print $2}')
+            response_time=$(grep 'api_response_time_ms' metrics/metrics.txt | awk '{print $2}')
+            
+            # Alert if API is down
+            if [ \"$api_health\" = \"0\" ]; then
+                echo 'ALERT: API is down!'
+                # Send alert notification (Slack, email, etc.)
+                curl -X POST -H 'Content-type: application/json' \
+                    --data '{\"text\":\"Beehive Studio API is down!\"}' \
+                    ${{ secrets.SLACK_WEBHOOK }}
+            fi
+            
+            # Alert if response time is too high
+            if (( $(echo \"$response_time > 1000\" | bc -l) )); then
+                echo 'ALERT: API response time is too high!'
+                curl -X POST -H 'Content-type: application/json' \
+                    --data '{\"text\":\"Beehive Studio API response time is high: '$response_time'ms\"}' \
+                    ${{ secrets.SLACK_WEBHOOK }}
+            fi
+        fi

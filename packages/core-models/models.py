@@ -89,6 +89,7 @@ class ClipMetadata(BaseModel):
     generative: bool = False
     agent_id: Optional[ID] = None
     prompt_id: Optional[ID] = None
+    source_pattern_id: Optional[ID] = None
     reasoning_trace: Optional[str] = None
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
     reference_ids: list[ID] = Field(default_factory=list)
@@ -120,6 +121,9 @@ class Clip(BaseModel):
 
     midi_data: Optional[MidiClipData] = None
     audio_file_path: Optional[str] = None
+    audio_source_offset: float = Field(0.0, ge=0.0)
+    audio_source_duration: Optional[float] = Field(None, ge=0.0)
+    gain: float = Field(1.0, ge=0.0, le=2.0)
     generative_prompt: Optional[str] = None
 
     # Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)
@@ -139,6 +143,14 @@ class AutomationLane(BaseModel):
     id: ID
     parameter: str
     points: list[dict[str, float]] = Field(default_factory=list)
+    mode: Literal["off", "read", "touch", "write"] = "read"
+
+
+class TrackEffect(BaseModel):
+    id: ID
+    type: Literal["reverb", "delay", "filter", "distortion"]
+    params: dict[str, float] = Field(default_factory=dict)
+    bypass: bool = False
 
 
 class TrackInstrument(BaseModel):
@@ -162,6 +174,8 @@ class Track(BaseModel):
     clips: list[ID] = Field(default_factory=list)
 
     automation_lanes: list[AutomationLane] = Field(default_factory=list)
+    effects: list[TrackEffect] = Field(default_factory=list)
+    sends: dict[str, float] = Field(default_factory=dict)
     instrument: Optional[TrackInstrument] = None
 
 
@@ -234,6 +248,21 @@ class AgentTask(BaseModel):
     human_feedback: Optional[str] = None
 
     parent_task_id: Optional[ID] = None
+
+
+class AgentAttribution(BaseModel):
+    service: str
+    model: str
+    profile: str
+    prompt_versions: dict[str, str] = Field(default_factory=dict)
+    latency_ms: int = Field(0, ge=0)
+
+
+class AgentProposalEnvelope(BaseModel):
+    status: str
+    degraded: bool = False
+    attribution: AgentAttribution
+    creative_plan: dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================

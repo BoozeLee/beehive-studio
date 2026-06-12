@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # AudioCraft (Meta) - Open-source music generation
+  audiocraft:
+    build:
+      context: ./services/audiocraft
+      dockerfile: Dockerfile
+    container_name: beehive-studio-audiocraft
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/audiocraft/models:/app/models
+      - ./services/audiocraft/outputs:/app/outputs
+    environment:
+      - AUDIOCRAFT_MODEL=small
+      - AUDIOCRAFT_DEVICE=cuda
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Mubert API - Commercial royalty-free music generation
+  mubert-api:
+    image: python:3.11-slim
+    container_name: beehive-studio-mubert
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./services/mubert:/app
+    environment:
+      - MUBERT_API_KEY=${MUBERT_API_KEY}
+      - FLASK_ENV=production
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: python -m flask run --host=0.0.0.0 --port=8000
+
+  # Soundraw API - Premium music generation
+  soundraw-api:
+    image: python:3.11-slim
+    container_name: beehive-studio-soundraw
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./services/soundraw:/app
+    environment:
+      - SOUNDRAW_API_KEY=${SOUNDRAW_API_KEY}
+      - FLASK_ENV=production
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: python -m flask run --host=0.0.0.0 --port=8000
+
+  # Suno AI - Complete song generation
+  suno-api:
+    image: python:3.11-slim
+    container_name: beehive-studio-suno
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./services/suno:/app
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: python -m flask run --host=0.0.0.0 --port=8000
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: beehive-studio-music-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Nginx reverse proxy for music services
+  nginx:
+    image: nginx:alpine
+    container_name: beehive-studio-music-nginx
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./services/nginx/music.conf:/etc/nginx/nginx.conf
+      - ./services/nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - audiocraft
+      - mubert-api
+      - soundraw-api
+      - suno-api
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: beehive-music-network

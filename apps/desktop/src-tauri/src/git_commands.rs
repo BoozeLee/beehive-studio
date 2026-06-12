@@ -25,7 +25,7 @@ pub struct DiffEntry {
     pub status: String,
 }
 
-fn project_dir(name: &str) -> PathBuf {
+pub(crate) fn project_dir(name: &str) -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("beehive-studio")

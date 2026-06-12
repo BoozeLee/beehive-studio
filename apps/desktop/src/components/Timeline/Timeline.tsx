@@ -1,6 +1,7 @@
-import React, { useRef, useCallback, useMemo } from "react";
+import React, { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import { TrackHeader } from "./TrackHeader";
 import { useTimelineStore } from "../../lib/timelineStore";
+import type { Clip as TimelineClip } from "../../../../../packages/core-models/index";
 
 const COLORS = {
   bg: "#0f0f12",
@@ -15,17 +16,30 @@ const COLORS = {
 const TRACK_HEIGHT = 40;
 const RULER_HEIGHT = 24;
 const HEADER_WIDTH = 180;
+const RESIZE_HANDLE_WIDTH = 8;
 
 interface TimelineProps {
   isPlaying: boolean;
   currentBeat: number;
+  bpm?: number;
   onPlayClip?: (clipId: string) => void;
+  onSeek?: (beat: number) => void;
+  onAddTrack?: () => void;
+  onRemoveTrack?: (trackId: string) => void;
+  onDeleteClip?: (clipId: string) => void;
+  onDuplicateClip?: (clip: TimelineClip) => void;
 }
 
 export const Timeline: React.FC<TimelineProps> = ({
   isPlaying,
   currentBeat,
+  bpm = 142,
   onPlayClip,
+  onSeek,
+  onAddTrack,
+  onRemoveTrack,
+  onDeleteClip,
+  onDuplicateClip,
 }) => {
   const {
     tracks,
@@ -39,13 +53,32 @@ export const Timeline: React.FC<TimelineProps> = ({
     selectTrack,
     selectClip,
     updateTrack,
+    moveClipToTrack,
+    resizeClip,
+    duplicateClip,
+    splitClipAt,
+    removeClip,
     setZoom,
     setScrollOffset,
     setSnapToGrid,
+    setCursorPosition,
   } = useTimelineStore();
 
   const lanesRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  const [dragState, setDragState] = useState<{
+    type: "move" | "resize";
+    clipId: string;
+    startX: number;
+    originalStart: number;
+    originalDuration: number;
+    originalTrackId: string;
+  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    clipId: string;
+  } | null>(null);
 
   const totalBeats = useMemo(() => {
     let max = 16;
@@ -78,7 +111,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const playheadStyle: React.CSSProperties = {
     position: "absolute",
-    left: snapBeat(currentBeat) * zoom - scrollOffset.x,
+    left: (isPlaying ? currentBeat : snapBeat(currentBeat)) * zoom - scrollOffset.x,
     top: 0,
     width: 2,
     height: tracks.length * TRACK_HEIGHT + RULER_HEIGHT,
@@ -100,6 +133,64 @@ export const Timeline: React.FC<TimelineProps> = ({
     return marks;
   }, [totalBeats]);
 
+  const handleRulerClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onSeek || !lanesRef.current) return;
+      const rect = lanesRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + lanesRef.current.scrollLeft;
+      const beat = x / zoom;
+      const snappedBeat = snapBeat(beat);
+      setCursorPosition(snappedBeat);
+      onSeek(snappedBeat);
+    },
+    [onSeek, zoom, snapBeat, setCursorPosition]
+  );
+
+  const getTrackIdFromPointer = useCallback(
+    (clientY: number) => {
+      if (!lanesRef.current || tracks.length === 0) return null;
+      const rect = lanesRef.current.getBoundingClientRect();
+      const y = clientY - rect.top + lanesRef.current.scrollTop - RULER_HEIGHT;
+      const trackIndex = Math.max(0, Math.min(tracks.length - 1, Math.floor(y / TRACK_HEIGHT)));
+      return tracks[trackIndex]?.id ?? null;
+    },
+    [tracks]
+  );
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dxBeats = (e.clientX - dragState.startX) / zoom;
+      if (dragState.type === "move") {
+        const nextTrackId = getTrackIdFromPointer(e.clientY) ?? dragState.originalTrackId;
+        moveClipToTrack(
+          dragState.clipId,
+          nextTrackId,
+          snapBeat(dragState.originalStart + dxBeats)
+        );
+      } else {
+        resizeClip(dragState.clipId, snapBeat(dragState.originalDuration + dxBeats));
+      }
+    };
+
+    const handleMouseUp = () => setDragState(null);
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragState, getTrackIdFromPointer, moveClipToTrack, resizeClip, snapBeat, zoom]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeContextMenu = () => setContextMenu(null);
+    window.addEventListener("click", closeContextMenu);
+    return () => window.removeEventListener("click", closeContextMenu);
+  }, [contextMenu]);
+
   return (
     <div
       style={{
@@ -112,6 +203,64 @@ export const Timeline: React.FC<TimelineProps> = ({
         background: COLORS.bg,
       }}
     >
+      {contextMenu && (
+        <div
+          role="menu"
+          style={{
+            position: "fixed",
+            left: contextMenu.x,
+            top: contextMenu.y,
+            zIndex: 100,
+            minWidth: 130,
+            padding: 4,
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: 6,
+            background: COLORS.panel,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          }}
+        >
+          <button
+            role="menuitem"
+            onClick={() => {
+              const duplicatedId = duplicateClip(contextMenu.clipId);
+              if (duplicatedId) {
+                const duplicatedClip = useTimelineStore.getState().clips[duplicatedId];
+                if (duplicatedClip) onDuplicateClip?.(duplicatedClip);
+              }
+              setContextMenu(null);
+            }}
+            style={menuItemStyle}
+          >
+            Duplicate
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              removeClip(contextMenu.clipId);
+              onDeleteClip?.(contextMenu.clipId);
+              setContextMenu(null);
+            }}
+            style={{ ...menuItemStyle, color: "#ff9a9a" }}
+          >
+            Delete
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              const createdId = splitClipAt(contextMenu.clipId, currentBeat, 60 / bpm);
+              if (createdId) {
+                const createdClip = useTimelineStore.getState().clips[createdId];
+                if (createdClip) onDuplicateClip?.(createdClip);
+              }
+              setContextMenu(null);
+            }}
+            style={menuItemStyle}
+          >
+            Split at Playhead
+          </button>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div
         style={{
@@ -154,6 +303,14 @@ export const Timeline: React.FC<TimelineProps> = ({
         >
           ║
         </button>
+        <div style={{ width: 1, height: 16, background: COLORS.border }} />
+        <button
+          onClick={onAddTrack}
+          style={zoomBtnStyle}
+          title="Add track"
+        >
+          +T
+        </button>
       </div>
 
       {/* Ruler + Lanes */}
@@ -189,6 +346,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               onToggleArm={() =>
                 updateTrack(track.id, { arm: !track.arm })
               }
+              onRemove={onRemoveTrack ? () => onRemoveTrack(track.id) : undefined}
             />
           ))}
         </div>
@@ -196,6 +354,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         {/* Scrollable Lanes */}
         <div
           ref={lanesRef}
+          data-testid="timeline-lanes"
           onScroll={handleScroll}
           style={{
             flex: 1,
@@ -205,6 +364,8 @@ export const Timeline: React.FC<TimelineProps> = ({
         >
           {/* Ruler */}
           <div
+            data-testid="timeline-ruler"
+            onClick={handleRulerClick}
             style={{
               position: "sticky",
               top: 0,
@@ -213,6 +374,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               background: COLORS.rulerBg,
               borderBottom: `1px solid ${COLORS.border}`,
               zIndex: 10,
+              cursor: onSeek ? "pointer" : "default",
             }}
           >
             {rulerMarks.map((mark) => (
@@ -293,9 +455,30 @@ export const Timeline: React.FC<TimelineProps> = ({
                   return (
                     <div
                       key={clip.id}
+                      data-testid={`timeline-clip-${clip.id}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         selectClip(clip.id);
+                      }}
+                      onMouseDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.stopPropagation();
+                        selectClip(clip.id);
+                        setContextMenu(null);
+                        setDragState({
+                          type: "move",
+                          clipId: clip.id,
+                          startX: e.clientX,
+                          originalStart: clip.start,
+                          originalDuration: clip.duration,
+                          originalTrackId: track.id,
+                        });
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        selectClip(clip.id);
+                        setContextMenu({ x: e.clientX, y: e.clientY, clipId: clip.id });
                       }}
                       onDoubleClick={() => onPlayClip?.(clip.id)}
                       style={{
@@ -310,7 +493,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                         border: isSelected
                           ? `2px solid ${COLORS.accent}`
                           : "2px solid transparent",
-                        cursor: "pointer",
+                        cursor: dragState?.clipId === clip.id ? "grabbing" : "grab",
                         overflow: "hidden",
                         display: "flex",
                         flexDirection: "column",
@@ -361,6 +544,32 @@ export const Timeline: React.FC<TimelineProps> = ({
                           ))}
                         </div>
                       )}
+                      <div
+                        data-testid={`timeline-clip-${clip.id}-resize`}
+                        onMouseDown={(e) => {
+                          if (e.button !== 0) return;
+                          e.stopPropagation();
+                          selectClip(clip.id);
+                          setContextMenu(null);
+                          setDragState({
+                            type: "resize",
+                            clipId: clip.id,
+                            startX: e.clientX,
+                            originalStart: clip.start,
+                            originalDuration: clip.duration,
+                            originalTrackId: track.id,
+                          });
+                        }}
+                        style={{
+                          position: "absolute",
+                          right: 0,
+                          top: 0,
+                          width: RESIZE_HANDLE_WIDTH,
+                          height: "100%",
+                          cursor: "ew-resize",
+                          background: isSelected ? "rgba(0,0,0,0.22)" : "rgba(0,0,0,0.1)",
+                        }}
+                      />
                     </div>
                   );
                 })}
@@ -416,4 +625,17 @@ const zoomBtnStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+};
+
+const menuItemStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  padding: "7px 9px",
+  border: 0,
+  borderRadius: 4,
+  background: "transparent",
+  color: COLORS.text,
+  textAlign: "left",
+  fontSize: 12,
+  cursor: "pointer",
 };

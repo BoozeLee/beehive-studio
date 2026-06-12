@@ -8,6 +8,7 @@ interface TrackHeaderProps {
   onToggleMute: () => void;
   onToggleSolo: () => void;
   onToggleArm: () => void;
+  onRemove?: () => void;
 }
 
 const COLORS = {
@@ -27,6 +28,7 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
   onToggleMute,
   onToggleSolo,
   onToggleArm,
+  onRemove,
 }) => {
   return (
     <div
@@ -94,6 +96,33 @@ export const TrackHeader: React.FC<TrackHeaderProps> = ({
             onToggleArm();
           }}
         />
+        {onRemove && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Remove track"
+            style={{
+              width: 20,
+              height: 20,
+              fontSize: 12,
+              fontWeight: 700,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 3,
+              background: "transparent",
+              color: COLORS.textMuted,
+              cursor: "pointer",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginLeft: 4,
+            }}
+          >
+            ×
+          </button>
+        )}
       </div>
     </div>
   );

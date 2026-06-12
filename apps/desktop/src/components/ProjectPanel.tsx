@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   listBranches,
   getLog,
@@ -217,7 +218,6 @@ export function ProjectPanel({ projectName, visible, onClose, onBranchSwitch }: 
 
   async function handleExport() {
     try {
-      const { save } = await import("@tauri-apps/plugin-dialog");
       const savePath = await save({
         defaultPath: `${projectName}.beehive.tar.gz`,
         filters: [{ name: "Beehive Archive", extensions: ["tar.gz"] }],
@@ -236,7 +236,6 @@ export function ProjectPanel({ projectName, visible, onClose, onBranchSwitch }: 
 
   async function handleImport() {
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const filePath = await open({
         filters: [{ name: "Beehive Archive", extensions: ["tar.gz"] }],
       });

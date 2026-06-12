@@ -9,10 +9,85 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from typing import Any
 
 from tools.midi_tools import generate_rolling_bass, validate_notes
+from tools.music_qa import analyze_notes
+from integrations.hive_999 import request_rhythm_advice
+from taste_graph import TasteGraph, extract_midi_features
+
+
+def _resolve_parameters(
+    brief: str,
+    session_context: dict[str, Any],
+    advised: dict[str, Any],
+) -> tuple[int, float, float, float]:
+    """Resolve advisor suggestions, then enforce explicit brief constraints."""
+    brief_lower = brief.lower()
+    bpm = int(session_context.get("bpm", advised.get("bpm", 142)))
+    swing = float(session_context.get("swing", advised.get("swing", 0.68)))
+    darkness = float(advised.get("darkness", 0.75))
+    density = float(advised.get("density", 0.62))
+
+    bpm_match = re.search(r"\b(\d{2,3})\s*bpm\b", brief_lower)
+    if bpm_match:
+        bpm = max(40, min(240, int(bpm_match.group(1))))
+    if "swing" in brief_lower or "swung" in brief_lower or "shuffle" in brief_lower:
+        swing = max(swing, 0.72)
+    if "straight" in brief_lower:
+        swing = 0.5
+    if "dark" in brief_lower or "ritual" in brief_lower or "deep" in brief_lower:
+        darkness = 0.82
+    if "rolling" in brief_lower or "acid" in brief_lower:
+        density = 0.72
+    if "sparse" in brief_lower or "minimal" in brief_lower:
+        density = 0.45
+    if "dense" in brief_lower or "high density" in brief_lower or "busy" in brief_lower:
+        density = 0.85
+    if "bright" in brief_lower:
+        darkness = 0.45
+
+    return bpm, swing, darkness, density
+
+
+def _generate_notes_with_qa(
+    bpm: int,
+    swing: float,
+    darkness: float,
+    density: float,
+    bars: int = 4,
+    max_attempts: int = 3,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Generate rolling bass with QA feedback loop."""
+    warnings: list[str] = []
+    for attempt in range(max_attempts):
+        notes = generate_rolling_bass(
+            bpm=bpm, density=density, swing=swing, darkness=darkness, bars=bars
+        )
+        if not validate_notes(notes):
+            density = max(0.3, density - 0.1)
+            continue
+
+        qa = analyze_notes(notes, bpm=bpm)
+        if qa["pass"]:
+            return notes, []
+
+        warnings = qa["warnings"]
+        # Adjust parameters based on warnings for next attempt
+        if any("monophonic" in w or "unique pitches" in w for w in warnings):
+            darkness = max(0.3, darkness - 0.08)  # more pitch variety
+        if any("velocity" in w.lower() for w in warnings):
+            swing = min(0.95, swing + 0.05)  # swing adds velocity variation via microtiming
+        if any("grid-locked" in w or "rhythm" in w.lower() for w in warnings):
+            swing = min(0.95, swing + 0.08)
+        if any("repetition" in w.lower() or "looped" in w.lower() for w in warnings):
+            density = min(0.9, density + 0.05)  # more notes = more variation
+            darkness = max(0.3, darkness - 0.05)
+
+    # Return last attempt even if not perfect, with warnings
+    return notes, warnings
 
 # ─────────────────────────────────────────────────────────────
 # Try to import LangGraph / LangChain components
@@ -140,11 +215,6 @@ async def run_rhythm_groove_agent(
     Tries LangGraph + Ollama first. Falls back to pure tool-based generation
     if LLM is unavailable.
     """
-    async for event in run_rhythm_groove_agent_streaming(brief, session_context, style_references):
-        pass  # Drain the stream for the non-streaming API
-
-    # The last event should be the complete result
-    # For simplicity, we re-run the baseline logic here
     return await _generate_baseline(brief, session_context, style_references or [])
 
 
@@ -162,6 +232,8 @@ async def run_rhythm_groove_agent_streaming(
     swing = float(session_context.get("swing", 0.68))
 
     yield {"type": "status", "message": "Analyzing brief..."}
+    proposal = await request_rhythm_advice(brief, session_context, style_references)
+    yield {"type": "advisory", "proposal": proposal}
 
     # ── Try LLM-powered agent ──
     _llm_reasoning = None
@@ -221,46 +293,37 @@ async def run_rhythm_groove_agent_streaming(
     yield {"type": "status", "message": "Generating baseline MIDI..."}
 
     # ── Tool-based generation ──
-    brief_lower = brief.lower()
-    darkness = 0.75
-    density = 0.62
+    advised = proposal.get("creative_plan", {}).get("recommended_parameters", {})
+    bpm, swing, darkness, density = _resolve_parameters(brief, session_context, advised)
 
-    if "dark" in brief_lower or "ritual" in brief_lower or "deep" in brief_lower:
-        darkness = 0.82
-    if "rolling" in brief_lower or "acid" in brief_lower:
-        density = 0.72
-    if "sparse" in brief_lower or "minimal" in brief_lower:
-        density = 0.45
-    if "bright" in brief_lower:
-        darkness = 0.45
-
+    notes, qa_warnings = _generate_notes_with_qa(
+        bpm=int(bpm), swing=swing, darkness=darkness, density=density, bars=4
+    )
     midi_data = {
-        "notes": generate_rolling_bass(
-            bpm=int(bpm), density=density, swing=swing, darkness=darkness, bars=4
-        ),
+        "notes": notes,
         "control_changes": [],
         "tempo_automation": [],
     }
-
-    if not validate_notes(midi_data["notes"]):
-        midi_data["notes"] = generate_rolling_bass(
-            bpm=int(bpm), density=0.55, swing=swing, darkness=darkness, bars=4
-        )
 
     yield {"type": "midi", "data": midi_data}
 
     task_id = str(uuid.uuid4())
 
+    reasoning_lines = [
+        f"Analyzed brief: '{brief[:70]}...'",
+        f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
+        f"Generated 4-bar pattern at {int(bpm)} BPM",
+    ]
+    if qa_warnings:
+        reasoning_lines.append("QA warnings: " + "; ".join(qa_warnings[:3]))
+
     yield {
         "type": "complete",
         "task_id": task_id,
         "status": "completed",
-        "reasoning": [
-            f"Analyzed brief: '{brief[:70]}...'",
-            f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
-            f"Generated 4-bar pattern at {int(bpm)} BPM",
-        ],
+        "reasoning": reasoning_lines,
         "clip_preview": midi_data,
+        "proposal": proposal,
     }
 
 
@@ -270,44 +333,53 @@ async def _generate_baseline(
     style_references: list[str],
 ) -> dict:
     """Non-streaming baseline generation."""
-    bpm = float(session_context.get("bpm", 142))
-    swing = float(session_context.get("swing", 0.68))
-    brief_lower = brief.lower()
-    darkness = 0.75
-    density = 0.62
+    project_id = session_context.get("project_id", "default")
+    graph = TasteGraph(project_id)
+    taste_result = graph.query(brief, top_k=2)
+    taste_refs = taste_result["nodes"]
 
-    if "dark" in brief_lower or "ritual" in brief_lower or "deep" in brief_lower:
-        darkness = 0.82
-    if "rolling" in brief_lower or "acid" in brief_lower:
-        density = 0.72
-    if "sparse" in brief_lower or "minimal" in brief_lower:
-        density = 0.45
-    if "bright" in brief_lower:
-        darkness = 0.45
+    proposal = await request_rhythm_advice(brief, session_context, style_references)
+    advised = proposal.get("creative_plan", {}).get("recommended_parameters", {})
+    bpm, swing, darkness, density = _resolve_parameters(brief, session_context, advised)
 
+    notes, qa_warnings = _generate_notes_with_qa(
+        bpm=int(bpm), swing=swing, darkness=darkness, density=density, bars=4
+    )
     midi_data = {
-        "notes": generate_rolling_bass(
-            bpm=int(bpm), density=density, swing=swing, darkness=darkness, bars=4
-        ),
+        "notes": notes,
         "control_changes": [],
         "tempo_automation": [],
     }
 
-    if not validate_notes(midi_data["notes"]):
-        midi_data["notes"] = generate_rolling_bass(
-            bpm=int(bpm), density=0.55, swing=swing, darkness=darkness, bars=4
-        )
+    features = extract_midi_features(notes)
+    motif = graph.add_node(
+        kind="groove_pattern",
+        label=brief or "rolling bass",
+        feature_vector=features,
+        tags=["bass"],
+    )
+    for ref in taste_refs:
+        graph.add_edge(ref["id"], motif["id"], "inspired_by", weight=1.0)
+    graph.save()
+
+    reasoning_lines = [
+        f"Analyzed brief: '{brief[:70]}...'",
+        f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
+        f"Generated 4-bar pattern at {int(bpm)} BPM",
+    ]
+    if taste_refs:
+        reasoning_lines.append(taste_result["summary"])
+    if qa_warnings:
+        reasoning_lines.append("QA warnings: " + "; ".join(qa_warnings[:3]))
 
     return {
         "id": str(uuid.uuid4()),
         "status": "completed",
-        "reasoning": [
-            f"Analyzed brief: '{brief[:70]}...'",
-            f"Parameters → density={density:.2f}, darkness={darkness:.2f}, swing={swing:.2f}",
-            f"Generated 4-bar pattern at {int(bpm)} BPM",
-        ],
+        "reasoning": reasoning_lines,
         "_generated_midi_data": midi_data,
         "_bpm": bpm,
+        "proposal": proposal,
+        "taste_references": [n["id"] for n in taste_refs],
     }
 
 

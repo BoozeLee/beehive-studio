@@ -80,6 +80,7 @@ export const ChannelStrip: React.FC<ChannelStripProps> = ({
 
   return (
     <div
+      data-testid={`channel-strip-${track.id}`}
       onClick={onSelect}
       style={{
         width: 72,
@@ -123,6 +124,8 @@ export const ChannelStrip: React.FC<ChannelStripProps> = ({
 
       <canvas
         ref={meterRef}
+        data-testid={`channel-meter-${track.id}`}
+        aria-label={`${track.name} level meter`}
         width={8}
         height={80}
         style={{
@@ -134,6 +137,7 @@ export const ChannelStrip: React.FC<ChannelStripProps> = ({
       />
 
       <input
+        aria-label={`${track.name} volume`}
         type="range"
         min={0}
         max={1}
@@ -145,6 +149,7 @@ export const ChannelStrip: React.FC<ChannelStripProps> = ({
       />
 
       <input
+        aria-label={`${track.name} pan`}
         type="range"
         min={-1}
         max={1}
@@ -161,18 +166,21 @@ export const ChannelStrip: React.FC<ChannelStripProps> = ({
       <div style={{ display: "flex", gap: 2 }}>
         <MiniBtn
           label="M"
+          ariaLabel={`${track.name} mute`}
           active={track.muted}
           activeColor={COLORS.meterClip}
           onClick={onMuteToggle}
         />
         <MiniBtn
           label="S"
+          ariaLabel={`${track.name} solo`}
           active={track.solo}
           activeColor={COLORS.meterPeak}
           onClick={onSoloToggle}
         />
         <MiniBtn
           label="R"
+          ariaLabel={`${track.name} arm`}
           active={track.arm}
           activeColor={COLORS.meterClip}
           onClick={onArmToggle}
@@ -182,23 +190,29 @@ export const ChannelStrip: React.FC<ChannelStripProps> = ({
       <span style={{ fontSize: 8, color: COLORS.textMuted }}>
         {(track.volume * 100).toFixed(0)}%
       </span>
+      <span style={{ fontSize: 8, color: COLORS.textMuted }}>
+        L {(level * 100).toFixed(0)} P {(peak * 100).toFixed(0)}
+      </span>
     </div>
   );
 };
 
 function MiniBtn({
   label,
+  ariaLabel,
   active,
   activeColor,
   onClick,
 }: {
   label: string;
+  ariaLabel: string;
   active: boolean;
   activeColor: string;
   onClick: () => void;
 }) {
   return (
     <button
+      aria-label={ariaLabel}
       onClick={(e) => {
         e.stopPropagation();
         onClick();

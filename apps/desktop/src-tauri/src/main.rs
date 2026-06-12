@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio_commands;
+// mod audio_engine;
+mod asset_commands;
 mod git_commands;
 mod sample_commands;
 
@@ -12,6 +14,7 @@ struct BackendResponse {
     status: String,
     reasoning: Vec<String>,
     clip_preview: serde_json::Value,
+    proposal: serde_json::Value,
 }
 
 /// Send a brief to the local agent orchestrator and return the generated clip.
@@ -55,12 +58,14 @@ async fn send_brief(
         })
         .unwrap_or_default();
     let clip_preview = data["clip_preview"].clone();
+    let proposal = data["proposal"].clone();
 
     Ok(BackendResponse {
         task_id,
         status,
         reasoning,
         clip_preview,
+        proposal,
     })
 }
 
@@ -182,6 +187,31 @@ async fn send_agent_request(
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     Ok(data)
+}
+
+#[tauri::command]
+async fn backend_request(
+    method: String,
+    endpoint: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:9876/{}", endpoint.trim_start_matches('/'));
+    let request = match method.to_uppercase().as_str() {
+        "GET" => client.get(&url),
+        "DELETE" => client.delete(&url),
+        _ => client.post(&url),
+    };
+    let response = if let Some(value) = body {
+        request.json(&value).send().await
+    } else {
+        request.send().await
+    }
+    .map_err(|e| format!("Failed to connect to backend: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Backend returned error: {}", response.status()));
+    }
+    response.json().await.map_err(|e| format!("Failed to parse backend response: {}", e))
 }
 
 /// Export MIDI file via backend, copy to user-selected location.
@@ -307,6 +337,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        // .manage(AudioEngineState { 
+        //     mixer: std::sync::Mutex::new(None) 
+        // })
         .invoke_handler(tauri::generate_handler![
             send_brief,
             check_backend_health,
@@ -316,11 +349,19 @@ fn main() {
             read_file_bytes,
             write_file_bytes,
             send_agent_request,
+            backend_request,
             list_midi_ports,
             open_midi_input,
             close_midi_input,
             audio_commands::write_wav_file,
             audio_commands::export_audio_stems,
+            // audio_engine::audio_engine_init,
+            // audio_engine::audio_engine_start,
+            // audio_engine::audio_engine_stop,
+            // audio_engine::audio_engine_add_track,
+            // audio_engine::audio_engine_remove_track,
+            asset_commands::consolidate_project_assets,
+            asset_commands::resolve_project_asset,
             sample_commands::get_sample_info,
             sample_commands::load_sample,
             git_commands::git_init_project,

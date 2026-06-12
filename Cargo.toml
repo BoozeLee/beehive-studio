@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "apps/desktop/src-tauri",
+    "crates/beehive-audio-engine",
+    "crates/beehive-studio-vst",
+]
+resolver = "2"

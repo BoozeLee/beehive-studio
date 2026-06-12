@@ -21,6 +21,11 @@ export interface TimelineState {
   addClip: (clip: Clip) => void;
   updateClip: (id: ID, partial: Partial<Clip>) => void;
   removeClip: (id: ID) => void;
+  moveClipToTrack: (id: ID, trackId: ID, start: number) => void;
+  resizeClip: (id: ID, duration: number) => void;
+  duplicateClip: (id: ID, newId?: ID) => ID | null;
+  splitClipAt: (id: ID, beat: number, secondsPerBeat: number, newId?: ID) => ID | null;
+  updateClipMidiNotes: (id: ID, notes: NonNullable<Clip["midiData"]>["notes"]) => void;
 
   selectTrack: (id: ID | null) => void;
   selectClip: (id: ID | null) => void;
@@ -93,8 +98,157 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       };
     }),
 
+  moveClipToTrack: (id, trackId, start) =>
+    set((state) => {
+      const clip = state.clips[id];
+      if (!clip || !state.tracks.some((t) => t.id === trackId)) return state;
+
+      return {
+        clips: {
+          ...state.clips,
+          [id]: {
+            ...clip,
+            trackId,
+            start: Math.max(0, start),
+            updatedAt: Date.now() / 1000,
+          },
+        },
+        tracks: state.tracks.map((track) => {
+          const withoutClip = track.clips.filter((clipId) => clipId !== id);
+          if (track.id !== trackId) return { ...track, clips: withoutClip };
+          return { ...track, clips: [...withoutClip, id] };
+        }),
+        selectedTrackId: null,
+        selectedClipId: id,
+      };
+    }),
+
+  resizeClip: (id, duration) =>
+    set((state) => {
+      const clip = state.clips[id];
+      if (!clip) return state;
+
+      return {
+        clips: {
+          ...state.clips,
+          [id]: {
+            ...clip,
+            duration: Math.max(state.gridDivision, duration),
+            updatedAt: Date.now() / 1000,
+          },
+        },
+        selectedClipId: id,
+      };
+    }),
+
+  duplicateClip: (id, newId = crypto.randomUUID()) => {
+    let createdId: ID | null = null;
+    set((state) => {
+      const clip = state.clips[id];
+      if (!clip) return state;
+
+      const now = Date.now() / 1000;
+      const duplicate: Clip = {
+        ...clip,
+        id: newId,
+        name: `${clip.name} Copy`,
+        start: clip.start + clip.duration,
+        createdAt: now,
+        updatedAt: now,
+      };
+      createdId = newId;
+
+      return {
+        clips: { ...state.clips, [newId]: duplicate },
+        tracks: state.tracks.map((track) =>
+          track.id === clip.trackId
+            ? { ...track, clips: [...track.clips.filter((clipId) => clipId !== newId), newId] }
+            : track
+        ),
+        selectedTrackId: null,
+        selectedClipId: newId,
+      };
+    });
+    return createdId;
+  },
+
+  splitClipAt: (id, beat, secondsPerBeat, newId = crypto.randomUUID()) => {
+    let createdId: ID | null = null;
+    set((state) => {
+      const clip = state.clips[id];
+      const splitOffset = beat - (clip?.start ?? beat);
+      if (!clip || splitOffset <= 0 || splitOffset >= clip.duration) return state;
+
+      const now = Date.now() / 1000;
+      const leftNotes = clip.midiData?.notes
+        .filter((note) => note.start < splitOffset)
+        .map((note) => ({ ...note, duration: Math.min(note.duration, splitOffset - note.start) }));
+      const rightNotes = clip.midiData?.notes
+        .filter((note) => note.start + note.duration > splitOffset)
+        .map((note) => ({
+          ...note,
+          start: Math.max(0, note.start - splitOffset),
+          duration: Math.min(note.duration, note.start + note.duration - splitOffset),
+        }));
+      const right: Clip = {
+        ...clip,
+        id: newId,
+        name: `${clip.name} Split`,
+        start: beat,
+        duration: clip.duration - splitOffset,
+        midiData: clip.midiData ? { ...clip.midiData, notes: rightNotes ?? [] } : undefined,
+        audioSourceOffset: (clip.audioSourceOffset ?? 0) + splitOffset * secondsPerBeat,
+        createdAt: now,
+        updatedAt: now,
+      };
+      createdId = newId;
+      return {
+        clips: {
+          ...state.clips,
+          [id]: {
+            ...clip,
+            duration: splitOffset,
+            midiData: clip.midiData ? { ...clip.midiData, notes: leftNotes ?? [] } : undefined,
+            updatedAt: now,
+          },
+          [newId]: right,
+        },
+        tracks: state.tracks.map((track) =>
+          track.id === clip.trackId
+            ? { ...track, clips: [...track.clips.filter((clipId) => clipId !== newId), newId] }
+            : track
+        ),
+        selectedClipId: newId,
+      };
+    });
+    return createdId;
+  },
+
+  updateClipMidiNotes: (id, notes) =>
+    set((state) => {
+      const clip = state.clips[id];
+      if (!clip?.midiData) return state;
+      const clampedNotes = notes
+        .filter((note) => note.start < clip.duration)
+        .map((note) => ({
+          ...note,
+          duration: Math.max(0.01, Math.min(note.duration, clip.duration - note.start)),
+        }));
+      return {
+        clips: {
+          ...state.clips,
+          [id]: {
+            ...clip,
+            midiData: { ...clip.midiData, notes: clampedNotes },
+            updatedAt: Date.now() / 1000,
+          },
+        },
+      };
+    }),
+
   selectTrack: (id) => set({ selectedTrackId: id, selectedClipId: null }),
-  selectClip: (id) => set({ selectedClipId: id }),
+  selectClip: (id) =>
+    set(id ? { selectedClipId: id, selectedTrackId: null } : { selectedClipId: null }),
   setCursorPosition: (beats) => set({ cursorPosition: beats }),
   setZoom: (zoom) => set({ zoom: Math.max(4, Math.min(128, zoom)) }),
   setScrollOffset: (offset) => set({ scrollOffset: offset }),

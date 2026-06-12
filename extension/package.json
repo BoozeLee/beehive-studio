@@ -1,0 +1,320 @@
+{
+  "name": "beehive-studio",
+  "displayName": "Beehive Studios",
+  "description": "Agentic music production IDE",
+  "version": "0.5.0",
+  "publisher": "beehive",
+  "engines": {
+    "vscode": "^1.120.0"
+  },
+  "categories": [
+    "Extension Packs",
+    "Machine Learning",
+    "Debuggers",
+    "Themes"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "music",
+    "daw",
+    "midi",
+    "audio"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "beehive",
+          "title": "Beehive",
+          "icon": "$(beehive-logo)"
+        }
+      ]
+    },
+    "views": {
+      "beehive": [
+        {
+          "id": "beehive.agents",
+          "name": "Agents",
+          "when": "beehive.enabled"
+        },
+        {
+          "id": "beehive.sessions",
+          "name": "Sessions",
+          "when": "beehive.enabled"
+        },
+        {
+          "id": "beehive.tasks",
+          "name": "Tasks",
+          "when": "beehive.enabled"
+        },
+        {
+          "id": "beehive.inspector",
+          "name": "Inspector",
+          "when": "beehive.enabled"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "beehive.agents",
+        "contents": "No agents configured yet.\n[Configure Agents](command:beehive.openConfigStudio)"
+      },
+      {
+        "view": "beehive.sessions",
+        "contents": "No active sessions.\n[Start New Session](command:beehive.openSessionConsole)"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "beehive.agentGraph",
+        "displayName": "Agent Graph",
+        "selector": [
+          {
+            "filenamePattern": "*.beegraph.json"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "beehive.musicTimeline",
+        "displayName": "Music Timeline",
+        "selector": [
+          {
+            "filenamePattern": "*.beehive"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "beehive.config",
+        "displayName": "Beehive Config",
+        "selector": [
+          {
+            "filenamePattern": "*.hive.json"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "beehive.openSessionConsole",
+        "title": "Open Session Console",
+        "category": "Beehive",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "beehive.openAgentGraph",
+        "title": "Open Agent Graph",
+        "category": "Beehive",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "beehive.openTaskDashboard",
+        "title": "Open Task Dashboard",
+        "category": "Beehive",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "beehive.openConfigStudio",
+        "title": "Open Config Studio",
+        "category": "Beehive",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "beehive.askAgent",
+        "title": "Ask Agent...",
+        "category": "Beehive",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "beehive.runWorkflow",
+        "title": "Run Workflow on Selection",
+        "category": "Beehive"
+      },
+      {
+        "command": "beehive.refactorWithPlan",
+        "title": "Refactor File with Plan",
+        "category": "Beehive"
+      },
+      {
+        "command": "beehive.exportAudio",
+        "title": "Export Audio...",
+        "category": "Beehive",
+        "icon": "$(file-media)"
+      },
+      {
+        "command": "beehive.toggleTransport",
+        "title": "Toggle Transport (Play/Pause)",
+        "category": "Beehive",
+        "icon": "$(play)"
+      },
+      {
+        "command": "beehive.refreshAgents",
+        "title": "Refresh Agents",
+        "category": "Beehive",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "beehive.refreshSessions",
+        "title": "Refresh Sessions",
+        "category": "Beehive",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "beehive.refreshTasks",
+        "title": "Refresh Tasks",
+        "category": "Beehive",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "beehive.refreshAgents",
+          "when": "view == beehive.agents",
+          "group": "navigation"
+        },
+        {
+          "command": "beehive.refreshSessions",
+          "when": "view == beehive.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "beehive.refreshTasks",
+          "when": "view == beehive.tasks",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "beehive.openSessionConsole",
+          "when": "view == beehive.sessions",
+          "group": "inline"
+        },
+        {
+          "command": "beehive.openTaskDashboard",
+          "when": "view == beehive.tasks",
+          "group": "inline"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "beehive.runWorkflow",
+          "when": "editorHasSelection",
+          "group": "beehive@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "beehive.refreshAgents",
+          "when": "false"
+        },
+        {
+          "command": "beehive.refreshSessions",
+          "when": "false"
+        },
+        {
+          "command": "beehive.refreshTasks",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "beehive.askAgent",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "beehive.enabled"
+      },
+      {
+        "command": "beehive.openSessionConsole",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "beehive.enabled"
+      },
+      {
+        "command": "beehive.toggleTransport",
+        "key": "space",
+        "when": "beehive.transportFocused && !editorTextFocus"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Beehive Nights",
+        "uiTheme": "vs-dark",
+        "path": "./themes/beehive-nights.json"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "*.hive.json",
+        "url": "./schemas/beehive-config-schema.json"
+      },
+      {
+        "fileMatch": "*.beegraph.json",
+        "url": "./schemas/beehive-graph-schema.json"
+      }
+    ],
+    "configuration": {
+      "title": "Beehive Studios",
+      "properties": {
+        "beehive.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:9876",
+          "description": "URL of the Beehive backend API server"
+        },
+        "beehive.websocketUrl": {
+          "type": "string",
+          "default": "ws://127.0.0.1:9876",
+          "description": "URL of the Beehive WebSocket endpoint"
+        },
+        "beehive.defaultModel": {
+          "type": "string",
+          "default": "ollama",
+          "description": "Default AI model provider"
+        },
+        "beehive.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Beehive Studios features"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.120.0",
+    "@types/ws": "^8.18.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.27.3",
+    "eslint": "^9.39.3",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
+  },
+  "dependencies": {
+    "axios": "^1.17.0"
+  }
+}

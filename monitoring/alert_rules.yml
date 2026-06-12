@@ -1,0 +1,205 @@
+# Beehive Studio - Alert Rules
+# Production monitoring and alerting rules
+
+groups:
+  - name: system-health
+    rules:
+      # Service availability alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.instance }} is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute"
+
+      # High CPU usage
+      - alert: HighCpuUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # High disk usage
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}"
+
+  - name: api-health
+    rules:
+      # API error rate
+      - alert: HighApiErrorRate
+        expr: (rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate on {{ $labels.instance }}"
+          description: "API error rate is {{ $value }}% on {{ $labels.instance }}"
+
+      # API latency
+      - alert: HighApiLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency on {{ $labels.instance }}"
+          description: "95th percentile latency is {{ $value }}s on {{ $labels.instance }}"
+
+      # API response time
+      - alert: ApiResponseTimeHigh
+        expr: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time on {{ $labels.instance }}"
+          description: "Average response time is {{ $value }}s on {{ $labels.instance }}"
+
+  - name: database-health
+    rules:
+      # PostgreSQL connection issues
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down on {{ $labels.instance }}"
+          description: "PostgreSQL database on {{ $labels.instance }} is not responding"
+
+      # PostgreSQL high connection usage
+      - alert: PostgresHighConnections
+        expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High PostgreSQL connections on {{ $labels.instance }}"
+          description: "PostgreSQL connection usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # Redis connection issues
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down on {{ $labels.instance }}"
+          description: "Redis cache on {{ $labels.instance }} is not responding"
+
+  - name: inference-health
+    rules:
+      # vLLM model loading issues
+      - alert: VllmModelLoadingError
+        expr: increase(vllm_worker_request_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vLLM model loading errors on {{ $labels.instance }}"
+          description: "vLLM model loading errors increased to {{ $value }} in the last 5 minutes"
+
+      # vLLM high request latency
+      - alert: VllmHighLatency
+        expr: histogram_quantile(0.95, rate(vllm_request_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High vLLM latency on {{ $labels.instance }}"
+          description: "95th percentile latency is {{ $value }}s on {{ $labels.instance }}"
+
+      # Ollama model issues
+      - alert: OllamaModelIssues
+        expr: increase(ollama_request_errors_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ollama model issues on {{ $labels.instance }}"
+          description: "Ollama request errors increased to {{ $value }} in the last 5 minutes"
+
+  - name: application-health
+    rules:
+      # WebSocket connection issues
+      - alert: WebSocketConnectionIssues
+        expr: increase(ws_connection_errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebSocket connection issues on {{ $labels.instance }}"
+          description: "WebSocket connection errors increased to {{ $value }} in the last 5 minutes"
+
+      # Audio engine issues
+      - alert: AudioEngineIssues
+        expr: increase(audio_engine_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Audio engine issues on {{ $labels.instance }}"
+          description: "Audio engine errors increased to {{ $value }} in the last 5 minutes"
+
+      # Git project issues
+      - alert: GitProjectIssues
+        expr: increase(git_project_errors_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Git project issues on {{ $labels.instance }}"
+          description: "Git project errors increased to {{ $value }} in the last 5 minutes"
+
+  - name: resource-usage
+    rules:
+      # High memory usage for containers
+      - alert: ContainerHighMemoryUsage
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage for container {{ $labels.container }}"
+          description: "Container {{ $labels.container }} memory usage is {{ $value }}%"
+
+      # High CPU usage for containers
+      - alert: ContainerHighCpuUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage for container {{ $labels.container }}"
+          description: "Container {{ $labels.container }} CPU usage is {{ $value }}%"
+
+      # Container restart rate
+      - alert: ContainerHighRestartRate
+        expr: increase(container_cpu_usage_seconds_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High restart rate for container {{ $labels.container }}"
+          description: "Container {{ $labels.container }} has restarted {{ $value }} times in the last 5 minutes"

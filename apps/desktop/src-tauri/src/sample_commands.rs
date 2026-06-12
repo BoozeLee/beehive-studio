@@ -1,6 +1,12 @@
 use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::errors::Error;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct SampleInfo {
@@ -16,6 +22,54 @@ pub struct SampleInfo {
 pub struct SampleData {
     pub info: SampleInfo,
     pub samples: Vec<f32>,
+}
+
+fn decode_audio(path: &str) -> Result<(u32, u16, Vec<f32>), String> {
+    let file = File::open(path).map_err(|e| format!("Failed to open: {}", e))?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(extension) = Path::new(path).extension().and_then(|value| value.to_str()) {
+        hint.with_extension(extension);
+    }
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            stream,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| format!("Failed to probe audio: {}", e))?;
+    let mut format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| "Audio file has no default track".to_string())?;
+    let track_id = track.id;
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| format!("Failed to create decoder: {}", e))?;
+    let mut sample_rate = track.codec_params.sample_rate.unwrap_or(44_100);
+    let mut channels = track.codec_params.channels.map(|value| value.count() as u16).unwrap_or(2);
+    let mut samples = Vec::new();
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(Error::IoError(error)) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(error) => return Err(format!("Failed to read audio packet: {}", error)),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = decoder
+            .decode(&packet)
+            .map_err(|e| format!("Failed to decode audio packet: {}", e))?;
+        sample_rate = decoded.spec().rate;
+        channels = decoded.spec().channels.count() as u16;
+        let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        buffer.copy_interleaved_ref(decoded);
+        samples.extend_from_slice(buffer.samples());
+    }
+    Ok((sample_rate, channels, samples))
 }
 
 /// Get metadata for an audio file without loading the full sample data.
@@ -39,67 +93,28 @@ pub async fn get_sample_info(path: String) -> Result<SampleInfo, String> {
         .to_lowercase();
 
     match ext.as_str() {
-        "wav" | "wave" => {
-            let file = File::open(&path).map_err(|e| format!("Failed to open: {}", e))?;
-            let reader = BufReader::new(file);
-            let wav_reader =
-                hound::WavReader::new(reader).map_err(|e| format!("Failed to read WAV: {}", e))?;
-
-            let spec = wav_reader.spec();
-            let duration_secs = wav_reader.duration() as f64 / spec.sample_rate as f64;
-
+        "wav" | "wave" | "mp3" | "flac" | "ogg" | "aiff" | "aif" => {
+            let (sample_rate, channels, samples) = decode_audio(&path)?;
+            let duration_secs = samples.len() as f64 / sample_rate as f64 / channels as f64;
             Ok(SampleInfo {
                 path,
                 filename,
-                sample_rate: spec.sample_rate,
-                channels: spec.channels,
+                sample_rate,
+                channels,
                 duration_secs,
-                bits_per_sample: spec.bits_per_sample,
-            })
-        }
-        "mp3" | "flac" | "ogg" | "aiff" | "aif" => {
-            // For non-WAV formats, return basic info.
-            // The frontend will use Tone.js Player for decoding.
-            Ok(SampleInfo {
-                path,
-                filename,
-                sample_rate: 44100,
-                channels: 2,
-                duration_secs: 0.0,
-                bits_per_sample: 16,
+                bits_per_sample: 32,
             })
         }
         _ => Err(format!("Unsupported audio format: {}", ext)),
     }
 }
 
-/// Load a WAV audio sample and return decoded float data.
-/// Non-WAV formats return empty samples — the frontend loads them via Tone.js.
+/// Load a supported audio sample and return decoded interleaved float data.
 #[tauri::command]
 pub async fn load_sample(path: String) -> Result<SampleData, String> {
     let info = get_sample_info(path.clone()).await?;
 
-    let ext = Path::new(&path)
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_lowercase();
-
-    let samples = if ext == "wav" || ext == "wave" {
-        let file = File::open(&path).map_err(|e| format!("Failed to open: {}", e))?;
-        let reader = BufReader::new(file);
-        let wav_reader =
-            hound::WavReader::new(reader).map_err(|e| format!("Failed to read WAV: {}", e))?;
-
-        let _spec = wav_reader.spec();
-        wav_reader
-            .into_samples::<i16>()
-            .map(|s| s.unwrap_or(0) as f32 / i16::MAX as f32)
-            .collect()
-    } else {
-        // Non-WAV: return empty — frontend uses Tone.js Player
-        Vec::new()
-    };
+    let (_, _, samples) = decode_audio(&path)?;
 
     Ok(SampleData { info, samples })
 }

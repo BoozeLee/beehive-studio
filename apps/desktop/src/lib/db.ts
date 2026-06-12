@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { parseProjectDocument, type ProjectDocumentV4 } from "./arrangementAdapter";
 
 let db: Database | null = null;
 
@@ -29,10 +30,16 @@ export async function initDb(): Promise<Database> {
     )
   `);
 
+  try {
+    await db.execute("ALTER TABLE projects ADD COLUMN document_json TEXT");
+  } catch {
+    // Existing databases already have this column after the first 3A.2 save.
+  }
+
   return db;
 }
 
-export async function saveProject(name: string, clips: any[]): Promise<void> {
+export async function saveProject(name: string, documentJson: string): Promise<void> {
   const db = await initDb();
 
   // Check if project exists
@@ -45,18 +52,21 @@ export async function saveProject(name: string, clips: any[]): Promise<void> {
   if (existing && existing.length > 0) {
     projectId = existing[0].id;
     await db.execute(
-      "UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [projectId]
+      "UPDATE projects SET updated_at = CURRENT_TIMESTAMP, document_json = ? WHERE id = ?",
+      [documentJson, projectId]
     );
     // Delete old clips
     await db.execute("DELETE FROM clips WHERE project_id = ?", [projectId]);
   } else {
-    const result = await db.execute("INSERT INTO projects (name) VALUES (?)", [name]);
+    const result = await db.execute("INSERT INTO projects (name, document_json) VALUES (?, ?)", [
+      name,
+      documentJson,
+    ]);
     projectId = result.lastInsertId ?? 0;
   }
 
-  // Insert clips
-  for (const clip of clips) {
+  const document = parseProjectDocument(documentJson);
+  for (const clip of document.clips) {
     const midiData = JSON.stringify(clip.midiData ?? {});
     const reasoning = (clip.reasoning ?? []).join("\n");
     await db.execute(
@@ -66,15 +76,16 @@ export async function saveProject(name: string, clips: any[]): Promise<void> {
   }
 }
 
-export async function loadProject(name: string): Promise<any[]> {
+export async function loadProject(name: string): Promise<ProjectDocumentV4> {
   const db = await initDb();
 
-  const projects = await db.select<{ id: number }[]>(
-    "SELECT id FROM projects WHERE name = ?",
+  const projects = await db.select<{ id: number; document_json: string | null }[]>(
+    "SELECT id, document_json FROM projects WHERE name = ?",
     [name]
   );
 
-  if (!projects || projects.length === 0) return [];
+  if (!projects || projects.length === 0) return parseProjectDocument([]);
+  if (projects[0].document_json) return parseProjectDocument(projects[0].document_json);
   const projectId = projects[0].id;
 
   const rows = await db.select<{ name: string; midi_data: string; reasoning: string }[]>(
@@ -82,9 +93,9 @@ export async function loadProject(name: string): Promise<any[]> {
     [projectId]
   );
 
-  if (!rows) return [];
+  if (!rows) return parseProjectDocument([]);
 
-  return rows.map((row, idx) => {
+  return parseProjectDocument(rows.map((row, idx) => {
     const midiData = JSON.parse(row.midi_data || "{}");
     const reasoning = row.reasoning ? row.reasoning.split("\n") : [];
     return {
@@ -93,7 +104,7 @@ export async function loadProject(name: string): Promise<any[]> {
       midiData: midiData,
       reasoning: reasoning,
     };
-  });
+  }));
 }
 
 export async function listProjects(): Promise<string[]> {

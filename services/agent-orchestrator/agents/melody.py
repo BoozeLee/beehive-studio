@@ -8,6 +8,7 @@ from typing import Any
 from langgraph.prebuilt import create_react_agent
 from langchain_ollama import ChatOllama
 from tools.midi_tools import validate_notes
+from taste_graph import TasteGraph, extract_midi_features
 
 SYSTEM_PROMPT = """
 You are the Melody Agent for Beehive Studio — an AI music production environment.
@@ -111,6 +112,12 @@ async def run_melody_agent(
     style_references: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run the Melody Agent with a user brief."""
+    session_context = session_context or {}
+    project_id = session_context.get("project_id", "default")
+    graph = TasteGraph(project_id)
+    taste_result = graph.query(brief, top_k=2)
+    taste_refs = taste_result["nodes"]
+
     llm = ChatOllama(model="baker-creative:latest", temperature=0.8)
 
     tools = [generate_melody]
@@ -122,6 +129,8 @@ async def run_melody_agent(
     )
 
     style_str = f"Style refs: {style_references}" if style_references else ""
+    if taste_refs:
+        style_str += f"\nTaste references: {', '.join(n['label'] for n in taste_refs)}"
     full_prompt = f"Brief: {brief}\n{style_str}\nGenerate a melody."
 
     try:
@@ -155,10 +164,24 @@ async def run_melody_agent(
         notes = melody["notes"]
         reasoning.append("Fallback melody generated")
 
+    features = extract_midi_features(notes)
+    motif = graph.add_node(
+        kind="midi_motif",
+        label=brief or "melody",
+        feature_vector=features,
+        tags=["melody"],
+    )
+    for ref in taste_refs:
+        graph.add_edge(ref["id"], motif["id"], "inspired_by", weight=1.0)
+    if taste_refs:
+        reasoning.append(taste_result["summary"])
+    graph.save()
+
     return {
         "id": "melody-task",
         "status": "completed",
         "reasoning": reasoning,
         "notes": notes,
         "_generated_midi_data": {"notes": notes},
+        "taste_references": [n["id"] for n in taste_refs],
     }

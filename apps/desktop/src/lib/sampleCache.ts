@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import * as Tone from "tone";
 
 export interface SampleInfo {
   path: string;
@@ -31,8 +32,6 @@ export async function loadSampleForPlayback(path: string): Promise<SampleData> {
 }
 
 export async function playSamplePreview(path: string): Promise<void> {
-  const Tone = await import("tone");
-
   if (players.has(path)) {
     players.get(path)!.start();
     return;

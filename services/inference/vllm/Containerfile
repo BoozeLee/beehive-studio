@@ -1,0 +1,9 @@
+FROM vllm/vllm-openai:latest
+
+ENV MODEL_NAME="microsoft/Phi-4-mini-instruct"
+ENV MAX_MODEL_LEN=4096
+ENV GPU_MEMORY_UTILIZATION=0.85
+
+EXPOSE 8000
+
+CMD ["--model", "${MODEL_NAME}", "--max-model-len", "${MAX_MODEL_LEN}", "--gpu-memory-utilization", "${GPU_MEMORY_UTILIZATION}", "--port", "8000", "--host", "0.0.0.0"]

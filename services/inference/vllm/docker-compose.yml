@@ -1,0 +1,29 @@
+services:
+  vllm:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - vllm-models:/root/.cache/huggingface
+    environment:
+      - MODEL_NAME=${MODEL_NAME:-microsoft/Phi-4-mini-instruct}
+      - MAX_MODEL_LEN=4096
+      - GPU_MEMORY_UTILIZATION=0.85
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  vllm-models:

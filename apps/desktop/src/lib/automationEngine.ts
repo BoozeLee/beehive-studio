@@ -78,6 +78,17 @@ export function removeAutomationPoint(
   };
 }
 
+export function automationValuesAtBeat(
+  lanes: Array<Pick<AutomationLane, "parameter" | "points" | "mode">>,
+  beat: number
+): Record<string, number> {
+  return Object.fromEntries(
+    lanes
+      .filter((lane) => lane.mode !== "off" && lane.points.length > 0)
+      .map((lane) => [lane.parameter, interpolateAutomation(lane.points, beat)])
+  );
+}
+
 export const AUTOMATABLE_PARAMS = [
   "volume",
   "pan",

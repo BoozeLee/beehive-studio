@@ -8,6 +8,8 @@ from typing import Any
 
 from langgraph.prebuilt import create_react_agent
 from langchain_ollama import ChatOllama
+from tools.music_qa import analyze_drum_pattern
+from taste_graph import TasteGraph, extract_midi_features
 
 SYSTEM_PROMPT = """
 You are the Drum Agent for Beehive Studio — an AI music production environment.
@@ -99,6 +101,12 @@ async def run_drum_agent(
     session_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the Drum Agent with a user brief."""
+    session_context = session_context or {}
+    project_id = session_context.get("project_id", "default")
+    graph = TasteGraph(project_id)
+    taste_result = graph.query(brief, top_k=2)
+    taste_refs = taste_result["nodes"]
+
     llm = ChatOllama(model="baker-creative:latest", temperature=0.7)
 
     tools = [generate_drum_pattern]
@@ -109,7 +117,10 @@ async def run_drum_agent(
         prompt=SYSTEM_PROMPT,
     )
 
-    full_prompt = f"Brief: {brief}\nGenerate a drum pattern."
+    style_refs = ""
+    if taste_refs:
+        style_refs = "Taste references: " + ", ".join(n["label"] for n in taste_refs)
+    full_prompt = f"Brief: {brief}\n{style_refs}\nGenerate a drum pattern."
 
     try:
         result = await agent.ainvoke({"messages": [("human", full_prompt)]})
@@ -139,6 +150,43 @@ async def run_drum_agent(
         steps = pattern["steps"]
         reasoning.append("Fallback four-on-floor pattern")
 
+    # ── Musical QA feedback ──
+    qa = analyze_drum_pattern(steps)
+    if qa["warnings"]:
+        reasoning.append("Drum QA warnings: " + "; ".join(qa["warnings"][:3]))
+        # Auto-remediate: inject ghost hits on snare if missing
+        if any("ghost" in w.lower() for w in qa["warnings"]) and "snare" in steps:
+            for i, s in enumerate(steps["snare"]):
+                if not s["active"] and i % 4 == 2:
+                    s["active"] = True
+                    s["velocity"] = 42
+                    reasoning.append("Auto-added ghost snare for human feel")
+                    break
+
+    # Persist to TasteGraph
+    notes = []
+    for sound, row in steps.items():
+        for i, step in enumerate(row):
+            if step.get("active"):
+                notes.append({
+                    "pitch": 36 + DEFAULT_ROWS.index(sound),
+                    "velocity": step.get("velocity", 100),
+                    "start": i * 0.25,
+                    "duration": 0.25,
+                })
+    features = extract_midi_features(notes)
+    motif = graph.add_node(
+        kind="groove_pattern",
+        label=brief or f"{pattern.get('style', 'drums')} pattern",
+        feature_vector=features,
+        tags=[pattern.get("style", "four_on_floor")],
+    )
+    for ref in taste_refs:
+        graph.add_edge(ref["id"], motif["id"], "inspired_by", weight=1.0)
+    if taste_refs:
+        reasoning.append(taste_result["summary"])
+    graph.save()
+
     return {
         "id": "drum-task",
         "status": "completed",
@@ -146,4 +194,6 @@ async def run_drum_agent(
         "steps": steps,
         "style": pattern.get("style", "four_on_floor"),
         "step_count": pattern.get("step_count", 16),
+        "qa": {"pass": qa["pass"], "score": qa["score"], "warnings": qa["warnings"]},
+        "taste_references": [n["id"] for n in taste_refs],
     }

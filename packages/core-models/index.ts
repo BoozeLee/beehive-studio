@@ -29,6 +29,7 @@ export interface ClipMetadata {
   generative: boolean;
   agentId?: ID;
   promptId?: ID;
+  sourcePatternId?: ID;
   reasoningTrace?: string;   // Human-readable explanation from agent
   confidence?: number;       // 0-1
   referenceIds?: ID[];       // Links to Reference used
@@ -67,6 +68,9 @@ export interface Clip {
   // Content
   midiData?: MidiClipData;
   audioFilePath?: string;   // relative or absolute local path
+  audioSourceOffset?: number; // seconds from source start
+  audioSourceDuration?: number; // seconds available from source
+  gain?: number; // 0-2 clip gain
   generativePrompt?: string;
 
   // Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)
@@ -91,6 +95,16 @@ export interface AutomationLane {
   id: ID;
   parameter: string;           // e.g. "volume", "filter.cutoff", "send.reverb"
   points: Array<{ time: number; value: number }>;
+  mode?: 'off' | 'read' | 'touch' | 'write';
+}
+
+export type TrackEffectType = 'reverb' | 'delay' | 'filter' | 'distortion';
+
+export interface TrackEffect {
+  id: ID;
+  type: TrackEffectType;
+  params: Record<string, number>;
+  bypass: boolean;
 }
 
 export interface Track {
@@ -108,6 +122,8 @@ export interface Track {
   clips: ID[];                 // ordered list of clip ids belonging to this track
 
   automationLanes: AutomationLane[];
+  effects?: TrackEffect[];
+  sends?: Record<string, number>;
 
   // For MIDI tracks
   instrument?: {
@@ -210,6 +226,133 @@ export interface AgentTask {
   parentTaskId?: ID;                // For iteration trees
 }
 
+export interface AgentAttribution {
+  service: string;
+  model: string;
+  profile: string;
+  promptVersions: Record<string, string>;
+  latencyMs: number;
+}
+
+export interface AgentProposalEnvelope {
+  status: string;
+  degraded: boolean;
+  attribution: AgentAttribution;
+  creativePlan: {
+    summary?: string;
+    rationale?: string[];
+    confidence?: Record<string, number>;
+    alternatives?: Array<{
+      direction: string;
+      why: string;
+      delta_summary?: string;
+    }>;
+    warnings?: string[];
+    evidence?: string[];
+    recommended_parameters?: Record<string, number>;
+  };
+}
+
+// ============================================
+// JetBee Build Contracts
+// ============================================
+
+export type ArtifactOwner = "dsl" | "visual";
+export type CompilerPreference = "auto" | "ace-rest" | "ace-cpp" | "deapi-rest" | "deapi-mcp";
+export type BuildStatus =
+  | "planning"
+  | "awaiting_approval"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ArtifactSummary {
+  id: ID;
+  kind: "track" | "clip" | "pattern" | "arrangement" | "prompt" | "audio";
+  owner: ArtifactOwner;
+  revision: number;
+  name: string;
+  summary: string;
+}
+
+export interface JetBeeBuildRequest {
+  projectId: string;
+  projectRevision: number;
+  intent: string;
+  source: "keyboard" | "editor" | "agent" | "api";
+  selectedArtifactIds: ID[];
+  artifacts: ArtifactSummary[];
+  compilerPreference: CompilerPreference;
+  allowCloud: boolean;
+  cloudApproved: boolean;
+}
+
+export interface PatchOperation {
+  op: "set_parameter" | "add_artifact" | "replace_artifact" | "remove_artifact";
+  artifactId: ID;
+  path: string;
+  value?: unknown;
+}
+
+export interface ProjectPatch {
+  id: ID;
+  operations: PatchOperation[];
+  affectedArtifactIds: ID[];
+  risk: "low" | "medium" | "high";
+  rationale: string[];
+}
+
+export interface BuildStep {
+  id: ID;
+  kind: "patch" | "agent" | "qa" | "compile" | "ingest";
+  label: string;
+  agentRole?: string;
+  provider?: string;
+}
+
+export interface BuildPlan {
+  id: ID;
+  summary: string;
+  projectRevision: number;
+  proposedPatches: ProjectPatch[];
+  executionSteps: BuildStep[];
+  warnings: string[];
+  confidence: Record<string, number>;
+  attribution: Record<string, unknown>;
+  degraded: boolean;
+}
+
+export interface BuildArtifact {
+  id: ID;
+  kind: "audio" | "midi" | "manifest";
+  path: string;
+  provider: string;
+  checksum: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface BuildJob {
+  id: ID;
+  projectId: string;
+  plan: BuildPlan;
+  status: BuildStatus;
+  provider?: string;
+  progress: number;
+  artifacts: BuildArtifact[];
+  error?: string;
+}
+
+export interface BuildEvent {
+  type: string;
+  projectId: string;
+  buildId: string;
+  sourceService: string;
+  timestamp: number;
+  metadata: Record<string, unknown>;
+}
+
 // ============================================
 // Prompts & Versioning
 // ============================================
@@ -256,4 +399,59 @@ export interface WorkspaceState {
   transportPlaying: boolean;
   currentBeat: number;
   zoom: number;                     // for timeline/piano roll
+}
+
+// ============================================
+// Taste Graph (self-evolving agent memory)
+// ============================================
+
+export type TasteNodeKind =
+  | 'reference_track'
+  | 'midi_motif'
+  | 'groove_pattern'
+  | 'sound_texture'
+  | 'rejected_idea';
+
+export type TasteEdgeKind =
+  | 'sounds_like'
+  | 'evolved_from'
+  | 'rejected_because'
+  | 'used_in'
+  | 'inspired_by';
+
+export interface TasteNode {
+  id: ID;
+  kind: TasteNodeKind;
+  label: string;
+  createdAt: number;
+  projectId: string;
+  sourceArtifactId?: ID;
+  featureVector?: number[];
+  tags: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface TasteEdge {
+  id: ID;
+  sourceId: ID;
+  targetId: ID;
+  kind: TasteEdgeKind;
+  weight: number;
+  updatedAt: number;
+}
+
+export interface TasteQueryResult {
+  nodes: TasteNode[];
+  summary: string;
+}
+
+export interface TasteFeedbackPayload {
+  projectId: string;
+  clipId: ID;
+  verdict: 'like' | 'never_again';
+  nodeKind?: TasteNodeKind;
+  label?: string;
+  featureVector?: number[];
+  tags?: string[];
+  metadata?: Record<string, unknown>;
 }

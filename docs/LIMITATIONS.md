@@ -87,10 +87,21 @@ Outside that niche, traditional DAWs will remain superior for many years.
 ## Performance Expectations (Early Versions)
 
 - Agent reasoning can take anywhere from 3–30+ seconds depending on model and prompt complexity.
+- The strict `marco-o1:latest` Hive 999 advisor can exceed its default
+  90-second deadline on an 8 GB GTX 1080. Studio visibly degrades to its
+  deterministic tools when the sidecar is unavailable, invalid, or too slow.
 - Complex sessions with many generative clips + real-time playback may feel heavy.
 - The desktop is a Tauri app — it will use more RAM than a native DAW in the early days.
 
 We will optimize ruthlessly after the creative loop feels magical.
+
+## Agent Transparency
+
+- The UI exposes concise rationales, confidence, alternatives, evidence,
+  warnings, model attribution, and latency.
+- It does not expose or request hidden chain-of-thought, scratchpads, or
+  internal monologues. Those are neither a reliable explanation surface nor a
+  supported integration contract.
 
 ---
 

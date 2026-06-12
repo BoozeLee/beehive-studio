@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  beehive-studio-agent:
+    build:
+      context: .
+      dockerfile: Containerfile.optimized
+      args:
+        - PYTHON_VERSION=3.14-slim
+    container_name: beehive-studio-agent-optimized
+    restart: unless-stopped
+    ports:
+      - "9876:9876"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PYTHONPATH=/app
+      - BEEHIVE_STUDIO_AGENT_PORT=9876
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - LANGSMITH_TRACING=true
+      - LANGSMITH_PROJECT=beehive-studio-optimized
+      - RENDER_JOB_CACHE_MAX_SIZE=50
+      - AUDIO_FILE_CACHE_MAX_SIZE=20
+      - RENDER_MAX_WORKERS=4
+      - MEMORY_GC_ENABLED=true
+      - PERFORMANCE_METRICS_ENABLED=true
+      - WATCHDOG_ENABLED=true
+      - PROGRESS_THROTTLE_MIN_INTERVAL=0.05
+    volumes:
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      - ./temp:/app/temp
+      - /tmp/beehive-studio-data/logs:/app/logs
+      - /tmp/beehive-studio-data/cache:/app/cache
+      - /tmp/beehive-studio-data/temp:/app/temp
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9876/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - beehive-network
+
+  # Optional: Redis for distributed caching (if needed in future)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: beehive-studio-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   command: redis-server --appendonly yes
+  #   networks:
+  #     - beehive-network
+
+  # Optional: Monitoring and logging
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: beehive-studio-prometheus
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+  #   networks:
+  #     - beehive-network
+
+networks:
+  beehive-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local

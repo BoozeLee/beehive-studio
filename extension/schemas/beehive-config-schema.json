@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Beehive Config",
+  "type": "object",
+  "properties": {
+    "version": { "type": "string", "default": "1.0" },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "baseUrl": { "type": "string", "format": "uri" },
+          "model": { "type": "string" },
+          "apiKeyId": { "type": "string" }
+        },
+        "required": ["name", "baseUrl", "model"]
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "model": { "type": "string" },
+          "systemPrompt": { "type": "string" },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+          "tools": { "type": "array", "items": { "type": "string" } },
+          "enabled": { "type": "boolean", "default": true }
+        },
+        "required": ["id", "name", "model"]
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["shell", "http", "file"] },
+          "config": { "type": "object" }
+        },
+        "required": ["id", "name", "type"]
+      }
+    }
+  },
+  "required": ["version"]
+}

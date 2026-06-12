@@ -1,17 +1,15 @@
 [package]
 name = "beehive-studio"
-version = "0.1.0"
+version = "0.4.0-beta"
 description = "Beehive Studio - AI Agent Music Production Environment"
 authors = ["Beehive Studio"]
 edition = "2021"
-
-[workspace]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
@@ -23,11 +21,13 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 reqwest = { version = "0.12", features = ["json"] }
 midir = "0.10"
 hound = "3"
+sha2 = "0.10"
 symphonia = { version = "0.5", features = ["all"] }
 git2 = "0.19"
 flate2 = "1"
 tar = "0.4"
 dirs = "6"
+beehive-audio-engine = { path = "../../../crates/beehive-audio-engine" }
 
 [features]
 default = ["custom-protocol"]

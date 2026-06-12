@@ -24,6 +24,7 @@ Agents working on Beehive Studio must internalize:
 3. `docs/ARCHITECTURE.md`
 4. `docs/LIMITATIONS.md` (update it when you discover new painful truths).
 5. `docs/SPRINT_1_PLAN.md` (while we are in early sprints).
+6. `docs/SPRINT_1_MARCO_INTEGRATION.md` when changing agent inference.
 
 ---
 
@@ -40,6 +41,10 @@ Agents working on Beehive Studio must internalize:
 - Type safety is mandatory (TypeScript strict + Pydantic v2).
 - Every major agent decision or UI component must have a short rationale comment or ADR.
 - Never hide limitations. If something is slow, low-fidelity, or incomplete, surface it.
+- Never expose or request hidden chain-of-thought. Use concise rationales,
+  alternatives, confidence, evidence, and warnings.
+- Hive 999 is an advisor only. Beehive Studio owns deterministic generation,
+  QA, project state, and every user-visible mutation.
 - Prefer boring, reliable technology over fashionable new things when they serve the creative loop.
 
 ---
