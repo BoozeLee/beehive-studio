@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import math
 import os
+import struct
+import uuid
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -198,8 +202,136 @@ class DeapiMcpProvider:
         raise RuntimeError("deAPI MCP execution bridge is not configured")
 
 
+class BeehiveLocalProvider:
+    """Deterministic local compiler that emits a WAV + MIDI sketch without external services."""
+
+    name = "beehive-local"
+    local = True
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, dict[str, Any]] = {}
+
+    async def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider=self.name,
+            ready=True,
+            local=True,
+            detail="deterministic local sketch provider",
+        )
+
+    async def submit(self, request: CompileRequest) -> ProviderJob:
+        job_id = str(uuid.uuid4())
+        self._jobs[job_id] = {
+            "request": request,
+            "status": "queued",
+            "progress": 0.0,
+        }
+        return ProviderJob(id=job_id, status="queued")
+
+    async def poll(self, job_id: str) -> ProviderJob:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return ProviderJob(id=job_id, status="failed", error="unknown job")
+        if job["status"] == "queued":
+            try:
+                self._render(job["request"])
+                job["status"] = "completed"
+                job["progress"] = 1.0
+            except Exception as exc:
+                job["status"] = "failed"
+                job["progress"] = 1.0
+                job["error"] = str(exc)
+        return ProviderJob(
+            id=job_id,
+            status=job["status"],
+            progress=job["progress"],
+            error=job.get("error"),
+        )
+
+    async def cancel(self, job_id: str) -> None:
+        self._jobs.pop(job_id, None)
+
+    async def fetch_artifact(self, job: ProviderJob, request: CompileRequest) -> BuildArtifact:
+        request.destination.parent.mkdir(parents=True, exist_ok=True)
+        if not request.destination.exists():
+            self._render(request)
+        return BuildArtifact(
+            id=f"artifact-{job.id}",
+            kind="audio",
+            path=str(request.destination),
+            provider=self.name,
+            metadata={"providerJobId": job.id, "source": "deterministic-local"},
+        )
+
+    def _render(self, request: CompileRequest) -> None:
+        """Render a short WAV file and sidecar MIDI using deterministic rules."""
+        duration = max(1, min(request.duration, 30))
+        sample_rate = 44100
+        num_frames = int(duration * sample_rate)
+        request.destination.parent.mkdir(parents=True, exist_ok=True)
+
+        with wave.open(str(request.destination), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            for frame in range(num_frames):
+                t = frame / sample_rate
+                beat_phase = (t * (140 / 60)) % 4
+                kick_env = math.exp(-8 * (beat_phase % 1)) if beat_phase % 1 < 0.5 else 0.0
+                sine = math.sin(2 * math.pi * 110 * t)
+                sample = int(32767 * 0.5 * (sine * kick_env))
+                wav.writeframes(struct.pack("<h", max(-32768, min(32767, sample))))
+
+        self._write_midi_sidecar(request.destination.with_suffix(".mid"), duration)
+
+    @staticmethod
+    def _write_midi_sidecar(path: Path, duration: int) -> None:
+        """Write a minimal type-0 MIDI file with a 140 BPM tempo and kick pattern."""
+        ticks_per_beat = 480
+        tempo = 60_000_000 // 140  # microseconds per quarter note for 140 BPM
+
+        def varlen(value: int) -> bytes:
+            """Encode a value as a MIDI variable-length quantity."""
+            result = []
+            result.append(value & 0x7F)
+            value >>= 7
+            while value:
+                result.append((value & 0x7F) | 0x80)
+                value >>= 7
+            return bytes(reversed(result))
+
+        def track_event(delta: int, event_bytes: bytes) -> bytes:
+            return varlen(delta) + event_bytes
+
+        track_data = b""
+        # Set tempo meta event (FF 51 03 tt tt tt)
+        track_data += track_event(0, bytes([0xFF, 0x51, 0x03]) + struct.pack(">I", tempo)[1:])
+
+        ticks_per_16th = ticks_per_beat // 4
+        last_tick = 0
+        for bar in range((duration // 4) + 1):
+            for step in range(16):
+                if step % 4 == 0:
+                    tick = bar * 4 * ticks_per_beat + step * ticks_per_16th
+                    delta = tick - last_tick
+                    track_data += track_event(delta, bytes([0x90, 36, 100]))
+                    track_data += track_event(ticks_per_16th, bytes([0x80, 36, 0]))
+                    last_tick = tick + ticks_per_16th
+
+        # End-of-track meta event
+        track_data += track_event(0, bytes([0xFF, 0x2F, 0x00]))
+
+        header = b"MThd" + struct.pack(">IHHH", 6, 0, 1, ticks_per_beat)
+        track_chunk = b"MTrk" + struct.pack(">I", len(track_data)) + track_data
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(header + track_chunk)
+
+
 def default_providers() -> dict[str, CompilerProvider]:
     providers: list[CompilerProvider] = [
+        BeehiveLocalProvider(),
         AceRestProvider(),
         AceCppProvider(),
         DeapiRestProvider(),
