@@ -17,6 +17,7 @@ import { exportProjectAudio } from "./lib/audioEngine";
 import { ExportAudioDialog } from "./components/ExportAudioDialog";
 import { PublishDialog } from "./components/PublishDialog/PublishDialog";
 import { ExploreDialog } from "./components/ExploreDialog/ExploreDialog";
+import { TastePanel } from "./components/TasteGraph";
 import { summarizeRender, type RenderPreset } from "./lib/exportWorkflow";
 import {
   initMixer,
@@ -1697,6 +1698,12 @@ function JetBeeApp() {
           label: "Console",
           icon: "🖥️",
           content: <BuildConsole logs={buildLogs} onClear={() => useBuildLogStore.getState().clearLogs()} />,
+        },
+        {
+          id: "taste",
+          label: "Taste",
+          icon: "🍯",
+          content: <TastePanel projectId={projectName} />,
         },
         {
           id: "chat",
