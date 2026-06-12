@@ -17,6 +17,20 @@
   --vscode-list-hoverBackground: var(--vscode-list-hoverBackground);
   --vscode-statusBar-background: var(--vscode-statusBar-background);
   --vscode-statusBar-foreground: var(--vscode-statusBar-foreground);
+
+  /* JetBee theme aliases for ported desktop components */
+  --jb-bg: var(--vscode-editor-background, #0f0f12);
+  --jb-panel: var(--vscode-panel-background, #18181c);
+  --jb-border: var(--vscode-panel-border, #2a2a30);
+  --jb-text: var(--vscode-foreground, #e0e0e0);
+  --jb-text-muted: var(--vscode-descriptionForeground, #888);
+  --jb-accent: #ff8c42;
+  --jb-success: #4ade80;
+  --jb-error: #ef4444;
+  --jb-warning: #fbbf24;
+  --jb-font-mono: var(--vscode-editor-font-family, monospace);
+  --jb-toolbar-bg: var(--vscode-titleBar-inactiveBackground, var(--vscode-panel-background, #18181c));
+  --jb-text-faint: var(--vscode-disabledForeground, #666);
 }
 
 html,

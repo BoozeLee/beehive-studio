@@ -55,11 +55,24 @@ export interface BuildStep {
   provider?: string | null;
 }
 
+export interface PatchOperation {
+  op: string;
+  artifactId?: string;
+  path?: string;
+  value?: unknown;
+}
+
+export interface BuildPatch {
+  id: string;
+  risk: "low" | "medium" | "high";
+  operations: PatchOperation[];
+}
+
 export interface BuildPlan {
   id: string;
   summary: string;
   projectRevision: number;
-  proposedPatches: unknown[];
+  proposedPatches: BuildPatch[];
   executionSteps: BuildStep[];
   warnings: string[];
   confidence: Record<string, number>;
