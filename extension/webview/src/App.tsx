@@ -8,6 +8,7 @@ import { Dashboard } from "./components/Dashboard";
 import { AgentConsole } from "./components/AgentConsole";
 import { Layout } from "./components/Layout";
 import { TimelinePage } from "./components/TimelinePage";
+import { SessionPage } from "./components/SessionPage";
 import { TastePage } from "./components/TastePage";
 import { SettingsPage } from "./components/SettingsPage";
 import "./App.css";
@@ -78,6 +79,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/agent" element={<AgentConsole />} />
           <Route path="/timeline" element={<TimelinePage />} />
+          <Route path="/session" element={<SessionPage />} />
           <Route path="/taste" element={<TastePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Dashboard />} />
