@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from api.inference import inference_client
 from api.mcp_client import fleet_client
+from taste_graph import TasteGraph
 
 APP_VERSION = "0.4.0-beta"
 _OLLAMA_AVAILABLE_CACHE: bool | None = None
@@ -787,6 +788,23 @@ class ArrangeRequest(BaseModel):
     bpm: int = 142
 
 
+class TasteQueryRequest(BaseModel):
+    project_id: str
+    intent: str
+    top_k: int = 3
+    feature_vector: list[float] | None = None
+
+
+class TasteFeedbackRequest(BaseModel):
+    project_id: str
+    clip_id: str
+    verdict: str
+    label: str = ""
+    feature_vector: list[float] | None = None
+    tags: list[str] = []
+    metadata: dict[str, Any] = {}
+
+
 class DrumRequest(BaseModel):
     brief: str = ""
     style: str = "four_on_floor"
@@ -1426,6 +1444,48 @@ async def render_audio(req: RenderRequest):
     """Compatibility render endpoint backed by the render-job engine."""
     result = await asyncio.to_thread(_render_request, req)
     return {**result, "status": "ok", "path": result["master_path"]}
+
+
+@app.post("/taste/query")
+async def taste_query(req: TasteQueryRequest):
+    graph = TasteGraph(req.project_id)
+    rejected = [n["id"] for n in graph._nodes.values() if n["kind"] == "rejected_idea"]
+    result = graph.query(
+        intent=req.intent,
+        exclude_ids=rejected,
+        top_k=req.top_k,
+        feature_vector=req.feature_vector,
+    )
+    return {"status": "ok", "nodes": result["nodes"], "summary": result["summary"]}
+
+
+@app.post("/taste/feedback")
+async def taste_feedback(req: TasteFeedbackRequest):
+    if req.verdict not in {"like", "never_again"}:
+        raise HTTPException(status_code=400, detail="verdict must be 'like' or 'never_again'")
+    graph = TasteGraph(req.project_id)
+    node = graph.add_feedback(
+        verdict=req.verdict,
+        source_artifact_id=req.clip_id,
+        label=req.label,
+        feature_vector=req.feature_vector,
+        tags=req.tags,
+        metadata=req.metadata,
+    )
+    graph.save()
+    graph.export_to_user()
+    return {"status": "ok", "node_id": node["id"]}
+
+
+@app.get("/taste/{project_id}")
+async def taste_get(project_id: str):
+    graph = TasteGraph(project_id)
+    return {
+        "status": "ok",
+        "nodes": list(graph._nodes.values()),
+        "edges": list(graph._edges.values()),
+    }
+
 
 # Start watchdog on application startup
 @app.on_event("startup")
