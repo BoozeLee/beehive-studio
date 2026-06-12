@@ -6,6 +6,8 @@
  */
 
 import { BEEHIVE } from "../../lib/theme";
+import { LikeButton } from "../TasteGraph/LikeButton";
+import { extractFeatures } from "../../lib/tasteFeatures";
 
 interface Note {
   pitch: number;
@@ -25,6 +27,7 @@ interface Clip {
 
 interface Props {
   clips: Clip[];
+  projectId?: string;
   onPlayClip?: (clipId: string) => void;
   onAccept?: (clipId: string) => void;
   onReject?: (clipId: string) => void;
@@ -71,6 +74,7 @@ function noteDensityBars(notes: Note[], totalDuration: number, divisions: number
 
 export function SessionViewGrid({
   clips,
+  projectId,
   onPlayClip,
   onAccept,
   onReject,
@@ -253,7 +257,7 @@ export function SessionViewGrid({
             )}
 
             {/* Actions */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: "auto" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: "auto", alignItems: "center" }}>
               <ActionBtn onClick={() => onPlayClip?.(clip.id)} accent={color}>
                 ▶ Play
               </ActionBtn>
@@ -267,6 +271,18 @@ export function SessionViewGrid({
                 <ActionBtn onClick={() => onVariations(clip.id)}>
                   🔄 Iterate
                 </ActionBtn>
+              )}
+              {projectId && (
+                <LikeButton
+                  payload={{
+                    projectId,
+                    clipId: clip.id,
+                    verdict: "like",
+                    label: clip.name,
+                    featureVector: clip.midiData ? extractFeatures(clip.midiData.notes) : undefined,
+                    tags: clip.name ? [clip.name.toLowerCase().split(" ")[0]] : [],
+                  }}
+                />
               )}
             </div>
           </div>

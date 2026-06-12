@@ -1426,6 +1426,7 @@ function JetBeeApp() {
           ) : (
             <SessionViewGrid
               clips={clips}
+              projectId={projectName}
               onLaunchScene={launchSessionScene}
               onPlayClip={(id) => {
                 const clip = clips.find((c) => c.id === id);
