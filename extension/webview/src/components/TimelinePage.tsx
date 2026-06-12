@@ -1,10 +1,12 @@
-import React from "react";
+import { useTransportStore } from "../stores/transportStore";
+import { Timeline } from "./desktop/Timeline/Timeline";
 
 export function TimelinePage() {
+  const { playing, currentBeat, bpm } = useTransportStore();
+
   return (
-    <div style={{ padding: 16 }}>
-      <h2>🎼 Timeline</h2>
-      <p>Timeline, Piano Roll, and Arrangement view will be ported here.</p>
+    <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+      <Timeline isPlaying={playing} currentBeat={currentBeat} bpm={bpm} />
     </div>
   );
 }

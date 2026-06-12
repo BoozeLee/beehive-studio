@@ -7,6 +7,7 @@ import { useProjectStore } from "./stores/projectStore";
 import { Dashboard } from "./components/Dashboard";
 import { AgentConsole } from "./components/AgentConsole";
 import { Layout } from "./components/Layout";
+import { TimelinePage } from "./components/TimelinePage";
 import { TastePage } from "./components/TastePage";
 import { SettingsPage } from "./components/SettingsPage";
 import "./App.css";
@@ -76,6 +77,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/agent" element={<AgentConsole />} />
+          <Route path="/timeline" element={<TimelinePage />} />
           <Route path="/taste" element={<TastePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Dashboard />} />
