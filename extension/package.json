@@ -38,6 +38,11 @@
     "views": {
       "beehive": [
         {
+          "id": "beehive.projects",
+          "name": "Projects",
+          "when": "beehive.enabled"
+        },
+        {
           "id": "beehive.agents",
           "name": "Agents",
           "when": "beehive.enabled"
@@ -60,6 +65,10 @@
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "beehive.projects",
+        "contents": "No Beehive projects found.\n[Open Project](command:beehive.openProject)\n[New Project](command:beehive.newProject)"
+      },
       {
         "view": "beehive.agents",
         "contents": "No agents configured yet.\n[Configure Agents](command:beehive.openConfigStudio)"
@@ -102,6 +111,41 @@
       }
     ],
     "commands": [
+      {
+        "command": "beehive.openStudio",
+        "title": "Open Studio",
+        "category": "Beehive",
+        "icon": "$(desktop-download)"
+      },
+      {
+        "command": "beehive.newProject",
+        "title": "New Project...",
+        "category": "Beehive",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "beehive.openProject",
+        "title": "Open Project...",
+        "category": "Beehive",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "beehive.closeProject",
+        "title": "Close Project",
+        "category": "Beehive"
+      },
+      {
+        "command": "beehive.buildProject",
+        "title": "Build Project",
+        "category": "Beehive",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "beehive.publishToMixHive",
+        "title": "Publish to MixHive",
+        "category": "Beehive",
+        "icon": "$(globe)"
+      },
       {
         "command": "beehive.openSessionConsole",
         "title": "Open Session Console",
@@ -155,10 +199,26 @@
         "icon": "$(play)"
       },
       {
+        "command": "beehive.refreshProjects",
+        "title": "Refresh Projects",
+        "category": "Beehive",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "beehive.refreshAgents",
         "title": "Refresh Agents",
         "category": "Beehive",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "beehive.openProjectFromTree",
+        "title": "Open Project",
+        "category": "Beehive"
+      },
+      {
+        "command": "beehive.runAgentFromTree",
+        "title": "Run Agent",
+        "category": "Beehive"
       },
       {
         "command": "beehive.refreshSessions",
@@ -175,6 +235,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "beehive.refreshProjects",
+          "when": "view == beehive.projects",
+          "group": "navigation"
+        },
         {
           "command": "beehive.refreshAgents",
           "when": "view == beehive.agents",
@@ -212,6 +277,10 @@
       ],
       "commandPalette": [
         {
+          "command": "beehive.refreshProjects",
+          "when": "false"
+        },
+        {
           "command": "beehive.refreshAgents",
           "when": "false"
         },
@@ -222,14 +291,34 @@
         {
           "command": "beehive.refreshTasks",
           "when": "false"
+        },
+        {
+          "command": "beehive.openProjectFromTree",
+          "when": "false"
+        },
+        {
+          "command": "beehive.runAgentFromTree",
+          "when": "false"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "beehive.askAgent",
+        "command": "beehive.openStudio",
         "key": "ctrl+shift+b",
         "mac": "cmd+shift+b",
+        "when": "beehive.enabled"
+      },
+      {
+        "command": "beehive.askAgent",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "beehive.enabled"
+      },
+      {
+        "command": "beehive.buildProject",
+        "key": "ctrl+shift+g",
+        "mac": "cmd+shift+g",
         "when": "beehive.enabled"
       },
       {
@@ -264,19 +353,24 @@
     "configuration": {
       "title": "Beehive Studios",
       "properties": {
-        "beehive.backendUrl": {
+        "beehive.gatewayUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:9000",
+          "description": "URL of the Beehive JetBee gateway"
+        },
+        "beehive.orchestratorUrl": {
           "type": "string",
           "default": "http://127.0.0.1:9876",
-          "description": "URL of the Beehive backend API server"
+          "description": "URL of the Beehive agent orchestrator"
         },
         "beehive.websocketUrl": {
           "type": "string",
-          "default": "ws://127.0.0.1:9876",
+          "default": "ws://127.0.0.1:9000",
           "description": "URL of the Beehive WebSocket endpoint"
         },
         "beehive.defaultModel": {
           "type": "string",
-          "default": "ollama",
+          "default": "openchat:7b",
           "description": "Default AI model provider"
         },
         "beehive.enabled": {

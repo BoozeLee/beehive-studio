@@ -17,7 +17,32 @@ function App() {
 
   useEffect(() => {
     const listener = (event: MessageEvent) => {
-      handleMessage(event.data);
+      const msg = event.data;
+      // Handle extension-host-initiated messages
+      if (msg?.type === "loadProject") {
+        setProject(msg.project || null);
+        if (msg.project) {
+          addNotification(`Project ${msg.project.name} loaded`, "success");
+        }
+        return;
+      }
+      if (msg?.type === "triggerBuild") {
+        // Handled by TopBar/build console; could route via store action
+        addNotification("Build triggered from command palette", "info");
+        return;
+      }
+      if (msg?.type === "triggerPublish") {
+        addNotification("Publish triggered from command palette", "info");
+        return;
+      }
+      if (msg?.type === "agentSessionCompleted") {
+        if (msg.session) {
+          addNotification(`Agent ${msg.session.agent} completed`, "success");
+        }
+        return;
+      }
+      // Handle request/response messages
+      handleMessage(msg);
     };
     window.addEventListener("message", listener);
 

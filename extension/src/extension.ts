@@ -3,6 +3,7 @@ import { StudioPanel } from "./panels/StudioPanel";
 import { AgentsProvider } from "./treeViews/AgentsProvider";
 import { SessionsProvider } from "./treeViews/SessionsProvider";
 import { TasksProvider } from "./treeViews/TasksProvider";
+import { ProjectsProvider } from "./treeViews/ProjectsProvider";
 import { BackendClient } from "./services/backendClient";
 
 export function activate(context: vscode.ExtensionContext) {
@@ -11,7 +12,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Initialize backend client
   const config = vscode.workspace.getConfiguration('beehive');
   const gatewayUrl = config.get<string>('gatewayUrl', 'http://127.0.0.1:9000');
-  const orchestratorUrl = config.get<string>('backendUrl', 'http://127.0.0.1:9876');
+  const orchestratorUrl = config.get<string>('orchestratorUrl', 'http://127.0.0.1:9876');
   const backend = new BackendClient(gatewayUrl, orchestratorUrl);
 
   // Set context for view visibility
@@ -29,6 +30,97 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(openStudio);
+
+  // ── New Project ──
+  const newProject = vscode.commands.registerCommand(
+    "beehive.newProject",
+    async () => {
+      const name = await vscode.window.showInputBox({
+        placeHolder: "Project name",
+        prompt: "Name your new Beehive project",
+      });
+      if (!name) { return; }
+      const folder = await vscode.window.showOpenDialog({
+        canSelectFolders: true,
+        canSelectFiles: false,
+        canSelectMany: false,
+        openLabel: "Select project folder",
+      });
+      if (!folder || folder.length === 0) { return; }
+      const projectUri = vscode.Uri.joinPath(folder[0], `${name}.beehive`);
+      try {
+        await vscode.workspace.fs.writeFile(
+          projectUri,
+          Buffer.from(JSON.stringify({ id: name, name, rootUri: folder[0].toString() }, null, 2))
+        );
+        const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+        panel.postMessage({
+          type: "loadProject",
+          project: { id: name, name, rootUri: folder[0].toString() },
+        });
+        projectsProvider.refresh();
+        vscode.window.showInformationMessage(`Created project ${name}`);
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Failed to create project: ${err.message || String(err)}`);
+      }
+    }
+  );
+  context.subscriptions.push(newProject);
+
+  // ── Open Project ──
+  const openProject = vscode.commands.registerCommand(
+    "beehive.openProject",
+    async () => {
+      const files = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: { Beehive: ["beehive"] },
+        openLabel: "Open Beehive Project",
+      });
+      if (!files || files.length === 0) { return; }
+      const uri = files[0];
+      const projectName = uri.path.split("/").pop()?.replace(/\.beehive$/, "") || "default";
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+      panel.postMessage({
+        type: "loadProject",
+        project: { id: projectName, name: projectName, rootUri: uri.toString() },
+      });
+      vscode.window.showInformationMessage(`Opened project ${projectName}`);
+    }
+  );
+  context.subscriptions.push(openProject);
+
+  // ── Close Project ──
+  const closeProject = vscode.commands.registerCommand(
+    "beehive.closeProject",
+    () => {
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+      panel.postMessage({ type: "loadProject", project: null });
+      vscode.window.showInformationMessage("Project closed");
+    }
+  );
+  context.subscriptions.push(closeProject);
+
+  // ── Build Project ──
+  const buildProject = vscode.commands.registerCommand(
+    "beehive.buildProject",
+    async () => {
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+      panel.postMessage({ type: "triggerBuild" });
+    }
+  );
+  context.subscriptions.push(buildProject);
+
+  // ── Publish to MixHive ──
+  const publishToMixHive = vscode.commands.registerCommand(
+    "beehive.publishToMixHive",
+    async () => {
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+      panel.postMessage({ type: "triggerPublish" });
+    }
+  );
+  context.subscriptions.push(publishToMixHive);
 
   // ── Session Console ──
   const openSessionConsole = vscode.commands.registerCommand(
@@ -137,20 +229,32 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(toggleTransport);
 
   // ── Tree Views ──
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const projectsProvider = new ProjectsProvider(workspaceRoot);
   const agentsProvider = new AgentsProvider();
   const sessionsProvider = new SessionsProvider();
   const tasksProvider = new TasksProvider();
 
+  agentsProvider.setBackend(backend);
   tasksProvider.setBackend(backend);
 
+  vscode.window.registerTreeDataProvider("beehive.projects", projectsProvider);
   vscode.window.registerTreeDataProvider("beehive.agents", agentsProvider);
   vscode.window.registerTreeDataProvider("beehive.sessions", sessionsProvider);
   vscode.window.registerTreeDataProvider("beehive.tasks", tasksProvider);
 
+  // Load agents once on startup
+  void agentsProvider.loadAgents();
+
   // ── Refresh Commands ──
   context.subscriptions.push(
+    vscode.commands.registerCommand("beehive.refreshProjects", () =>
+      projectsProvider.refresh()
+    )
+  );
+  context.subscriptions.push(
     vscode.commands.registerCommand("beehive.refreshAgents", () =>
-      agentsProvider.refresh()
+      agentsProvider.loadAgents()
     )
   );
   context.subscriptions.push(
@@ -161,6 +265,33 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("beehive.refreshTasks", async () => {
       await tasksProvider.pollTasks();
+    })
+  );
+
+  // ── Tree View Actions ──
+  context.subscriptions.push(
+    vscode.commands.registerCommand("beehive.openProjectFromTree", (uri: vscode.Uri) => {
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+      const projectName = uri.path.split("/").pop()?.replace(/\.beehive$/, "") || "default";
+      panel.postMessage({ type: "loadProject", project: { id: projectName, name: projectName, rootUri: uri.toString() } });
+      vscode.window.showInformationMessage(`Opened project ${projectName}`);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("beehive.runAgentFromTree", async (agentId: string) => {
+      const panel = StudioPanel.createOrShow(context.extensionUri, backend);
+      const projectName = "default";
+      const brief = await vscode.window.showInputBox({ placeHolder: `Prompt for ${agentId}` });
+      if (!brief) { return; }
+      try {
+        const session = await backend.orchestrator.runAgent({ agent: agentId, brief, projectId: projectName });
+        sessionsProvider.addSession(session);
+        panel.postMessage({ type: "agentSessionCompleted", session });
+        vscode.window.showInformationMessage(`Agent ${agentId} completed`);
+      } catch (err: any) {
+        vscode.window.showErrorMessage(`Agent failed: ${err.message || String(err)}`);
+      }
     })
   );
 

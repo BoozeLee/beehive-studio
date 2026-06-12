@@ -2,6 +2,10 @@
 .vscode-test/**
 out/**
 node_modules/**
+webview/node_modules/**
+webview/src/**
+webview/package.json
+webview/pnpm-lock.yaml
 src/**
 .gitignore
 .yarnrc

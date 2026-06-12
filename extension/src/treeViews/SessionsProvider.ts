@@ -1,76 +1,54 @@
 import * as vscode from "vscode";
+import { BackendClient } from "../services/backendClient";
+import type { AgentSession } from "../services/types";
 
-export interface SessionItem {
-  id: string;
-  label: string;
-  description?: string;
-  status?: "active" | "completed" | "error";
-  timestamp?: number;
+export class SessionTreeItem extends vscode.TreeItem {
+  constructor(public readonly session: AgentSession) {
+    super(session.agent, vscode.TreeItemCollapsibleState.None);
+    this.tooltip = session.brief;
+    this.description = `${session.status} · ${session.brief.slice(0, 40)}`;
+    this.iconPath = new vscode.ThemeIcon(
+      session.status === "completed" ? "check" : session.status === "running" ? "sync~spin" : "error"
+    );
+    this.contextValue = "session";
+  }
 }
 
-export class SessionsProvider
-  implements vscode.TreeDataProvider<SessionTreeItem>
-{
-  private _onDidChangeTreeData: vscode.EventEmitter<
-    SessionTreeItem | undefined | null | void
-  > = new vscode.EventEmitter<SessionTreeItem | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<
-    SessionTreeItem | undefined | null | void
-  > = this._onDidChangeTreeData.event;
+export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined>();
+  public readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private sessions: SessionItem[] = [];
+  private backend: BackendClient | undefined;
+  private sessions: AgentSession[] = [];
+
+  setBackend(backend: BackendClient): void {
+    this.backend = backend;
+  }
 
   refresh(): void {
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  async loadSessions(): Promise<void> {
+    if (!this.backend) {
+      return;
+    }
+    // Note: orchestrator does not yet expose /sessions; this is a placeholder.
+    // When implemented, replace with this.backend.orchestrator.getSessions()
+    this.sessions = [];
+    this.refresh();
+  }
+
+  addSession(session: AgentSession): void {
+    this.sessions = [session, ...this.sessions];
+    this.refresh();
   }
 
   getTreeItem(element: SessionTreeItem): vscode.TreeItem {
     return element;
   }
 
-  getChildren(): Thenable<SessionTreeItem[]> {
-    if (this.sessions.length === 0) {
-      return Promise.resolve([]);
-    }
-    return Promise.resolve(
-      this.sessions.map(
-        (session) =>
-          new SessionTreeItem(
-            session.label,
-            session.description || "",
-            session.status || "completed",
-            vscode.TreeItemCollapsibleState.None
-          )
-      )
-    );
-  }
-
-  addSession(session: SessionItem): void {
-    this.sessions.unshift(session);
-    this.refresh();
-  }
-}
-
-class SessionTreeItem extends vscode.TreeItem {
-  constructor(
-    public readonly label: string,
-    public readonly description: string,
-    public readonly status: string,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState
-  ) {
-    super(label, collapsibleState);
-    this.tooltip = `${this.label} — ${this.description}`;
-    this.description = this.description;
-    this.iconPath = new vscode.ThemeIcon(
-      status === "active"
-        ? "sync~spin"
-        : status === "error"
-        ? "error"
-        : "check"
-    );
-    this.command = {
-      command: "beehive.openSessionConsole",
-      title: "Open Session Console",
-    };
+  async getChildren(): Promise<SessionTreeItem[]> {
+    return this.sessions.map((session) => new SessionTreeItem(session));
   }
 }

@@ -229,6 +229,10 @@ export class StudioPanel {
 </html>`;
   }
 
+  public postMessage(message: Record<string, unknown>): void {
+    this._panel.webview.postMessage(message);
+  }
+
   public dispose() {
     StudioPanel.currentPanel = undefined;
     this._panel.dispose();

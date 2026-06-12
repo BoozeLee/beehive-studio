@@ -1,71 +1,47 @@
-# beehive-studios README
+# Beehive Studio for VS Code
 
-This is the README for your extension "beehive-studios". After writing up a brief description, we recommend including the following sections.
+An agentic music production IDE inside VS Code. Beehive Studio turns the editor into a creative workstation for symbolic music composition: generate MIDI patterns with AI agents, arrange them on a timeline, manage creative branches, and publish to MixHive — all local-first.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- **Studio webview** — full DAW-like surface with dashboard, agent console, timeline, pattern editor, mixer, session view, and taste graph.
+- **AI agents** — run orchestrator-backed agents (drums, melody, rhythm & groove, and more) directly from the activity bar or command palette.
+- **Build pipeline** — create and approve JetBee builds, with live events from the local gateway.
+- **Taste Graph** — teach the system your preferences with Like / Never-Again feedback; agents retrieve your taste memory before generating.
+- **Project tree view** — discover and open `.beehive` projects from the workspace.
+- **Command palette integration** — every action reachable via `Ctrl/Cmd+Shift+P` → "Beehive".
+- **Keyboard shortcuts** — open studio, ask agent, build project, and toggle transport from the keyboard.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- VS Code 1.120.0+
+- Local Beehive services running:
+  - JetBee gateway on `http://127.0.0.1:9000`
+  - Agent orchestrator on `http://127.0.0.1:9876`
+  - Ollama with a model like `openchat:7b` (configured in orchestrator)
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
 This extension contributes the following settings:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- `beehive.enabled`: Enable/disable Beehive features.
+- `beehive.gatewayUrl`: URL of the JetBee gateway.
+- `beehive.orchestratorUrl`: URL of the agent orchestrator.
+- `beehive.websocketUrl`: URL of the gateway event WebSocket.
+- `beehive.defaultModel`: Default AI model identifier.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- The timeline, pattern editor, and mixer are scaffolded in the webview and will be fully ported from the Tauri desktop app in a future release.
+- Cloud render APIs are not integrated; use the export/MixHive path for final audio.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.5.0
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+- Initial VS Code extension IDE shell.
+- Typed gateway + orchestrator backend clients.
+- Webview message bridge and Zustand state stores.
+- Functional dashboard, agent console, taste graph, and settings pages.
+- Project/agent/session/task tree views in the activity bar.
+- Command palette, keybindings, and status bar integration.

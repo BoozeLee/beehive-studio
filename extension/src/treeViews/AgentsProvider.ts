@@ -1,68 +1,46 @@
 import * as vscode from "vscode";
+import { BackendClient } from "../services/backendClient";
+import type { AgentInfo } from "../services/types";
 
-export interface AgentItem {
-  id: string;
-  label: string;
-  description?: string;
-  icon?: string;
-  status?: "idle" | "running" | "error";
+export class AgentTreeItem extends vscode.TreeItem {
+  constructor(public readonly agent: AgentInfo) {
+    super(agent.name, vscode.TreeItemCollapsibleState.None);
+    this.tooltip = `${agent.name}: ${agent.description || "No description"}`;
+    this.description = agent.description;
+    this.iconPath = new vscode.ThemeIcon("rocket");
+    this.command = {
+      command: "beehive.runAgentFromTree",
+      title: "Run Agent",
+      arguments: [agent.id],
+    };
+    this.contextValue = "agent";
+  }
 }
 
 export class AgentsProvider implements vscode.TreeDataProvider<AgentTreeItem> {
-  private _onDidChangeTreeData: vscode.EventEmitter<
-    AgentTreeItem | undefined | null | void
-  > = new vscode.EventEmitter<AgentTreeItem | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<
-    AgentTreeItem | undefined | null | void
-  > = this._onDidChangeTreeData.event;
+  private _onDidChangeTreeData = new vscode.EventEmitter<AgentTreeItem | undefined>();
+  public readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private agents: AgentItem[] = [
-    {
-      id: "composer",
-      label: "Composer",
-      description: "Generates MIDI patterns and arrangements",
-      status: "idle",
-    },
-    {
-      id: "rhythm_groove",
-      label: "Rhythm & Groove",
-      description: "Drum patterns and percussion",
-      status: "idle",
-    },
-    {
-      id: "melody",
-      label: "Melody",
-      description: "Melodic lines and hooks",
-      status: "idle",
-    },
-    {
-      id: "harmony",
-      label: "Harmony",
-      description: "Chords and harmonic structure",
-      status: "idle",
-    },
-    {
-      id: "arrangement",
-      label: "Arrangement",
-      description: "Song structure and transitions",
-      status: "idle",
-    },
-    {
-      id: "mix_master",
-      label: "Mix Master",
-      description: "Mixing and mastering",
-      status: "idle",
-    },
-  ];
+  private backend: BackendClient | undefined;
+  private agents: AgentInfo[] = [];
 
-  refresh(): void {
-    this._onDidChangeTreeData.fire();
+  setBackend(backend: BackendClient): void {
+    this.backend = backend;
   }
 
-  updateAgentStatus(agentId: string, status: "idle" | "running" | "error"): void {
-    const agent = this.agents.find(a => a.id === agentId);
-    if (agent) {
-      agent.status = status;
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  async loadAgents(): Promise<void> {
+    if (!this.backend) {
+      return;
+    }
+    try {
+      this.agents = await this.backend.orchestrator.listAgents();
+      this.refresh();
+    } catch (err) {
+      this.agents = [];
       this.refresh();
     }
   }
@@ -71,41 +49,7 @@ export class AgentsProvider implements vscode.TreeDataProvider<AgentTreeItem> {
     return element;
   }
 
-  getChildren(): Thenable<AgentTreeItem[]> {
-    return Promise.resolve(
-      this.agents.map(
-        (agent) =>
-          new AgentTreeItem(
-            agent.label,
-            agent.description || "",
-            agent.status || "idle",
-            vscode.TreeItemCollapsibleState.None
-          )
-      )
-    );
-  }
-}
-
-class AgentTreeItem extends vscode.TreeItem {
-  constructor(
-    public readonly label: string,
-    public readonly description: string,
-    public readonly status: string,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState
-  ) {
-    super(label, collapsibleState);
-    this.tooltip = `${this.label} — ${this.description}`;
-    this.description = this.description;
-    this.iconPath = new vscode.ThemeIcon(
-      status === "running"
-        ? "sync~spin"
-        : status === "error"
-        ? "error"
-        : "person"
-    );
-    this.command = {
-      command: "beehive.openSessionConsole",
-      title: "Open Session Console",
-    };
+  async getChildren(): Promise<AgentTreeItem[]> {
+    return this.agents.map((agent) => new AgentTreeItem(agent));
   }
 }
