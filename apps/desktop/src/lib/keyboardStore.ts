@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useWorkbenchStore } from "./workbenchStore";
 
 export interface Command {
   id: string;
@@ -192,6 +193,46 @@ export const useKeyboardStore = create<KeyboardState>((set, get) => ({
   },
 }));
 
+useKeyboardStore.getState().registerCommand({
+  id: "panel.toggleLeft",
+  label: "Toggle Left Panel",
+  category: "View",
+  action: () => useWorkbenchStore.getState().togglePanel("left"),
+});
+useKeyboardStore.getState().registerCommand({
+  id: "panel.toggleRight",
+  label: "Toggle Right Panel",
+  category: "View",
+  action: () => useWorkbenchStore.getState().togglePanel("right"),
+});
+useKeyboardStore.getState().registerCommand({
+  id: "panel.toggleBottom",
+  label: "Toggle Bottom Panel",
+  category: "View",
+  action: () => useWorkbenchStore.getState().togglePanel("bottom"),
+});
+useKeyboardStore.getState().registerCommand({
+  id: "panel.focusChat",
+  label: "Focus Agent Chat",
+  category: "Agent",
+  action: () => {
+    useWorkbenchStore.getState().openPanel("bottom", "agent");
+    document.querySelector<HTMLElement>(".jetbee-chat-composer textarea")?.focus();
+  },
+});
+useKeyboardStore.getState().registerCommand({
+  id: "editor.openMixer",
+  label: "Open Mixer",
+  category: "Editor",
+  action: () => useWorkbenchStore.getState().openCenterTab("mixer"),
+});
+useKeyboardStore.getState().registerCommand({
+  id: "editor.openArrangement",
+  label: "Open Arrangement",
+  category: "Editor",
+  action: () => useWorkbenchStore.getState().openCenterTab("arrangement"),
+});
+
 /**
  * Global keyboard event handler. Attach this to window in your root component.
  * Respects input/textarea/contenteditable focus for typing shortcuts.
@@ -275,6 +316,12 @@ export const DEFAULT_KEYMAP: KeymapEntry[] = [
   { commandId: "project.focusExplorer", shortcut: "alt+1" },
   { commandId: "project.focusInspector", shortcut: "alt+2" },
   { commandId: "project.focusConsole", shortcut: "alt+0" },
+  { commandId: "panel.toggleLeft", shortcut: "alt+1" },
+  { commandId: "panel.toggleRight", shortcut: "alt+2" },
+  { commandId: "panel.toggleBottom", shortcut: "alt+0" },
+  { commandId: "panel.focusChat", shortcut: "ctrl+shift+l" },
+  { commandId: "editor.openMixer", shortcut: "ctrl+shift+m" },
+  { commandId: "editor.openArrangement", shortcut: "alt+9" },
   { commandId: "editor.intention", shortcut: "alt+enter" },
   { commandId: "transport.playPause", shortcut: "space" },
   { commandId: "transport.stop", shortcut: "ctrl+space" },
