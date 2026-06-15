@@ -1,26 +1,28 @@
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  Group,
-  Panel,
-  Separator,
-} from "react-resizable-panels";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { loadPanelLayout, savePanelLayout, type PanelLayout } from "../../lib/panelPersistence";
 
 interface ResizableWorkbenchProps {
   topBar?: ReactNode;
   leftRail: ReactNode;
+  leftCollapsed?: boolean;
   center: ReactNode;
   rightRail: ReactNode;
+  rightCollapsed?: boolean;
   bottomRail: ReactNode;
+  bottomCollapsed?: boolean;
   statusBar: ReactNode;
 }
 
 export function ResizableWorkbench({
   topBar,
   leftRail,
+  leftCollapsed = false,
   center,
   rightRail,
+  rightCollapsed = false,
   bottomRail,
+  bottomCollapsed = false,
   statusBar,
 }: ResizableWorkbenchProps) {
   const [layout, setLayout] = useState<PanelLayout | null>(null);
@@ -65,60 +67,29 @@ export function ResizableWorkbench({
 
   const leftPct = Math.max(10, Math.min(40, layout.leftRail.size || 18));
   const rightPct = Math.max(10, Math.min(40, layout.rightRail.size || 20));
-  const bottomPct = Math.max(10, Math.min(50, layout.bottomRail.size || 22));
+  const bottomPct = Math.max(10, Math.min(50, layout.bottomRail.size || 25));
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Top toolbar */}
-      {topBar && (
-        <div style={{ flexShrink: 0 }}>{topBar}</div>
-      )}
+      {topBar && <div style={{ flexShrink: 0 }}>{topBar}</div>}
 
-      {/* Main workbench */}
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <Group
-          orientation="horizontal"
-          style={{ flex: 1, overflow: "hidden" }}
-          onLayoutChanged={handleLayoutChange}
-        >
-          {/* Left Rail */}
-          <Panel
-            id="left"
-            defaultSize={leftPct}
-            minSize={10}
-            maxSize={40}
-            collapsible
-            collapsedSize={4}
-            style={{ display: layout.leftRail.collapsed ? "none" : "flex" }}
-          >
-            <div className="jetbee-rail" data-jetbee-pane="explorer" tabIndex={-1} style={{ width: "100%" }}>
+        <Group orientation="horizontal" style={{ flex: 1, overflow: "hidden" }} onLayoutChanged={handleLayoutChange}>
+          <Panel id="left" defaultSize={leftPct} minSize={8} maxSize={40} collapsible collapsedSize={4}>
+            <div className="jetbee-rail" data-jetbee-pane="explorer" tabIndex={-1} style={{ width: "100%", opacity: leftCollapsed ? 0.5 : 1 }}>
               {leftRail}
             </div>
           </Panel>
           <Separator />
 
-          {/* Center + Bottom */}
           <Panel id="center" minSize={30}>
-            <Group
-              orientation="vertical"
-              style={{ height: "100%" }}
-              onLayoutChanged={handleVerticalLayoutChange}
-            >
+            <Group orientation="vertical" style={{ height: "100%" }} onLayoutChanged={handleVerticalLayoutChange}>
               <Panel id="center-top" defaultSize={100 - bottomPct} minSize={30}>
-                <div style={{ height: "100%", overflow: "hidden" }}>
-                  {center}
-                </div>
+                <div style={{ height: "100%", overflow: "hidden" }}>{center}</div>
               </Panel>
               <Separator />
-              <Panel
-                id="bottom"
-                defaultSize={bottomPct}
-                minSize={10}
-                maxSize={50}
-                collapsible
-                collapsedSize={4}
-              >
-                <div className="jetbee-rail jetbee-rail-bottom" data-jetbee-pane="console" tabIndex={-1} style={{ height: "100%" }}>
+              <Panel id="bottom" defaultSize={bottomPct} minSize={8} maxSize={50} collapsible collapsedSize={4}>
+                <div className="jetbee-rail jetbee-rail-bottom" data-jetbee-pane="console" tabIndex={-1} style={{ height: "100%", opacity: bottomCollapsed ? 0.5 : 1 }}>
                   {bottomRail}
                 </div>
               </Panel>
@@ -127,27 +98,15 @@ export function ResizableWorkbench({
 
           <Separator />
 
-          {/* Right Rail */}
-          <Panel
-            id="right"
-            defaultSize={rightPct}
-            minSize={10}
-            maxSize={40}
-            collapsible
-            collapsedSize={4}
-            style={{ display: layout.rightRail.collapsed ? "none" : "flex" }}
-          >
-            <div className="jetbee-rail jetbee-rail-right" data-jetbee-pane="inspector" tabIndex={-1} style={{ width: "100%" }}>
+          <Panel id="right" defaultSize={rightPct} minSize={8} maxSize={40} collapsible collapsedSize={4}>
+            <div className="jetbee-rail jetbee-rail-right" data-jetbee-pane="inspector" tabIndex={-1} style={{ width: "100%", opacity: rightCollapsed ? 0.5 : 1 }}>
               {rightRail}
             </div>
           </Panel>
         </Group>
       </div>
 
-      {/* Status bar */}
-      {statusBar && (
-        <div style={{ flexShrink: 0 }}>{statusBar}</div>
-      )}
+      {statusBar && <div style={{ flexShrink: 0 }}>{statusBar}</div>}
     </div>
   );
 }
