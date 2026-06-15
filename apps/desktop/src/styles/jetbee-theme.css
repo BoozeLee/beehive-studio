@@ -449,3 +449,89 @@ html, body, #root {
   font-size: 10px;
   color: var(--jb-text-faint);
 }
+
+/* ── Chat ── */
+.jetbee-chat-list {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.jetbee-chat-message {
+  max-width: 90%;
+  padding: 8px 10px;
+  border-radius: var(--jb-border-radius);
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid var(--jb-border);
+  background: var(--jb-panel);
+  color: var(--jb-text);
+}
+
+.jetbee-chat-message-user {
+  align-self: flex-end;
+  background: var(--jb-comb);
+  color: var(--jb-text-inverse);
+  border-color: var(--jb-comb);
+}
+
+.jetbee-chat-message-tool {
+  background: rgba(245, 197, 66, 0.08);
+  border-color: var(--jb-honey);
+}
+
+.jetbee-chat-message-proposal {
+  background: rgba(255, 140, 66, 0.08);
+  border-color: var(--jb-comb);
+}
+
+.jetbee-chat-message-agent {
+  align-self: flex-start;
+  background: var(--jb-bg-elevated);
+}
+
+/* ── Tool windows ── */
+.jetbee-toolwindow-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--jb-border);
+  background: var(--jb-toolbar-bg);
+}
+
+.jetbee-toolwindow-tab {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: var(--jb-border-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--jb-text-muted);
+  cursor: pointer;
+}
+
+.jetbee-toolwindow-tab:hover {
+  color: var(--jb-text);
+  background: var(--jb-panel-hover);
+}
+
+.jetbee-toolwindow-tab[data-active="true"] {
+  background: var(--jb-comb);
+  color: var(--jb-text-inverse);
+  border-color: var(--jb-comb);
+}
+
+/* ── Status bar chips ── */
+.jetbee-statusbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  background: var(--jb-panel);
+  color: var(--jb-text-muted);
+  border: 1px solid var(--jb-border);
+}
