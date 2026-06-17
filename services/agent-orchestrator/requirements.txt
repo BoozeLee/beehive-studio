@@ -3,7 +3,7 @@ uvicorn>=0.30
 pydantic>=2.9
 mido>=1.3
 ollama>=0.3
-python-multipart>=0.0.9
+python-multipart>=0.0.31
 
 # Optional for later
 # langgraph>=0.2
