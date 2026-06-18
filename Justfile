@@ -23,6 +23,14 @@ gateway:
 dev:
     cd extension && pnpm run compile && pnpm --filter beehive-studio-webview run build
 
+# Tauri desktop dev server (requires `just backend` running in another terminal).
+desktop-dev:
+    cd apps/desktop && pnpm tauri:dev
+
+# One-shot desktop build check (no backend required).
+desktop-check:
+    cd apps/desktop/src-tauri && cargo check
+
 # Build VS Code extension host + webview.
 build-extension:
     cd extension && pnpm run package && pnpm --filter beehive-studio-webview run build

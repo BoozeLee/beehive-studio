@@ -56,8 +56,8 @@ cd beehive-studio
 just install  # Installs all dependencies and launcher
 
 # Start services
-just backend  # Python FastAPI backend on port 9876
-just dev       # Tauri desktop app
+just backend       # Python FastAPI backend on port 9876
+just desktop-dev   # Tauri desktop app
 
 # Or run tests
 just test      # All alpha gates (frontend + backend + packaging)
