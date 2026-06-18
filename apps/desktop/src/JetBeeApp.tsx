@@ -130,6 +130,15 @@ const COLORS = {
   warning: "#fbbf24",
 };
 
+function inferClipDuration(
+  notes: Array<{ pitch: number; velocity: number; start: number; duration: number }>
+): number {
+  if (notes.length === 0) return 4;
+  const endBeat = Math.max(...notes.map((n) => n.start + n.duration));
+  // Round up to the next whole bar (assume 4/4)
+  return Math.max(4, Math.ceil(endBeat / 4) * 4);
+}
+
 function JetBeeApp() {
   // ── Original state (preserved exactly) ──
   const [brief, setBrief] = useState("");
@@ -1314,13 +1323,63 @@ function JetBeeApp() {
             <AgentDirector
               bpm={transport.bpm}
               onClipGenerated={(notes, reasoning) => {
+                const state = useTimelineStore.getState();
+                let targetTrack = state.tracks.find(
+                  (t) => t.type === "midi" && t.name.toLowerCase().includes("bass")
+                );
+                if (!targetTrack) {
+                  const trackId = crypto.randomUUID();
+                  targetTrack = {
+                    id: trackId,
+                    name: "Bass",
+                    type: "midi",
+                    color: "#ff8c42",
+                    volume: 0.8,
+                    pan: 0,
+                    muted: false,
+                    solo: false,
+                    arm: false,
+                    clips: [],
+                    automationLanes: [],
+                    instrument: { type: "tonejs", preset: "bass" },
+                  };
+                  addTrack(targetTrack);
+                  createChannel(targetTrack.id, targetTrack.name);
+                }
+
+                const clipId = crypto.randomUUID();
+                const duration = inferClipDuration(notes);
+                const now = Date.now() / 1000;
+                const timelineClip: TimelineClip = {
+                  id: clipId,
+                  name: "Rolling Acid Bass",
+                  type: "midi",
+                  trackId: targetTrack.id,
+                  start: state.cursorPosition,
+                  duration,
+                  loop: false,
+                  midiData: { notes },
+                  playback: { instrument: "bass", preset: "acid" },
+                  metadata: {
+                    generative: true,
+                    agentId: "rhythm_groove",
+                    reasoningTrace: reasoning.join("\n"),
+                    confidence: 0.95,
+                    tags: ["acid", "techno", "bassline"],
+                  },
+                  createdAt: now,
+                  updatedAt: now,
+                };
+                addTimelineClip(timelineClip);
+
+                // Also mirror into the Session View grid
                 setClips((prev) => [
                   ...prev,
                   {
-                    id: crypto.randomUUID(),
-                    name: "Agent clip",
-                    duration: 2,
-                    color: "#5a2a5a",
+                    id: clipId,
+                    name: timelineClip.name,
+                    duration,
+                    color: targetTrack.color,
                     midiData: { notes },
                     reasoning,
                   },
