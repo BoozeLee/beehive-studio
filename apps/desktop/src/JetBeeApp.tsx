@@ -576,12 +576,18 @@ function JetBeeApp() {
 
       setStatus("Playing clip...");
 
+      const timelineClip = timelineClips[clip.id] as TimelineClip | undefined;
+      const trackId = timelineClip?.trackId;
+      const instrument = timelineClip?.playback?.instrument ?? "bass";
+
       const scheduled: ScheduledClip = {
         id: clip.id,
         notes: clip.midiData?.notes ?? [],
         startBeat: 0,
         loop: false,
         channel: 0,
+        channelId: trackId,
+        instrument,
         audioFilePath: clip.audioFilePath
           ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
           : undefined,
@@ -594,7 +600,7 @@ function JetBeeApp() {
       transport.scheduleClip(scheduled);
       await transport.play();
     },
-    [projectName, transport]
+    [projectName, transport, timelineClips]
   );
 
   const launchSessionScene = useCallback(async () => {
