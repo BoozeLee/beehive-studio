@@ -2,7 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
 
 pub struct Mixer {
-    tracks: Arc<Mutex<Vec<Track>>>,
+    tracks: Arc<Mutex<Vec<Option<Track>>>>,
     sample_rate: f32,
     _stream: cpal::Stream,
 }
@@ -26,8 +26,10 @@ impl Mixer {
         let tracks_clone = tracks.clone();
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => Self::build_stream::<f32>(&device, &config.into(), tracks_clone)?,
-            _ => return Err("unsupported sample format".into()),
+            cpal::SampleFormat::F32 => {
+                Self::build_stream::<f32>(&device, &config.into(), tracks_clone)?
+            }
+            _ => return Err("unsupported sample format: only f32 is supported in v0.5.0-alpha".into()),
         };
 
         stream.play()?;
@@ -42,7 +44,7 @@ impl Mixer {
     fn build_stream<T>(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
-        tracks: Arc<Mutex<Vec<Track>>>,
+        tracks: Arc<Mutex<Vec<Option<Track>>>>,
     ) -> Result<cpal::Stream, Box<dyn std::error::Error>>
     where
         T: cpal::SizedSample + cpal::FromSample<f32>,
@@ -55,7 +57,7 @@ impl Mixer {
                 for frame in data.chunks_mut(channels) {
                     let mut mix_l = 0.0f32;
                     let mut mix_r = 0.0f32;
-                    for track in tracks.iter_mut() {
+                    for track in tracks.iter_mut().flatten() {
                         if track.muted || track.buffer_pos >= track.buffer.len() {
                             continue;
                         }
@@ -83,33 +85,40 @@ impl Mixer {
     pub fn add_track(&self) -> usize {
         let mut tracks = self.tracks.lock().unwrap();
         let id = tracks.len();
-        tracks.push(Track {
+        tracks.push(Some(Track {
             gain: 1.0,
             pan: 0.0,
             muted: false,
             buffer: Vec::new(),
             buffer_pos: 0,
-        });
+        }));
         id
+    }
+
+    pub fn remove_track(&self, id: usize) {
+        let mut tracks = self.tracks.lock().unwrap();
+        if id < tracks.len() {
+            tracks[id] = None;
+        }
     }
 
     pub fn set_track_gain(&self, id: usize, gain: f32) {
         let mut tracks = self.tracks.lock().unwrap();
-        if let Some(t) = tracks.get_mut(id) {
+        if let Some(Some(t)) = tracks.get_mut(id) {
             t.gain = gain;
         }
     }
 
     pub fn set_track_pan(&self, id: usize, pan: f32) {
         let mut tracks = self.tracks.lock().unwrap();
-        if let Some(t) = tracks.get_mut(id) {
+        if let Some(Some(t)) = tracks.get_mut(id) {
             t.pan = pan.clamp(-1.0, 1.0);
         }
     }
 
     pub fn load_clip(&self, track_id: usize, samples: Vec<f32>) {
         let mut tracks = self.tracks.lock().unwrap();
-        if let Some(t) = tracks.get_mut(track_id) {
+        if let Some(Some(t)) = tracks.get_mut(track_id) {
             t.buffer = samples;
             t.buffer_pos = 0;
         }
