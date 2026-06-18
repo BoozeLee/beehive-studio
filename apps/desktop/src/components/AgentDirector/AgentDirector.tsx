@@ -70,7 +70,9 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
     document.head.appendChild(style);
   }, []);
 
-  const [brief, setBrief] = useState("");
+  const [brief, setBrief] = useState(
+    "Generate a rolling 130 BPM acid techno bassline in C minor, 4 bars, swing 0.15, density 0.75, darkness 0.6"
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [activeAgent, setActiveAgent] = useState("rhythm_groove");
   const [reasoning, setReasoning] = useState<ReasoningStep[]>([]);
