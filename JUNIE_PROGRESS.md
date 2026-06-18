@@ -40,3 +40,20 @@
 ### Notes
 - The working tree had many pre-existing uncommitted changes at the start of this session; only the v0.5.0-alpha wiring changes were committed.
 - Manual `just desktop-dev` UI launch requires a display server; it could not be exercised headlessly, but the build and cargo checks pass.
+
+
+## 2026-06-18 — Chat → Clip → Playback Loop
+
+### Completed
+- Passed live BPM from `useTransport` into `AgentDirector`.
+- Converted agent-generated notes into a real `Track` + `Clip` in `timelineStore`.
+- Routed clip playback through its mixer channel using Tone.js.
+- Pre-seeded the demo brief recommended by Marco-o1.
+- Smoke-tested: brief → generated clip → Session View → Timeline → Play.
+
+### Verification
+- `pnpm exec tsc --noEmit` clean.
+- `just desktop-check` passes.
+- `just test` passes.
+- Backend `/agents/rhythm_groove` returns a `clip_preview` with 4-bar C-minor acid bassline notes when given the demo brief.
+- Manual UI smoke test pending a display server: run `just backend` + `just desktop-dev` and click Generate → Play.
