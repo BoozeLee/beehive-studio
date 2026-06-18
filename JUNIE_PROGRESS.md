@@ -54,6 +54,7 @@
 ### Verification
 - `pnpm exec tsc --noEmit` clean.
 - `just desktop-check` passes.
-- `just test` passes.
+- `just test` passes (including new `chat-to-clip-smoke.test.tsx`).
 - Backend `/agents/rhythm_groove` returns a `clip_preview` with 4-bar C-minor acid bassline notes when given the demo brief.
+- Automated smoke test mocks the agent WebSocket, clicks Generate, and asserts a `Bass` track + `Rolling Acid Bass` clip land in `timelineStore`.
 - Manual UI smoke test pending a display server: run `just backend` + `just desktop-dev` and click Generate → Play.
