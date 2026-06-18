@@ -3,5 +3,7 @@ members = [
     "apps/desktop/src-tauri",
     "crates/beehive-audio-engine",
     "crates/beehive-studio-vst",
+    "mixhive_bridge",
+    "plugin_marketplace",
 ]
 resolver = "2"

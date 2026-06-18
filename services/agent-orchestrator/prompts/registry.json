@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "agents": {
+    "drum_architect": {
+      "default_version": "v2.0-marco",
+      "versions": {
+        "v1.0": "prompts/system/rhythm_groove_v1.md",
+        "v2.0-marco": "prompts/system/rhythm_groove_v2_marco.md"
+      },
+      "config": {
+        "temperature": 0.7,
+        "model": "llama3"
+      }
+    },
+    "harmony_specialist": {
+      "default_version": "v1.0",
+      "versions": {
+        "v1.0": "prompts/system/harmony_v1.md"
+      },
+      "config": {
+        "temperature": 0.5,
+        "model": "mistral"
+      }
+    },
+    "bass_architect": {
+      "default_version": "v1.0",
+      "versions": {
+        "v1.0": "prompts/system/bass_v1.md"
+      },
+      "config": {
+        "temperature": 0.6,
+        "model": "llama3"
+      }
+    }
+  }
+}

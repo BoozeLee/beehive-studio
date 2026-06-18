@@ -10,7 +10,7 @@ import httpx
 
 
 HIVE_999_URL = os.getenv("BEEHIVE_HIVE999_URL", "http://127.0.0.1:17999").rstrip("/")
-HIVE_999_TIMEOUT = float(os.getenv("BEEHIVE_HIVE999_TIMEOUT", "95"))
+HIVE_999_TIMEOUT = float(os.getenv("BEEHIVE_HIVE999_TIMEOUT", "60"))
 PROMPT_PATH = Path(__file__).resolve().parents[3] / "prompts/system/rhythm_groove_v2_marco.md"
 PROMPT_VERSION = "v2.0-marco-safe"
 

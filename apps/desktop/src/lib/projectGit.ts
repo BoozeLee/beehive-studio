@@ -6,6 +6,7 @@ export interface CommitInfo {
   message: string;
   author: string;
   timestamp: number;
+  parents: string[];
 }
 
 export interface BranchInfo {
@@ -186,4 +187,15 @@ export async function getBranchLog(
   count: number = 50,
 ): Promise<CommitInfo[]> {
   return invoke<CommitInfo[]>("git_log_for_branch", { name, branch, count });
+}
+
+/**
+ * Phase B: Neural Git & Musical Content Addressing
+ */
+export async function getClipHash(clipData: string): Promise<string> {
+  return invoke<string>("git_hash_object", { data: clipData });
+}
+
+export async function tagCommit(name: string, tagName: string, message: string): Promise<string> {
+  return invoke<string>("git_tag", { name, tagName, message });
 }

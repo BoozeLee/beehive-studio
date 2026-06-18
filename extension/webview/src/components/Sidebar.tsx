@@ -8,6 +8,7 @@ const routes: { path: Route; label: string; icon: string }[] = [
   { path: "/mixer", label: "Mixer", icon: "🎛️" },
   { path: "/session", label: "Session", icon: "🥁" },
   { path: "/taste", label: "Taste", icon: "🍯" },
+  { path: "/branches", label: "Branches", icon: "⎇" },
   { path: "/settings", label: "Settings", icon: "⚙️" },
 ];
 

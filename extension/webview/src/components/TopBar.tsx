@@ -1,12 +1,11 @@
 import { useAppStore } from "../stores/appStore";
 import { useProjectStore } from "../stores/projectStore";
-import { useTransportStore } from "../stores/transportStore";
 import * as api from "../lib/api";
+import { TransportBar } from "./TransportBar";
 
 export function TopBar() {
-  const { gatewayHealth, orchestratorHealth, addNotification } = useAppStore();
+  const { gatewayHealth, orchestratorHealth, addNotification, setExportDialogOpen } = useAppStore();
   const { project, clips } = useProjectStore();
-  const { playing, bpm, toggle } = useTransportStore();
 
   const gatewayReady = gatewayHealth?.providers?.some((p) => p.ready) ?? false;
   const orchestratorReady = orchestratorHealth?.status === "ok";
@@ -64,19 +63,7 @@ export function TopBar() {
         ● Orchestrator
       </span>
       <span style={{ fontSize: 12, opacity: 0.7 }}>{clips.length} clips</span>
-      <button
-        onClick={toggle}
-        style={{
-          padding: "4px 10px",
-          background: "var(--vscode-button-background)",
-          color: "var(--vscode-button-foreground)",
-          border: "none",
-          borderRadius: 4,
-          cursor: "pointer",
-        }}
-      >
-        {playing ? "⏸" : "▶"} {bpm} BPM
-      </button>
+      <TransportBar />
       <button
         onClick={handleBuild}
         style={{
@@ -89,6 +76,19 @@ export function TopBar() {
         }}
       >
         🔨 Build
+      </button>
+      <button
+        onClick={() => setExportDialogOpen(true)}
+        style={{
+          padding: "4px 10px",
+          background: "var(--vscode-button-background)",
+          color: "var(--vscode-button-foreground)",
+          border: "none",
+          borderRadius: 4,
+          cursor: "pointer",
+        }}
+      >
+        💾 Export
       </button>
     </header>
   );

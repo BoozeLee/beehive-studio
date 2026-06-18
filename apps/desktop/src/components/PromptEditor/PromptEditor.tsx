@@ -7,6 +7,7 @@ export interface PromptEditorProps {
   onChange: (v: string) => void;
   onGenerate?: () => void;
   onSendToCritic?: () => void;
+  onTag?: (tagName: string) => void;
   readOnly?: boolean;
 }
 
@@ -194,6 +195,7 @@ export function PromptEditor({
   onChange,
   onGenerate,
   onSendToCritic,
+  onTag,
   readOnly = false,
 }: PromptEditorProps) {
   const editorRef = useRef<Monaco["editor"]["IStandaloneCodeEditor"] | null>(null);
@@ -273,8 +275,19 @@ export function PromptEditor({
           }
         },
       });
+      editor.addAction({
+        id: "jetbee-tag",
+        label: "Tag Current State",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyT],
+        contextMenuGroupId: "jetbee",
+        contextMenuOrder: 4,
+        run: () => {
+          const tagName = prompt("Enter tag name for this state:");
+          if (tagName) onTag?.(tagName);
+        },
+      });
     },
-    [onGenerate, onSendToCritic]
+    [onGenerate, onSendToCritic, onTag]
   );
 
   useEffect(() => {
@@ -396,6 +409,44 @@ export function PromptEditor({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {onTag && (
+            <button
+              className="jetbee-toolbtn"
+              onClick={() => {
+                const tagName = prompt("Enter tag name for this state:");
+                if (tagName) onTag(tagName);
+              }}
+              title="Tag State (Ctrl+T)"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                padding: "2px 8px",
+                fontSize: 10,
+                fontWeight: 500,
+                color: "var(--jb-text-muted, #8A7E72)",
+                background: "transparent",
+                border: "1px solid var(--jb-border, #2A1F18)",
+                borderRadius: "var(--jb-border-radius-sm, 4px)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                fontFamily: "var(--jb-font-sans, system-ui, sans-serif)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "var(--jb-text, #E8DCC8)";
+                e.currentTarget.style.background = "var(--jb-panel-hover, #221A14)";
+                e.currentTarget.style.borderColor = "var(--jb-border-active, #3D2E22)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--jb-text-muted, #8A7E72)";
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "var(--jb-border, #2A1F18)";
+              }}
+            >
+              🏷️ Tag
+            </button>
+          )}
           {onSendToCritic && (
             <button
               className="jetbee-toolbtn"

@@ -48,6 +48,18 @@ render:
 release-check:
     bash scripts/release-check.sh 0.4.0-beta
 
+# Podman CI/CD Automation
+ci:
+    bash scripts/podman-ci.sh
+
+# Launch the Containerized Swarm
+swarm:
+    cd deployment/local && podman-compose up -d
+
+# Stop the Swarm
+swarm-down:
+    cd deployment/local && podman-compose down
+
 # Optional desktop/package build. AppImage is intentionally disabled on Arch.
 build-desktop:
     cd apps/desktop && pnpm tauri build

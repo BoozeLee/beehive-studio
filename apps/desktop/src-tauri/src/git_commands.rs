@@ -11,6 +11,7 @@ pub struct CommitInfo {
     pub message: String,
     pub author: String,
     pub timestamp: i64,
+    pub parents: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -276,6 +277,7 @@ pub async fn git_log(name: String, count: usize) -> Result<Vec<CommitInfo>, Stri
             message: commit.message().unwrap_or("(no message)").to_string(),
             author: commit.author().name().unwrap_or("Unknown").to_string(),
             timestamp: commit.time().seconds(),
+            parents: commit.parent_ids().map(|id| format!("{}", id)).collect(),
         });
     }
 
@@ -774,8 +776,33 @@ pub async fn git_log_for_branch(
             message: commit.message().unwrap_or("(no message)").to_string(),
             author: commit.author().name().unwrap_or("Unknown").to_string(),
             timestamp: commit.time().seconds(),
+            parents: commit.parent_ids().map(|id| format!("{}", id)).collect(),
         });
     }
 
     Ok(commits)
+}
+
+/// Phase B: Hash an object for content addressing.
+#[tauri::command]
+pub async fn git_hash_object(data: String) -> Result<String, String> {
+    let oid = git2::Oid::hash_object(git2::ObjectType::Blob, data.as_bytes())
+        .map_err(|e| format!("Hash error: {}", e))?;
+    Ok(format!("{}", oid))
+}
+
+/// Phase B: Create a tag on a commit.
+#[tauri::command]
+pub async fn git_tag(name: String, tag_name: String, message: String) -> Result<String, String> {
+    let dir = project_dir(&name);
+    let repo = Repository::open(&dir).map_err(|e| format!("Open repo: {}", e))?;
+
+    let head = repo.head().map_err(|e| format!("HEAD: {}", e))?;
+    let commit = head.peel_to_commit().map_err(|e| format!("Peel commit: {}", e))?;
+    let sig = default_signature(&repo)?;
+
+    let oid = repo.tag(&tag_name, &commit.into_object(), &sig, &message, false)
+        .map_err(|e| format!("Tag error: {}", e))?;
+
+    Ok(format!("{}", oid))
 }

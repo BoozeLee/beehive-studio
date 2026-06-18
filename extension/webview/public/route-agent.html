@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beehive Studio — Agent</title>
+  <style>
+    :root {
+      --vscode-editor-background: #0f0f12;
+      --vscode-background: #0f0f12;
+      --vscode-panel-background: #18181c;
+      --vscode-panel-border: #2a2a30;
+      --vscode-foreground: #e0e0e0;
+      --vscode-descriptionForeground: #888;
+      --vscode-button-background: #ff8c42;
+      --vscode-button-foreground: #000;
+      --vscode-list-activeSelectionBackground: #2a2a30;
+      --vscode-list-activeSelectionForeground: #e0e0e0;
+    }
+  </style>
+  <script>
+    window.vscode = {
+      postMessage: (msg) => {
+        const id = msg.id;
+        setTimeout(() => {
+          if (msg.type === "gatewayRequest" && msg.path === "/health") {
+            window.postMessage({ id, result: { status: "ok", version: "0.5.0", providers: [{ provider: "beehive-local", ready: true, local: true, detail: "ready" }], hive999: { status: "ok", service: "ollama", model: "openchat:7b", model_ready: true, detail: "ready" } } }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path === "/health") {
+            window.postMessage({ id, result: { status: "ok", service: "orchestrator", version: "0.5.0", ollama_available: true, lupa_available: false } }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path === "/agents") {
+            window.postMessage({ id, result: [{ id: "drums", name: "Drum Agent", description: "Generates drum patterns" }, { id: "melody", name: "Melody Agent", description: "Generates melodies" }] }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path && msg.path.startsWith("/taste/")) {
+            window.postMessage({ id, result: { status: "ok", nodes: [{ id: "n1", kind: "liked_idea", label: "Breakbeat kick pattern", tags: ["drums", "breakbeat"], featureVector: [], createdAt: Date.now() }, { id: "n2", kind: "rejected_idea", label: "Too much reverb", tags: ["mix", "reverb"], featureVector: [], createdAt: Date.now() }, { id: "n3", kind: "liked_idea", label: "Acid bassline", tags: ["bass", "acid"], featureVector: [], createdAt: Date.now() }], edges: [{ id: "e1", sourceId: "n1", targetId: "n3", kind: "co_occurrence", weight: 0.85 }] } }, "*");
+          } else if (msg.type === "mixhiveHealth") {
+            window.postMessage({ id, result: false }, "*");
+          } else if (msg.type === "subscribeProjectEvents" || msg.type === "unsubscribeProjectEvents") {
+            window.postMessage({ id, result: undefined }, "*");
+          } else {
+            window.postMessage({ id, result: null }, "*");
+          }
+        }, 50);
+      },
+      getState: () => ({}),
+      setState: () => {},
+    };
+    window.__INITIAL_STATE__ = {
+      project: {
+        id: "demo",
+        name: "Demo Track",
+        rootUri: "file:///demo",
+        bpm: 128,
+        timeSignature: [4, 4],
+        activeBranchId: "main",
+        branches: {
+          main: { id: "main", parentId: null, name: "main", createdAt: Date.now(), headCommit: "", status: "draft", affectedClipIds: ["c1"] },
+          v2: { id: "v2", parentId: "main", name: "v2-breakdown", createdAt: Date.now(), headCommit: "", status: "draft", affectedClipIds: ["c1", "c2"] },
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    };
+    history.pushState({}, "", "/agent");
+    setTimeout(() => {
+      window.postMessage({ type: "loadProject", project: window.__INITIAL_STATE__.project }, "*");
+    }, 100);
+  </script>
+  <script type="module" crossorigin src="./assets/index.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index.css">
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

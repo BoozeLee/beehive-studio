@@ -1,12 +1,17 @@
+import { useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useProjectStore } from "../stores/projectStore";
 import { useTransportStore } from "../stores/transportStore";
 import * as api from "../lib/api";
+import { PublishDialog } from "./desktop/PublishDialog/PublishDialog";
+import { ExploreDialog } from "./desktop/ExploreDialog/ExploreDialog";
 
 export function Dashboard() {
-  const { gatewayHealth, orchestratorHealth, agents, sessions, setRoute, addNotification } = useAppStore();
+  const { gatewayHealth, orchestratorHealth, agents, sessions, setRoute, addNotification, setExportDialogOpen } = useAppStore();
   const { project, buildJobs } = useProjectStore();
   const { toggle } = useTransportStore();
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [exploreOpen, setExploreOpen] = useState(false);
 
   async function handleAskAgent() {
     if (!project) {
@@ -69,6 +74,9 @@ export function Dashboard() {
           <button onClick={toggle}>▶ Toggle Transport</button>
           <button onClick={handleAskAgent}>🤖 Ask Agent</button>
           <button onClick={() => setRoute("/taste")}>🍯 Open Taste Graph</button>
+          <button onClick={() => setExportDialogOpen(true)}>💾 Export Audio</button>
+          <button onClick={() => setPublishOpen(true)}>🌐 Publish to MixHive</button>
+          <button onClick={() => setExploreOpen(true)}>🔎 Explore MixHive</button>
         </Card>
 
         <Card title="Recent Sessions">
@@ -100,6 +108,14 @@ export function Dashboard() {
           ))}
         </Card>
       </div>
+
+      <PublishDialog
+        isOpen={publishOpen}
+        onClose={() => setPublishOpen(false)}
+        defaultTitle={project?.name}
+        defaultBpm={project?.bpm}
+      />
+      <ExploreDialog isOpen={exploreOpen} onClose={() => setExploreOpen(false)} />
     </div>
   );
 }

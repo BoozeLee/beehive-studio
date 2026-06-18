@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beehive Studio Demo</title>
+  <style>
+    :root {
+      --vscode-editor-background: #0f0f12;
+      --vscode-background: #0f0f12;
+      --vscode-panel-background: #18181c;
+      --vscode-panel-border: #2a2a30;
+      --vscode-foreground: #e0e0e0;
+      --vscode-descriptionForeground: #888;
+      --vscode-button-background: #ff8c42;
+      --vscode-button-foreground: #000;
+      --vscode-list-activeSelectionBackground: #2a2a30;
+      --vscode-list-activeSelectionForeground: #e0e0e0;
+    }
+  </style>
+  <script>
+    window.vscode = {
+      postMessage: (msg) => {
+        const id = msg.id;
+        setTimeout(() => {
+          if (msg.type === "gatewayRequest" && msg.path === "/health") {
+            window.postMessage({ id, result: { status: "ok", version: "0.5.0", providers: [{ provider: "beehive-local", ready: true, local: true, detail: "ready" }], hive999: { status: "ok", service: "ollama", model: "openchat:7b", model_ready: true, detail: "ready" } } }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path === "/health") {
+            window.postMessage({ id, result: { status: "ok", service: "orchestrator", version: "0.5.0", ollama_available: true, lupa_available: false } }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path === "/agents") {
+            window.postMessage({ id, result: [{ id: "drums", name: "Drum Agent", description: "Generates drum patterns" }, { id: "melody", name: "Melody Agent", description: "Generates melodies" }] }, "*");
+          } else if (msg.type === "mixhiveHealth") {
+            window.postMessage({ id, result: false }, "*");
+          } else {
+            window.postMessage({ id, result: null }, "*");
+          }
+        }, 50);
+      },
+      getState: () => ({}),
+      setState: () => {},
+    };
+    window.__INITIAL_STATE__ = {
+      project: {
+        id: "demo",
+        name: "Demo Track",
+        rootUri: "file:///demo",
+        bpm: 128,
+        timeSignature: [4, 4],
+        activeBranchId: "main",
+        branches: {
+          main: { id: "main", parentId: null, name: "main", createdAt: Date.now(), headCommit: "", status: "draft", affectedClipIds: ["c1"] },
+          v2: { id: "v2", parentId: "main", name: "v2-breakdown", createdAt: Date.now(), headCommit: "", status: "draft", affectedClipIds: ["c1", "c2"] },
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    };
+    setTimeout(() => {
+      window.postMessage({ type: "loadProject", project: window.__INITIAL_STATE__.project }, "*");
+    }, 100);
+  </script>
+  <script type="module" crossorigin="" src="./assets/index.js"></script>
+  <link rel="stylesheet" crossorigin="" href="./assets/index.css">
+</head>
+<body>
+  <div id="root"><div style="display: flex; flex-direction: column; width: 100%; height: 100%; background-color: var(--vscode-background); color: var(--vscode-foreground);"><header style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0px 12px; background-color: var(--vscode-panel-background); border-bottom: 1px solid var(--vscode-panel-border);"><strong>🐝 Beehive Studio</strong><span style="color: var(--vscode-foreground); opacity: 0.7;">Demo Track</span><span style="flex: 1 1 0%;"></span><span title="Gateway status" style="color: rgb(74, 222, 128); font-size: 12px;">● Gateway</span><span title="Orchestrator status" style="color: rgb(74, 222, 128); font-size: 12px;">● Orchestrator</span><span style="font-size: 12px; opacity: 0.7;">0 clips</span><button style="padding: 4px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; cursor: pointer;">▶ 140 BPM</button><button style="padding: 4px 10px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; cursor: pointer;">🔨 Build</button></header><div style="display: flex; flex: 1 1 0%; overflow: hidden;"><nav style="width: 56px; display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 4px; background-color: var(--vscode-panel-background); border-right: 1px solid var(--vscode-panel-border);"><button title="Dashboard" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); cursor: pointer;"><span style="font-size: 18px;">🏠</span></button><button title="Agent" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">🤖</span></button><button title="Timeline" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">🎼</span></button><button title="Pattern" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">🎹</span></button><button title="Mixer" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">🎛️</span></button><button title="Session" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">🥁</span></button><button title="Taste" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">🍯</span></button><button title="Branches" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">⎇</span></button><button title="Settings" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; border-radius: 4px; background-color: transparent; color: var(--vscode-foreground); cursor: pointer;"><span style="font-size: 18px;">⚙️</span></button></nav><main style="flex: 1 1 0%; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--vscode-panel-border);"><div style="padding: 24px; overflow: auto; height: 100%;"><h1 style="margin-top: 0px;">Dashboard</h1><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;"><div style="padding: 16px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background-color: var(--vscode-panel-background); display: flex; flex-direction: column; gap: 8px;"><h3 style="margin: 0px; font-size: 14px;">Backend Health</h3><div style="display: flex; align-items: center; gap: 8px; font-size: 12px;"><span style="color: rgb(74, 222, 128);">●</span><span>Gateway</span></div><div style="display: flex; align-items: center; gap: 8px; font-size: 12px;"><span style="color: rgb(74, 222, 128);">●</span><span>Orchestrator</span></div><div style="display: flex; align-items: center; gap: 8px; font-size: 12px;"><span style="color: rgb(74, 222, 128);">●</span><span>Ollama</span></div></div><div style="padding: 16px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background-color: var(--vscode-panel-background); display: flex; flex-direction: column; gap: 8px;"><h3 style="margin: 0px; font-size: 14px;">Project</h3><div>Demo Track</div><div style="font-size: 12px; opacity: 0.7;">BPM: 128</div><div style="font-size: 12px; opacity: 0.7;">Branches: 2</div></div><div style="padding: 16px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background-color: var(--vscode-panel-background); display: flex; flex-direction: column; gap: 8px;"><h3 style="margin: 0px; font-size: 14px;">Quick Actions</h3><button>▶ Toggle Transport</button><button>🤖 Ask Agent</button><button>🍯 Open Taste Graph</button><button>🌐 Publish to MixHive</button><button>🔎 Explore MixHive</button></div><div style="padding: 16px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background-color: var(--vscode-panel-background); display: flex; flex-direction: column; gap: 8px;"><h3 style="margin: 0px; font-size: 14px;">Recent Sessions</h3><div style="opacity: 0.7;">No sessions yet</div></div><div style="padding: 16px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background-color: var(--vscode-panel-background); display: flex; flex-direction: column; gap: 8px;"><h3 style="margin: 0px; font-size: 14px;">Build Jobs</h3><div style="opacity: 0.7;">No builds yet</div></div><div style="padding: 16px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background-color: var(--vscode-panel-background); display: flex; flex-direction: column; gap: 8px;"><h3 style="margin: 0px; font-size: 14px;">Agents</h3><div style="display: flex; justify-content: space-between; font-size: 12px;"><span>Drum Agent</span><button style="padding: 2px 6px; font-size: 11px;">Run</button></div><div style="display: flex; justify-content: space-between; font-size: 12px;"><span>Melody Agent</span><button style="padding: 2px 6px; font-size: 11px;">Run</button></div></div></div></div></main></div><div style="height: 160px; border-top: 1px solid var(--vscode-panel-border); background-color: var(--vscode-panel-background); flex-shrink: 0;"><div style="display: flex; flex-direction: column; height: 100%; overflow: hidden;"><div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; background: var(--jb-toolbar-bg); border-bottom: 1px solid var(--jb-border); flex-shrink: 0; gap: 8px;"><span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--jb-text-muted);">Build Console</span><div style="display: flex; align-items: center; gap: 6px;"><button class="jetbee-toolbtn" data-active="true" style="font-size: 10px; padding: 2px 8px; text-transform: capitalize;">all (0)</button><button class="jetbee-toolbtn" data-active="false" style="font-size: 10px; padding: 2px 8px; text-transform: capitalize;">info (0)</button><button class="jetbee-toolbtn" data-active="false" style="font-size: 10px; padding: 2px 8px; text-transform: capitalize;">success (0)</button><button class="jetbee-toolbtn" data-active="false" style="font-size: 10px; padding: 2px 8px; text-transform: capitalize;">warn (0)</button><button class="jetbee-toolbtn" data-active="false" style="font-size: 10px; padding: 2px 8px; text-transform: capitalize;">error (0)</button><button class="jetbee-toolbtn" title="Clear console" style="font-size: 10px; padding: 2px 8px;">Clear</button><button class="jetbee-toolbtn" data-active="true" title="Auto-scroll" style="font-size: 10px; padding: 2px 8px;">Auto</button></div></div><div class="jetbee-console" style="flex: 1 1 0%; overflow: auto;"><div style="color: var(--jb-text-faint); font-style: italic; padding-top: 20px; text-align: center;">No build output yet. Press Ctrl+Shift+G to generate.</div></div></div></div><div style="position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 1000;"><div style="padding: 8px 12px; border-radius: 4px; background-color: rgb(22, 163, 74); color: rgb(255, 255, 255); box-shadow: rgba(0, 0, 0, 0.3) 0px 2px 8px; cursor: pointer; max-width: 320px;">Project Demo Track loaded</div></div></div></div>
+
+
+</body></html>

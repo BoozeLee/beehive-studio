@@ -40,7 +40,7 @@ import {
 } from "./lib/automationEngine";
 import { BranchSelector } from "./components/BranchSelector";
 import { ProjectPanel } from "./components/ProjectPanel";
-import { saveSnapshot, ensureProjectInit, forkSession, readClips } from "./lib/projectGit";
+import { saveSnapshot, ensureProjectInit, forkSession, readClips, tagCommit } from "./lib/projectGit";
 import {
   assignClipIdsToTracks,
   findTrackIdForClip,
@@ -68,6 +68,7 @@ import { ResizableWorkbench } from "./components/Layout/ResizableWorkbench";
 import { TabbedEditor } from "./components/Layout/TabbedEditor";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { PromptEditor } from "./components/PromptEditor/PromptEditor";
+import { LuaEditor } from "./components/LuaEditor/LuaEditor";
 import { WaveformViewer } from "./components/WaveformViewer/WaveformViewer";
 import { BuildConsole } from "./components/BuildConsole/BuildConsole";
 import type { BuildLogEntry } from "./components/BuildConsole/BuildConsole";
@@ -81,6 +82,7 @@ import { ProposalPanel } from "./components/ProposalPanel/ProposalPanel";
 import { BuildPlanReview } from "./components/BuildPlanReview/BuildPlanReview";
 import { useJetBeeBuild } from "./lib/useJetBeeBuild";
 import type { BuildEvent, PatchOperation } from "../../../packages/core-models/index";
+import { PluginMarketplace } from "./components/PluginMarketplace/PluginMarketplace";
 
 // JetBee theme
 import "./styles/jetbee-theme.css";
@@ -231,6 +233,7 @@ function JetBeeApp() {
   // ── WebSocket connection to JetBee backend ──
   const { connected: wsConnected, reconnecting: wsReconnecting, lastMessage } = useProjectSocket(projectName);
   const [activeCenterTab, setActiveCenterTab] = useState("prompt");
+  const [lastIntent, setLastIntent] = useState("");
 
   // ── Original callbacks (preserved exactly) ──
   const restoreProjectDocument = useCallback(
@@ -613,6 +616,7 @@ function JetBeeApp() {
     setStatus(variationBrief ? "Planning variation build..." : "Planning build...");
 
     try {
+      setLastIntent(text.trim());
       const state = useTimelineStore.getState();
       const artifacts = [
         ...state.tracks.map((track) => ({
@@ -817,8 +821,9 @@ function JetBeeApp() {
       const hash = await saveSnapshot(
         projectName,
         projectDocumentJson,
-        `Save: ${projectName}`,
+        lastIntent ? `AI Generation: ${lastIntent}` : `Save: ${projectName}`,
       );
+      setLastIntent(""); // Clear after save
       const projects = await listProjects();
       setSavedProjects(projects);
       const tag =
@@ -1296,6 +1301,12 @@ function JetBeeApp() {
           ),
         },
         {
+          id: "marketplace",
+          label: "Plugins",
+          icon: "🔌",
+          content: <PluginMarketplace />,
+        },
+        {
           id: "agents",
           label: "Agents",
           icon: "🐝",
@@ -1402,7 +1413,23 @@ function JetBeeApp() {
               onChange={setBrief}
               onGenerate={() => sendBrief()}
               onSendToCritic={() => {}}
+              onTag={async (tagName) => {
+                try {
+                  await tagCommit(projectName, tagName, `State tag from prompt: ${brief.slice(0, 30)}...`);
+                  setStatus(`Tagged state: ${tagName}`);
+                } catch (e) {
+                  setStatus(`Tag failed: ${e}`);
+                }
+              }}
             />
+          ),
+        },
+        {
+          id: "scripts",
+          label: "Scripts",
+          icon: "📜",
+          content: (
+            <LuaEditor sessionId={projectName} />
           ),
         },
         {

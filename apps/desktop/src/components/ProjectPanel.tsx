@@ -21,6 +21,7 @@ import {
   type BranchMeta,
 } from "../lib/projectGit";
 import { BranchDiffView } from "./BranchDiffView";
+import { GitGraph } from "./GitGraph";
 
 const COLORS = {
   bg: "#0f0f12",
@@ -488,56 +489,38 @@ export function ProjectPanel({ projectName, visible, onClose, onBranchSwitch }: 
               </div>
             )}
 
-            {commits.map((c) => (
-              <div
-                key={c.hash}
-                style={{
-                  padding: "6px 8px",
-                  borderRadius: 4,
-                  marginBottom: 2,
-                  cursor: "pointer",
-                  background: selectedCommit === c.hash ? "#2a2a30" : "transparent",
-                }}
-                onClick={() => handleShowDiff(c.hash)}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: COLORS.text }}>
-                    {c.message.split("\n")[0]}
-                  </span>
-                  <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: "monospace" }}>
-                    {c.short_hash}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 8, fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
-                  <span>{c.author}</span>
-                  <span>{new Date(c.timestamp * 1000).toLocaleDateString()}</span>
-                </div>
-                {selectedCommit === c.hash && (
-                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleRevert(c.hash); }}
-                      style={{
-                        padding: "2px 8px", fontSize: 10,
-                        background: COLORS.error, color: "#fff",
-                        border: "none", borderRadius: 3, cursor: "pointer",
-                      }}
-                    >
-                      Revert
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleForkFromCommit(c.hash); }}
-                      style={{
-                        padding: "2px 8px", fontSize: 10,
-                        background: COLORS.accent, color: "#000",
-                        border: "none", borderRadius: 3, cursor: "pointer",
-                      }}
-                    >
-                      Fork
-                    </button>
-                  </div>
-                )}
+            <GitGraph
+              commits={commits}
+              selectedHash={selectedCommit}
+              onCommitClick={(hash) => handleShowDiff(hash)}
+            />
+
+            {selectedCommit && (
+              <div style={{ display: "flex", gap: 4, marginTop: 8, padding: "0 8px" }}>
+                <button
+                  onClick={() => handleRevert(selectedCommit)}
+                  style={{
+                    padding: "4px 10px", fontSize: 11,
+                    background: COLORS.error, color: "#fff",
+                    border: "none", borderRadius: 4, cursor: "pointer",
+                    fontWeight: 600
+                  }}
+                >
+                  Revert to this state
+                </button>
+                <button
+                  onClick={() => handleForkFromCommit(selectedCommit)}
+                  style={{
+                    padding: "4px 10px", fontSize: 11,
+                    background: COLORS.accent, color: "#000",
+                    border: "none", borderRadius: 4, cursor: "pointer",
+                    fontWeight: 600
+                  }}
+                >
+                  Fork from here
+                </button>
               </div>
-            ))}
+            )}
 
             {commits.length === 0 && (
               <div style={{ fontSize: 12, color: COLORS.textMuted, textAlign: "center", padding: 20 }}>

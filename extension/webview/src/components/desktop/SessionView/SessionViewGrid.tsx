@@ -16,17 +16,25 @@ interface Note {
   duration: number;
 }
 
-interface Clip {
+interface SessionClip {
   id: string;
   name: string;
+  type: string;
+  trackId: string;
   color?: string;
   midiData?: { notes: Note[] };
   reasoning?: string[];
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
+  metadata?: {
+    agentId?: string;
+    reasoningTrace?: string;
+    qa?: { pass?: boolean; score?: number; warnings?: string[] };
+    tags?: string[];
+  };
 }
 
 interface Props {
-  clips: Clip[];
+  clips: SessionClip[];
   projectId?: string;
   onPlayClip?: (clipId: string) => void;
   onAccept?: (clipId: string) => void;
@@ -125,8 +133,10 @@ export function SessionViewGrid({
           ? Math.max(...notes.map((n) => n.start + n.duration))
           : 0;
         const density = noteDensityBars(notes, Math.max(duration, 4), 20);
-        const qaScore = clip.qa?.score;
-        const qaWarnings = clip.qa?.warnings ?? [];
+        const qa = clip.qa ?? clip.metadata?.qa;
+        const reasoning = clip.reasoning ?? (clip.metadata?.reasoningTrace ? clip.metadata.reasoningTrace.split("\n") : []);
+        const qaScore = qa?.score;
+        const qaWarnings = qa?.warnings ?? [];
 
         return (
           <div
@@ -240,7 +250,7 @@ export function SessionViewGrid({
             )}
 
             {/* Reasoning */}
-            {clip.reasoning && clip.reasoning.length > 0 && (
+            {reasoning.length > 0 && (
               <div
                 style={{
                   fontSize: 10,
@@ -250,7 +260,7 @@ export function SessionViewGrid({
                   overflow: "auto",
                 }}
               >
-                {clip.reasoning.slice(0, 2).map((r, i) => (
+                {reasoning.slice(0, 2).map((r, i) => (
                   <div key={i} style={{ marginBottom: 2 }}>• {r}</div>
                 ))}
               </div>

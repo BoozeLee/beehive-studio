@@ -8,6 +8,9 @@ import type {
   BuildRequest,
   GatewayHealth,
   OrchestratorHealth,
+  RenderJob,
+  RenderRequest,
+  RenderPreset,
   TasteFeedbackPayload,
   TasteQueryResult,
   TasteNode,
@@ -147,6 +150,38 @@ export class OrchestratorClient extends HttpClient {
 
   async getTasteGraph(projectId: string): Promise<{ nodes: TasteNode[]; edges: TasteEdge[] }> {
     return this.get<{ status: string; nodes: TasteNode[]; edges: TasteEdge[] }>(`/taste/${encodeURIComponent(projectId)}`);
+  }
+
+  async createRenderJob(
+    clips: Record<string, unknown>[],
+    tracks: Record<string, unknown>[],
+    bpm: number,
+    preset: RenderPreset,
+    outputMode: "master" | "master_and_stems"
+  ): Promise<RenderJob> {
+    return this.post<RenderJob>("/render/jobs", {
+      clips,
+      tracks,
+      bpm,
+      preset,
+      output_mode: outputMode,
+    });
+  }
+
+  async getRenderJob(jobId: string): Promise<RenderJob> {
+    return this.get<RenderJob>(`/render/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  async cancelRenderJob(jobId: string): Promise<RenderJob> {
+    return this.delete<RenderJob>(`/render/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  async downloadRenderFile(jobId: string, file: "master" | `stem_${number}`): Promise<Buffer> {
+    const response = await this.client.get<ArrayBuffer>(
+      `/render/jobs/${encodeURIComponent(jobId)}/download?file=${encodeURIComponent(file)}`,
+      { responseType: "arraybuffer" }
+    );
+    return Buffer.from(response.data);
   }
 }
 

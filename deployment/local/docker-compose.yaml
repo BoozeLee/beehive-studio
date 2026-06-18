@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      - AGENT_ORCHESTRATOR_URL=http://orchestrator:9876
+      - RUNNING_IN_DOCKER=1
+    depends_on:
+      - orchestrator
+
+  orchestrator:
+    build:
+      context: ../../
+      dockerfile: services/agent-orchestrator/Containerfile
+    ports:
+      - "9876:9876"
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - RUNNING_IN_DOCKER=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

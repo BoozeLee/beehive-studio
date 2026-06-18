@@ -170,6 +170,28 @@ export interface TasteQueryResult {
   summary: string;
 }
 
+export type RenderPreset = "draft" | "club" | "festival";
+
+export interface RenderRequest {
+  clips: Record<string, unknown>[];
+  tracks: Record<string, unknown>[];
+  bpm: number;
+  format: string;
+  preset: RenderPreset;
+  output_mode: "master" | "master_and_stems";
+}
+
+export interface RenderJob {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  progress: number;
+  stage: string;
+  engine: "python";
+  master_path?: string;
+  stem_paths?: string[];
+  error?: string;
+}
+
 export interface BuildEvent {
   type: string;
   projectId: string;

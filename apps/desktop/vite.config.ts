@@ -10,13 +10,12 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // Keep Tone.js separate (large, stable audio library) and let Rollup
+        // handle the rest automatically to avoid circular chunk errors that
+        // caused the app to render as a blank/black window.
         manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-          if (id.includes("/react/") || id.includes("/react-dom/")) return "react-vendor";
-          if (id.includes("/tone/")) return "audio-vendor";
-          if (id.includes("/@tauri-apps/")) return "tauri-vendor";
-          if (id.includes("/zustand/")) return "state-vendor";
-          return "vendor";
+          if (id.includes("node_modules/tone/")) return "audio-vendor";
+          return undefined;
         },
       },
     },

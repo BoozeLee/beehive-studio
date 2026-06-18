@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   checkPublishHealth,
-  publishTrack,
   signIn,
   signOut,
   getCurrentEmail,
   type PublishMetadata,
   type TrackInfo,
 } from "../../lib/publishBridge";
+import { publishTrack } from "../../api/mixhiveBridge";
 import { BEEHIVE, buttonStyle } from "../../lib/theme";
 
 interface PublishDialogProps {
@@ -111,8 +111,18 @@ export function PublishDialog({
     try {
       setPublishing(true);
       setError("");
-      const meta: PublishMetadata = {
+
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const buffer = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < buffer.byteLength; i++) {
+        binary += String.fromCharCode(buffer[i]);
+      }
+      const base64Audio = window.btoa(binary);
+
+      const result = await publishTrack({
         title: title.trim(),
+        artist: signedInAs ?? "Anonymous",
         bpm,
         key: key || undefined,
         genre: genre || undefined,
@@ -121,18 +131,32 @@ export function PublishDialog({
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean),
+        audioData: base64Audio,
+      });
+      
+      setPublishedTrack({
+        id: result.track_id,
+        title: title.trim(),
+        artistName: signedInAs ?? "Anonymous",
+        artistHandle: signedInAs?.split("@")[0] ?? "anon",
+        bpm,
+        key: key ?? "",
+        genre: genre ?? "",
+        description: description.trim(),
+        tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         isPublic: true,
-        durationSecs,
-      };
-      const result = await publishTrack(meta, audioBlob);
-      setPublishedTrack(result);
+        durationSecs: durationSecs ?? 0,
+        audioUrl: result.url,
+        alsUrl: "",
+        createdAt: new Date().toISOString(),
+      });
       setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setPublishing(false);
     }
-  }, [title, bpm, key, genre, description, tags, audioBlob, durationSecs]);
+  }, [title, bpm, key, genre, description, tags, audioBlob, durationSecs, signedInAs]);
 
   if (!isOpen) return null;
 

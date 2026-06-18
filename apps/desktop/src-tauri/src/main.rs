@@ -384,6 +384,8 @@ fn main() {
             git_commands::git_rename_branch,
             git_commands::git_branch_notes,
             git_commands::git_log_for_branch,
+            git_commands::git_hash_object,
+            git_commands::git_tag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

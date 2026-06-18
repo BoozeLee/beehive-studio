@@ -21,14 +21,19 @@ from collections import OrderedDict
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from api.inference import inference_client
 from api.mcp_client import fleet_client
+from agents.router import AgentRouter
 from taste_graph import TasteGraph
 
 APP_VERSION = "0.4.0-beta"
 _OLLAMA_AVAILABLE_CACHE: bool | None = None
+
+# Initialize OMNINOVATOR Agent Router
+agent_router = AgentRouter()
 
 # MIDI note frequency cache for batch processing optimization
 _midi_frequency_cache: dict[int, float] = {}
@@ -225,10 +230,6 @@ class RenderWorkerWatchdog:
         self.is_running = False
         if self.check_task:
             self.check_task.cancel()
-            try:
-                asyncio.get_event_loop().run_until_complete(self.check_task)
-            except asyncio.CancelledError:
-                pass
     
     def register_job(self, job_id: str) -> None:
         """Register a new render job"""
@@ -386,7 +387,8 @@ class BriefRequest(BaseModel):
 
 
 class LuaRunRequest(BaseModel):
-    script: str
+    script: str | None = None
+    prompt: str | None = None
     session_id: str = "default"
     extra_globals: dict[str, Any] | None = None
 
@@ -414,6 +416,15 @@ async def inference_health():
 @app.get("/agents/tools")
 async def list_agent_tools():
     return await fleet_client.list_all_tools()
+
+
+@app.get("/agents/health")
+async def agents_health():
+    """Return MCP agent fleet connection health."""
+    return {
+        "status": "ok",
+        "agents": await fleet_client.health(),
+    }
 
 
 @app.post("/agents/{agent}/tools/{tool}")
@@ -482,17 +493,66 @@ async def submit_brief(req: BriefRequest):
     }
 
 
+@app.post("/agents/rhythm_groove")
+async def agent_rhythm_groove(req: BriefRequest):
+    """Run the Rhythm & Groove agent via the canonical /agents/{id} convention."""
+    return await submit_brief(req)
+
+
 @app.post("/lua/run")
 async def run_lua_script(req: LuaRunRequest):
     """
     Execute a Lua script in a sandboxed runtime.
-    Each session_id gets its own isolated Lua state.
+    If no script is provided but a prompt is present, it uses the AgentRouter 
+    to generate the script first.
     """
     from lua import get_lua_manager
 
+    script_to_run = req.script
+
+    # Neural Routing: If no script, generate one via AgentRouter
+    if not script_to_run and req.prompt:
+        agent_id = await agent_router.async_route_intent(req.prompt, inference_client=inference_client)
+        config = agent_router.get_agent_config(agent_id)
+        if config and config["prompt"]:
+            # Perform inference using the selected agent prompt
+            # For MVP, we use the inference_client directly
+            try:
+                # Construct messages for Ollama/Inference
+                messages = [
+                    {"role": "system", "content": config["prompt"]},
+                    {"role": "user", "content": req.prompt}
+                ]
+                # We assume the inference_client has an 'invoke' or similar method
+                # Based on agents/drums.py it uses a 'fleet_client' or 'inference_client'
+                # Let's try to use inference_client.chat if it exists, otherwise mock for now
+                response = await inference_client.generate(
+                    model=config["config"].get("model", "llama3"),
+                    prompt=f"{config['prompt']}\n\nUser Request: {req.prompt}\n\nLua Code:",
+                    system=config["prompt"]
+                )
+                
+                # Extract Lua code from response (it might have markdown blocks)
+                import re
+                code_match = re.search(r"```lua\n(.*?)\n```", response, re.DOTALL)
+                if code_match:
+                    script_to_run = code_match.group(1)
+                else:
+                    # Fallback to whole response or some cleaning
+                    script_to_run = response.strip()
+                    if script_to_run.startswith("```"):
+                        script_to_run = script_to_run.split("```")[1]
+                        if script_to_run.startswith("lua"):
+                            script_to_run = script_to_run[3:].strip()
+            except Exception as e:
+                return {"status": "error", "error": f"Agent generation failed: {e}"}
+
+    if not script_to_run:
+        return {"status": "error", "error": "No script or prompt provided"}
+
     try:
         mgr = get_lua_manager(req.session_id)
-        result = mgr.execute(req.script, extra_globals=req.extra_globals)
+        result = mgr.execute(script_to_run, extra_globals=req.extra_globals)
 
         # Serialize result for JSON response
         def _serialize(obj: Any) -> Any:
@@ -1288,6 +1348,53 @@ async def cancel_render_job(job_id: str):
     return _render_jobs[job_id]
 
 
+@app.get("/render/jobs/{job_id}/download")
+async def download_render_file(job_id: str, file: str = "master"):
+    """Download a rendered output file for a completed job.
+
+    Query parameter `file` accepts:
+      - "master" -> master.wav
+      - "stem_{index}" -> the stem at that index (0-based)
+    """
+    if job_id not in _render_jobs:
+        raise HTTPException(status_code=404, detail="Render job not found")
+
+    job = _render_jobs[job_id]
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Render job is not completed yet")
+
+    result = job.get("result") or {}
+    master_path = result.get("master_path")
+    stem_paths = result.get("stem_paths", [])
+
+    if not master_path or not os.path.isfile(master_path):
+        raise HTTPException(status_code=404, detail="Master output not found")
+
+    # Resolve and validate the requested file path.
+    output_dir = os.path.dirname(master_path)
+    if file == "master":
+        target_path = master_path
+    elif file.startswith("stem_"):
+        try:
+            index = int(file[len("stem_"):])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid stem index") from exc
+        if index < 0 or index >= len(stem_paths):
+            raise HTTPException(status_code=404, detail="Stem index out of range")
+        target_path = stem_paths[index]
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file parameter")
+
+    real_path = os.path.realpath(target_path)
+    real_output_dir = os.path.realpath(output_dir)
+    if not real_path.startswith(real_output_dir + os.sep) and real_path != real_output_dir:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not os.path.isfile(real_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(real_path, media_type="audio/wav", filename=os.path.basename(real_path))
+
+
 @app.get("/render/cache")
 async def get_render_cache_info():
     """Get information about the render job cache"""
@@ -1497,11 +1604,14 @@ async def startup_event():
     # Connect MCP agent fleet
     try:
         import os
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        agent_dir = os.path.join(project_root, "mcp-agents", "rhythm-groove")
+        env = {**os.environ, "PYTHONPATH": os.path.join(agent_dir, "src")}
         await fleet_client.connect_agent(
             "rhythm-groove",
             "uv",
-            ["run", "--directory", os.path.join(project_root, "..", "mcp-agents", "rhythm-groove"), "python", "-m", "rhythm_groove.server"],
+            ["run", "--directory", agent_dir, "python", "-m", "rhythm_groove.server"],
+            env=env,
         )
         print("MCP agent fleet connected")
     except Exception as e:

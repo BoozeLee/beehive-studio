@@ -77,6 +77,22 @@ jobs:
         run: cargo clippy
         working-directory: crates/beehive-studio-vst
 
+      - name: Check MixHive Bridge formatting
+        run: cargo fmt --check
+        working-directory: mixhive_bridge
+
+      - name: Lint MixHive Bridge (clippy)
+        run: cargo clippy
+        working-directory: mixhive_bridge
+
+      - name: Check Plugin Marketplace formatting
+        run: cargo fmt --check
+        working-directory: plugin_marketplace
+
+      - name: Lint Plugin Marketplace (clippy)
+        run: cargo clippy
+        working-directory: plugin_marketplace
+
       - name: Lint Python (ruff)
         run: uv run ruff check .
         working-directory: services/agent-orchestrator
@@ -143,6 +159,14 @@ jobs:
         run: cargo test
         working-directory: apps/desktop/src-tauri
 
+      - name: Run MixHive Bridge tests
+        run: cargo test
+        working-directory: mixhive_bridge
+
+      - name: Run Plugin Marketplace tests
+        run: cargo test
+        working-directory: plugin_marketplace
+
   build-check:
     name: Build Check
     runs-on: ubuntu-24.04
@@ -189,6 +213,14 @@ jobs:
       - name: Check VST plugin compiles
         run: cargo check
         working-directory: crates/beehive-studio-vst
+
+      - name: Check MixHive Bridge compiles
+        run: cargo check
+        working-directory: mixhive_bridge
+
+      - name: Check Plugin Marketplace compiles
+        run: cargo check
+        working-directory: plugin_marketplace
 
       - name: Build TypeScript
         run: pnpm build

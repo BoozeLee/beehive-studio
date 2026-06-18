@@ -209,24 +209,44 @@ export function activate(context: vscode.ExtensionContext) {
   const exportAudio = vscode.commands.registerCommand(
     "beehive.exportAudio",
     async () => {
-      const uri = await vscode.window.showSaveDialog({
-        filters: { Audio: ["wav", "mp3"] },
-      });
-      if (uri) {
-        vscode.window.showInformationMessage(`Export to ${uri.fsPath}`);
-      }
+      StudioPanel.createOrShow(context.extensionUri, backend);
+      StudioPanel.postMessage({ type: "triggerExportAudio" });
     }
   );
   context.subscriptions.push(exportAudio);
 
-  // ── Toggle Transport ──
-  const toggleTransport = vscode.commands.registerCommand(
-    "beehive.toggleTransport",
-    () => {
-      vscode.window.showInformationMessage("Toggle Transport");
-    }
+  // ── Transport Controls ──
+  const postTransportAction = (action: string) => {
+    StudioPanel.createOrShow(context.extensionUri, backend);
+    StudioPanel.postMessage({ type: "transport", action });
+  };
+
+  const toggleTransport = vscode.commands.registerCommand("beehive.toggleTransport", () =>
+    postTransportAction("toggle")
   );
-  context.subscriptions.push(toggleTransport);
+  const transportStop = vscode.commands.registerCommand("beehive.transportStop", () =>
+    postTransportAction("stop")
+  );
+  const transportRecord = vscode.commands.registerCommand("beehive.transportRecord", () =>
+    postTransportAction("record")
+  );
+  const transportLoop = vscode.commands.registerCommand("beehive.transportLoop", () =>
+    postTransportAction("loop")
+  );
+  const transportMetronome = vscode.commands.registerCommand("beehive.transportMetronome", () =>
+    postTransportAction("metronome")
+  );
+  const transportSeekToStart = vscode.commands.registerCommand("beehive.transportSeekToStart", () =>
+    postTransportAction("seekToStart")
+  );
+  context.subscriptions.push(
+    toggleTransport,
+    transportStop,
+    transportRecord,
+    transportLoop,
+    transportMetronome,
+    transportSeekToStart
+  );
 
   // ── Tree Views ──
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -337,6 +357,11 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  // Auto-open studio when launched from a desktop shortcut
+  if (process.env.BEEHIVE_AUTO_OPEN === "1") {
+    StudioPanel.createOrShow(context.extensionUri, backend);
+  }
 
   console.log('[Beehive] Extension activated successfully');
 }

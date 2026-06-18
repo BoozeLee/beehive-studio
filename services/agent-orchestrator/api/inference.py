@@ -23,6 +23,39 @@ class InferenceClient:
                 return await self._ollama_chat(messages, stream)
             raise
 
+    async def generate(self, prompt: str, system: str = "", model: str = "llama3", stream: bool = False) -> str:
+        """Text generation with automatic fallback."""
+        try:
+            # vLLM doesn't have a direct /generate like Ollama, usually /completions or /chat/completions
+            # We'll use chat format for better results with instruct models
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            
+            res = await self.chat(messages, stream=stream)
+            if "choices" in res: # vLLM / OpenAI format
+                return res["choices"][0]["message"]["content"]
+            elif "message" in res: # Ollama chat format
+                return res["message"]["content"]
+            elif "response" in res: # Ollama generate format
+                return res["response"]
+            return str(res)
+        except Exception as e:
+            # Direct Ollama fallback if vLLM fails and we want to use Ollama's /api/generate
+            if FALLBACK == "ollama":
+                payload = {
+                    "model": os.getenv("BEEHIVE_MODEL", model),
+                    "prompt": prompt,
+                    "system": system,
+                    "stream": stream,
+                }
+                r = await self.ollama_http.post("/api/generate", json=payload)
+                r.raise_for_status()
+                res = r.json()
+                return res.get("response", "")
+            raise
+
     async def _vllm_chat(self, messages: list[dict], stream: bool) -> dict:
         payload = {
             "model": VLLM_MODEL,

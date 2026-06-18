@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beehive Studio Demo</title>
+  <style>
+    :root {
+      --vscode-editor-background: #0f0f12;
+      --vscode-background: #0f0f12;
+      --vscode-panel-background: #18181c;
+      --vscode-panel-border: #2a2a30;
+      --vscode-foreground: #e0e0e0;
+      --vscode-descriptionForeground: #888;
+      --vscode-button-background: #ff8c42;
+      --vscode-button-foreground: #000;
+      --vscode-list-activeSelectionBackground: #2a2a30;
+      --vscode-list-activeSelectionForeground: #e0e0e0;
+    }
+  </style>
+  <script>
+    window.vscode = {
+      postMessage: (msg) => {
+        const id = msg.id;
+        setTimeout(() => {
+          if (msg.type === "gatewayRequest" && msg.path === "/health") {
+            window.postMessage({ id, result: { status: "ok", version: "0.5.0", providers: [{ provider: "beehive-local", ready: true, local: true, detail: "ready" }], hive999: { status: "ok", service: "ollama", model: "openchat:7b", model_ready: true, detail: "ready" } } }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path === "/health") {
+            window.postMessage({ id, result: { status: "ok", service: "orchestrator", version: "0.5.0", ollama_available: true, lupa_available: false } }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path === "/agents") {
+            window.postMessage({ id, result: [{ id: "drums", name: "Drum Agent", description: "Generates drum patterns" }, { id: "melody", name: "Melody Agent", description: "Generates melodies" }] }, "*");
+          } else if (msg.type === "orchestratorRequest" && msg.path && msg.path.startsWith("/taste/")) {
+            window.postMessage({ id, result: { status: "ok", nodes: [{ id: "n1", kind: "liked_idea", label: "Breakbeat kick pattern", tags: ["drums", "breakbeat"], featureVector: [], createdAt: Date.now() }, { id: "n2", kind: "rejected_idea", label: "Too much reverb", tags: ["mix", "reverb"], featureVector: [], createdAt: Date.now() }, { id: "n3", kind: "liked_idea", label: "Acid bassline", tags: ["bass", "acid"], featureVector: [], createdAt: Date.now() }], edges: [{ id: "e1", sourceId: "n1", targetId: "n3", kind: "co_occurrence", weight: 0.85 }] } }, "*");
+          } else if (msg.type === "mixhiveHealth") {
+            window.postMessage({ id, result: false }, "*");
+          } else if (msg.type === "subscribeProjectEvents" || msg.type === "unsubscribeProjectEvents") {
+            window.postMessage({ id, result: undefined }, "*");
+          } else {
+            window.postMessage({ id, result: null }, "*");
+          }
+        }, 50);
+      },
+      getState: () => ({}),
+      setState: () => {},
+    };
+    window.__INITIAL_STATE__ = {
+      project: {
+        id: "demo",
+        name: "Demo Track",
+        rootUri: "file:///demo",
+        bpm: 128,
+        timeSignature: [4, 4],
+        activeBranchId: "main",
+        branches: {
+          main: { id: "main", parentId: null, name: "main", createdAt: Date.now(), headCommit: "", status: "draft", affectedClipIds: ["c1"] },
+          v2: { id: "v2", parentId: "main", name: "v2-breakdown", createdAt: Date.now(), headCommit: "", status: "draft", affectedClipIds: ["c1", "c2"] },
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      tracks: [
+        { id: "t1", name: "Lead Synth", type: "synth", color: "#a855f7", volume: 0.8, pan: -0.2, muted: false, solo: false, arm: false, clips: ["c1"], automationLanes: [], sends: { reverb: 0.3, delay: 0.1 }, effects: [{ id: "fx1", type: "filter", params: { frequency: 2500, Q: 1 }, bypass: false }], instrument: { type: "tonejs", preset: "synth", settings: {} } },
+        { id: "t2", name: "Acid Bass", type: "bass", color: "#3b82f6", volume: 0.8, pan: 0.2, muted: false, solo: false, arm: false, clips: ["c2"], automationLanes: [], sends: { reverb: 0 }, instrument: { type: "tonejs", preset: "synth", settings: {} } },
+        { id: "t3", name: "Drums", type: "drum", color: "#ef4444", volume: 0.8, pan: 0, muted: false, solo: false, arm: false, clips: ["c3", "c4"], automationLanes: [], sends: { reverb: 0.2, delay: 0.25 }, effects: [{ id: "fx2", type: "reverb", params: { decay: 1.2, wet: 0.15 }, bypass: false }] }
+      ],
+      clips: [
+        { id: "c1", name: "Lead Loop", type: "midi", trackId: "t1", start: 0, duration: 8, loop: true, midiData: { notes: [
+          { pitch: 72, velocity: 100, start: 0, duration: 0.25 },
+          { pitch: 72, velocity: 90, start: 1, duration: 0.25 },
+          { pitch: 74, velocity: 100, start: 2, duration: 0.25 },
+          { pitch: 76, velocity: 100, start: 3, duration: 0.25 },
+          { pitch: 72, velocity: 100, start: 4, duration: 0.25 },
+          { pitch: 69, velocity: 100, start: 5, duration: 0.25 },
+          { pitch: 71, velocity: 100, start: 6, duration: 0.25 },
+          { pitch: 72, velocity: 100, start: 7, duration: 0.25 }
+        ] }, createdAt: Date.now(), updatedAt: Date.now() },
+        { id: "c2", name: "Bassline", type: "midi", trackId: "t2", start: 0, duration: 8, loop: true, midiData: { notes: [
+          { pitch: 36, velocity: 120, start: 0, duration: 0.5 },
+          { pitch: 36, velocity: 110, start: 1, duration: 0.5 },
+          { pitch: 31, velocity: 120, start: 2, duration: 0.5 },
+          { pitch: 33, velocity: 120, start: 3, duration: 0.5 },
+          { pitch: 36, velocity: 120, start: 4, duration: 0.5 },
+          { pitch: 36, velocity: 110, start: 5.5, duration: 0.5 },
+          { pitch: 34, velocity: 120, start: 6, duration: 0.5 },
+          { pitch: 35, velocity: 120, start: 7, duration: 0.5 }
+        ] }, createdAt: Date.now(), updatedAt: Date.now() },
+        { id: "c3", name: "Breakbeat", type: "midi", trackId: "t3", start: 0, duration: 8, loop: true, midiData: { notes: [
+          { pitch: 36, velocity: 127, start: 0, duration: 0.1 },
+          { pitch: 36, velocity: 127, start: 1, duration: 0.1 },
+          { pitch: 36, velocity: 127, start: 2, duration: 0.1 },
+          { pitch: 36, velocity: 127, start: 3, duration: 0.1 },
+          { pitch: 42, velocity: 100, start: 0.5, duration: 0.1 },
+          { pitch: 42, velocity: 100, start: 1.5, duration: 0.1 },
+          { pitch: 42, velocity: 100, start: 2.5, duration: 0.1 },
+          { pitch: 42, velocity: 100, start: 3.5, duration: 0.1 },
+          { pitch: 38, velocity: 120, start: 1.5, duration: 0.1 },
+          { pitch: 38, velocity: 120, start: 3.5, duration: 0.1 },
+          { pitch: 49, velocity: 110, start: 0, duration: 0.5 },
+          { pitch: 49, velocity: 110, start: 2, duration: 0.5 }
+        ] }, createdAt: Date.now(), updatedAt: Date.now() },
+        { id: "c4", name: "Generated Hihat Pattern", type: "midi", trackId: "t3", start: 8, duration: 4, loop: false, midiData: { notes: [
+          { pitch: 42, velocity: 100, start: 0.25, duration: 0.1 },
+          { pitch: 42, velocity: 90, start: 0.75, duration: 0.1 },
+          { pitch: 42, velocity: 110, start: 1.25, duration: 0.1 },
+          { pitch: 42, velocity: 100, start: 1.75, duration: 0.1 },
+          { pitch: 46, velocity: 120, start: 2, duration: 0.2 },
+          { pitch: 42, velocity: 100, start: 2.25, duration: 0.1 },
+          { pitch: 42, velocity: 80, start: 2.75, duration: 0.1 },
+          { pitch: 42, velocity: 100, start: 3.25, duration: 0.1 }
+        ] }, metadata: { generative: true, agentId: "drums", promptText: "Generate a hihat pattern with an open hat fill", reasoningTrace: "User requested a hihat pattern with an open hat fill on beat 3.\nQuantized to 16th notes and boosted velocity on the open hat.", confidence: 0.88, tags: ["drums", "hihat", "pattern"], qa: { pass: true, score: 88, warnings: [] } }, createdAt: Date.now(), updatedAt: Date.now() }
+      ],
+      patterns: [
+        { id: "p1", name: "Demo Breakbeat", rows: [
+          { id: "kick", label: "Kick", color: "#ef4444", pitch: 36 },
+          { id: "snare", label: "Snare", color: "#fbbf24", pitch: 38 },
+          { id: "hihat-c", label: "HH Closed", color: "#60a5fa", pitch: 42 },
+          { id: "hihat-o", label: "HH Open", color: "#3b82f6", pitch: 46 }
+        ], steps: {
+          kick: [
+            { active: true, velocity: 127 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: true, velocity: 120 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: true, velocity: 127 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: true, velocity: 120 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }
+          ],
+          snare: [
+            { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: true, velocity: 110 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: true, velocity: 110 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }
+          ],
+          "hihat-c": [
+            { active: false, velocity: 0 }, { active: true, velocity: 90 }, { active: false, velocity: 0 }, { active: true, velocity: 80 },
+            { active: false, velocity: 0 }, { active: true, velocity: 90 }, { active: false, velocity: 0 }, { active: true, velocity: 80 },
+            { active: false, velocity: 0 }, { active: true, velocity: 90 }, { active: false, velocity: 0 }, { active: true, velocity: 80 },
+            { active: false, velocity: 0 }, { active: true, velocity: 90 }, { active: false, velocity: 0 }, { active: true, velocity: 80 }
+          ],
+          "hihat-o": [
+            { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: true, velocity: 110 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 },
+            { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }, { active: false, velocity: 0 }
+          ]
+        }, stepCount: 16, resolution: 0.25, swing: 12, agent: "drums", createdAt: Date.now(), updatedAt: Date.now() }
+      ],
+      selectedTrackId: "t1",
+    };
+    setTimeout(() => {
+      window.postMessage({ type: "loadProject", ...window.__INITIAL_STATE__ }, "*");
+    }, 100);
+  </script>
+  <script type="module" crossorigin src="./assets/index.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index.css">
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

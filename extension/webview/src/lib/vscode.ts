@@ -30,7 +30,16 @@ export type ExtensionRequest =
   | RevealFileInOSRequest
   | GetWorkspaceFolderRequest
   | ExecuteCommandRequest
-  | LogRequest;
+  | LogRequest
+  | ExportAudioRequest
+  | MixhiveHealthRequest
+  | MixhiveSignInRequest
+  | MixhiveSignOutRequest
+  | MixhiveGetCurrentEmailRequest
+  | MixhivePublishRequest
+  | MixhiveListTracksRequest
+  | MixhiveGetTrackRequest
+  | MixhiveGetTrackAudioRequest;
 
 export interface GatewayRequest extends BaseRequest {
   type: "gatewayRequest";
@@ -98,6 +107,57 @@ export interface LogRequest extends BaseRequest {
   type: "log";
   level: "log" | "warn" | "error";
   message: string;
+}
+
+export interface ExportAudioRequest extends BaseRequest {
+  type: "exportAudio";
+  projectId: string;
+  targetUri: string;
+  clips: Record<string, unknown>[];
+  tracks: Record<string, unknown>[];
+  bpm: number;
+  preset: string;
+  outputMode: "master" | "master_and_stems";
+}
+
+export interface MixhiveHealthRequest extends BaseRequest {
+  type: "mixhiveHealth";
+}
+
+export interface MixhiveSignInRequest extends BaseRequest {
+  type: "mixhiveSignIn";
+  email: string;
+  password: string;
+}
+
+export interface MixhiveSignOutRequest extends BaseRequest {
+  type: "mixhiveSignOut";
+}
+
+export interface MixhiveGetCurrentEmailRequest extends BaseRequest {
+  type: "mixhiveGetCurrentEmail";
+}
+
+export interface MixhivePublishRequest extends BaseRequest {
+  type: "mixhivePublish";
+  metadata: Record<string, unknown>;
+  audioBytes: number[];
+  fileName: string;
+}
+
+export interface MixhiveListTracksRequest extends BaseRequest {
+  type: "mixhiveListTracks";
+  options?: { q?: string; limit?: number };
+}
+
+export interface MixhiveGetTrackRequest extends BaseRequest {
+  type: "mixhiveGetTrack";
+  trackId: string;
+}
+
+export interface MixhiveGetTrackAudioRequest extends BaseRequest {
+  type: "mixhiveGetTrackAudio";
+  trackId: string;
 }
 
 const vscodeApi = window.vscode;

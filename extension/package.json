@@ -199,6 +199,33 @@
         "icon": "$(play)"
       },
       {
+        "command": "beehive.transportStop",
+        "title": "Stop Transport",
+        "category": "Beehive",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "beehive.transportRecord",
+        "title": "Toggle Recording",
+        "category": "Beehive",
+        "icon": "$(record)"
+      },
+      {
+        "command": "beehive.transportLoop",
+        "title": "Toggle Loop",
+        "category": "Beehive"
+      },
+      {
+        "command": "beehive.transportMetronome",
+        "title": "Toggle Metronome",
+        "category": "Beehive"
+      },
+      {
+        "command": "beehive.transportSeekToStart",
+        "title": "Seek to Start",
+        "category": "Beehive"
+      },
+      {
         "command": "beehive.refreshProjects",
         "title": "Refresh Projects",
         "category": "Beehive",
@@ -331,6 +358,36 @@
         "command": "beehive.toggleTransport",
         "key": "space",
         "when": "beehive.transportFocused && !editorTextFocus"
+      },
+      {
+        "command": "beehive.transportStop",
+        "key": "ctrl+home",
+        "mac": "cmd+home",
+        "when": "beehive.transportFocused"
+      },
+      {
+        "command": "beehive.transportRecord",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "beehive.transportFocused"
+      },
+      {
+        "command": "beehive.transportLoop",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l",
+        "when": "beehive.transportFocused"
+      },
+      {
+        "command": "beehive.transportMetronome",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "beehive.transportFocused"
+      },
+      {
+        "command": "beehive.transportSeekToStart",
+        "key": "ctrl+shift+home",
+        "mac": "cmd+shift+home",
+        "when": "beehive.transportFocused"
       }
     ],
     "themes": [
@@ -404,6 +461,7 @@
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.3",
     "eslint": "^9.39.3",
+    "mocha": "^11.7.6",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1"

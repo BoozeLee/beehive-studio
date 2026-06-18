@@ -21,6 +21,7 @@ export type Route =
   | "/session"
   | "/agent"
   | "/taste"
+  | "/branches"
   | "/settings";
 
 interface AppState {
@@ -31,8 +32,10 @@ interface AppState {
   sessions: AgentSession[];
   notifications: Toast[];
   isLoading: boolean;
+  exportDialogOpen: boolean;
 
   setRoute: (route: Route) => void;
+  setExportDialogOpen: (open: boolean) => void;
   setGatewayHealth: (health: GatewayHealth | null) => void;
   setOrchestratorHealth: (health: OrchestratorHealth | null) => void;
   setAgents: (agents: AgentInfo[]) => void;
@@ -52,8 +55,11 @@ export const useAppStore = create<AppState>((set) => ({
   sessions: [],
   notifications: [],
   isLoading: false,
+  exportDialogOpen: false,
 
   setRoute: (route) => set({ activeRoute: route }),
+
+  setExportDialogOpen: (open) => set({ exportDialogOpen: open }),
 
   setGatewayHealth: (health) => set({ gatewayHealth: health }),
 

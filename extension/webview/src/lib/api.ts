@@ -170,3 +170,23 @@ export async function getWorkspaceFolder(): Promise<string | undefined> {
 export async function executeCommand(command: string, args?: unknown[]): Promise<unknown> {
   return postMessage({ type: "executeCommand", command, args });
 }
+
+export async function subscribeProjectEvents(projectId: string): Promise<void> {
+  await postMessage({ type: "subscribeProjectEvents", projectId });
+}
+
+export async function unsubscribeProjectEvents(): Promise<void> {
+  await postMessage({ type: "unsubscribeProjectEvents" });
+}
+
+export async function exportAudio(request: {
+  projectId: string;
+  targetUri: string;
+  clips: Record<string, unknown>[];
+  tracks: Record<string, unknown>[];
+  bpm: number;
+  preset: string;
+  outputMode: "master" | "master_and_stems";
+}): Promise<void> {
+  await postMessage({ type: "exportAudio", ...request });
+}

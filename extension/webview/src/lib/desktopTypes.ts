@@ -28,11 +28,14 @@ export interface ClipMetadata {
   generative: boolean;
   agentId?: ID;
   promptId?: ID;
+  promptText?: string;
+  sessionId?: ID;
   sourcePatternId?: ID;
   reasoningTrace?: string;
   confidence?: number;
   referenceIds?: ID[];
   tags?: string[];
+  qa?: { pass: boolean; score: number; warnings: string[] };
 }
 
 export interface MidiNote {

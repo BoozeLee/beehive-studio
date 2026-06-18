@@ -1,7 +1,6 @@
 import React, { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import { TrackHeader } from "./TrackHeader";
-import { useTimelineStore } from "../../../stores/timelineStore";
-import type { Clip as TimelineClip } from "../../../lib/desktopTypes";
+import type { Clip, Track, ID } from "../../../lib/desktopTypes";
 
 const COLORS = {
   bg: "#0f0f12",
@@ -18,51 +17,76 @@ const RULER_HEIGHT = 24;
 const HEADER_WIDTH = 180;
 const RESIZE_HANDLE_WIDTH = 8;
 
-interface TimelineProps {
+export interface TimelineProps {
   isPlaying: boolean;
   currentBeat: number;
   bpm?: number;
-  onPlayClip?: (clipId: string) => void;
+  tracks: Track[];
+  clips: Clip[];
+  selectedTrackId?: ID | null;
+  selectedClipId?: ID | null;
+  zoom: number;
+  scrollOffset: { x: number; y: number };
+  snapToGrid: boolean;
+  gridDivision: number;
+  cursorPosition: number;
   onSeek?: (beat: number) => void;
+  onPlayClip?: (clipId: string) => void;
   onAddTrack?: () => void;
   onRemoveTrack?: (trackId: string) => void;
+  onToggleMute?: (trackId: string, muted: boolean) => void;
+  onToggleSolo?: (trackId: string, solo: boolean) => void;
+  onToggleArm?: (trackId: string, arm: boolean) => void;
+  onSelectTrack?: (trackId: string | null) => void;
+  onSelectClip?: (clipId: string | null) => void;
+  onMoveClip?: (clipId: string, trackId: string, start: number) => void;
+  onResizeClip?: (clipId: string, duration: number) => void;
+  onDuplicateClip?: (clip: Clip) => void;
   onDeleteClip?: (clipId: string) => void;
-  onDuplicateClip?: (clip: TimelineClip) => void;
+  onSplitClip?: (clipId: string, beat: number) => void;
+  onZoomChange?: (zoom: number) => void;
+  onScroll?: (offset: { x: number; y: number }) => void;
+  onToggleSnap?: () => void;
 }
 
 export const Timeline: React.FC<TimelineProps> = ({
   isPlaying,
   currentBeat,
   bpm = 142,
-  onPlayClip,
+  tracks,
+  clips,
+  selectedTrackId,
+  selectedClipId,
+  zoom,
+  scrollOffset,
+  snapToGrid,
+  gridDivision,
+  cursorPosition,
   onSeek,
+  onPlayClip,
   onAddTrack,
   onRemoveTrack,
-  onDeleteClip,
+  onToggleMute,
+  onToggleSolo,
+  onToggleArm,
+  onSelectTrack,
+  onSelectClip,
+  onMoveClip,
+  onResizeClip,
   onDuplicateClip,
+  onDeleteClip,
+  onSplitClip,
+  onZoomChange,
+  onScroll,
+  onToggleSnap,
 }) => {
-  const {
-    tracks,
-    clips,
-    selectedTrackId,
-    selectedClipId,
-    zoom,
-    scrollOffset,
-    snapToGrid,
-    gridDivision,
-    selectTrack,
-    selectClip,
-    updateTrack,
-    moveClipToTrack,
-    resizeClip,
-    duplicateClip,
-    splitClipAt,
-    removeClip,
-    setZoom,
-    setScrollOffset,
-    setSnapToGrid,
-    setCursorPosition,
-  } = useTimelineStore();
+  const clipsRecord = useMemo(() => {
+    const map: Record<string, Clip> = {};
+    for (const clip of clips) {
+      map[clip.id] = clip;
+    }
+    return map;
+  }, [clips]);
 
   const lanesRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
@@ -82,7 +106,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const totalBeats = useMemo(() => {
     let max = 16;
-    for (const clip of Object.values(clips)) {
+    for (const clip of clips) {
       const end = clip.start + clip.duration;
       if (end > max) max = end;
     }
@@ -90,15 +114,6 @@ export const Timeline: React.FC<TimelineProps> = ({
   }, [clips]);
 
   const totalWidth = totalBeats * zoom + 100;
-
-  const handleScroll = useCallback(() => {
-    if (lanesRef.current) {
-      setScrollOffset({
-        x: lanesRef.current.scrollLeft,
-        y: lanesRef.current.scrollTop,
-      });
-    }
-  }, [setScrollOffset]);
 
   const snapBeat = useCallback(
     (beat: number) => {
@@ -109,9 +124,18 @@ export const Timeline: React.FC<TimelineProps> = ({
     [snapToGrid, gridDivision]
   );
 
+  const handleScroll = useCallback(() => {
+    if (lanesRef.current) {
+      onScroll?.({
+        x: lanesRef.current.scrollLeft,
+        y: lanesRef.current.scrollTop,
+      });
+    }
+  }, [onScroll]);
+
   const playheadStyle: React.CSSProperties = {
     position: "absolute",
-    left: (isPlaying ? currentBeat : snapBeat(currentBeat)) * zoom - scrollOffset.x,
+    left: (isPlaying ? currentBeat : snapBeat(cursorPosition)) * zoom - scrollOffset.x,
     top: 0,
     width: 2,
     height: tracks.length * TRACK_HEIGHT + RULER_HEIGHT,
@@ -140,10 +164,9 @@ export const Timeline: React.FC<TimelineProps> = ({
       const x = e.clientX - rect.left + lanesRef.current.scrollLeft;
       const beat = x / zoom;
       const snappedBeat = snapBeat(beat);
-      setCursorPosition(snappedBeat);
       onSeek(snappedBeat);
     },
-    [onSeek, zoom, snapBeat, setCursorPosition]
+    [onSeek, zoom, snapBeat]
   );
 
   const getTrackIdFromPointer = useCallback(
@@ -164,13 +187,13 @@ export const Timeline: React.FC<TimelineProps> = ({
       const dxBeats = (e.clientX - dragState.startX) / zoom;
       if (dragState.type === "move") {
         const nextTrackId = getTrackIdFromPointer(e.clientY) ?? dragState.originalTrackId;
-        moveClipToTrack(
+        onMoveClip?.(
           dragState.clipId,
           nextTrackId,
           snapBeat(dragState.originalStart + dxBeats)
         );
       } else {
-        resizeClip(dragState.clipId, snapBeat(dragState.originalDuration + dxBeats));
+        onResizeClip?.(dragState.clipId, snapBeat(dragState.originalDuration + dxBeats));
       }
     };
 
@@ -182,7 +205,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [dragState, getTrackIdFromPointer, moveClipToTrack, resizeClip, snapBeat, zoom]);
+  }, [dragState, getTrackIdFromPointer, onMoveClip, onResizeClip, snapBeat, zoom]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -190,6 +213,17 @@ export const Timeline: React.FC<TimelineProps> = ({
     window.addEventListener("click", closeContextMenu);
     return () => window.removeEventListener("click", closeContextMenu);
   }, [contextMenu]);
+
+  // Auto-scroll playhead into view during playback.
+  useEffect(() => {
+    if (!isPlaying || !lanesRef.current) return;
+    const playheadX = currentBeat * zoom;
+    const viewportLeft = scrollOffset.x;
+    const viewportRight = viewportLeft + lanesRef.current.clientWidth;
+    if (playheadX < viewportLeft + 32 || playheadX > viewportRight - 64) {
+      lanesRef.current.scrollLeft = Math.max(0, playheadX - lanesRef.current.clientWidth / 3);
+    }
+  }, [isPlaying, currentBeat, zoom, scrollOffset.x]);
 
   return (
     <div
@@ -222,11 +256,8 @@ export const Timeline: React.FC<TimelineProps> = ({
           <button
             role="menuitem"
             onClick={() => {
-              const duplicatedId = duplicateClip(contextMenu.clipId);
-              if (duplicatedId) {
-                const duplicatedClip = useTimelineStore.getState().clips[duplicatedId];
-                if (duplicatedClip) onDuplicateClip?.(duplicatedClip);
-              }
+              const clip = clipsRecord[contextMenu.clipId];
+              if (clip) onDuplicateClip?.(clip);
               setContextMenu(null);
             }}
             style={menuItemStyle}
@@ -236,7 +267,6 @@ export const Timeline: React.FC<TimelineProps> = ({
           <button
             role="menuitem"
             onClick={() => {
-              removeClip(contextMenu.clipId);
               onDeleteClip?.(contextMenu.clipId);
               setContextMenu(null);
             }}
@@ -247,11 +277,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           <button
             role="menuitem"
             onClick={() => {
-              const createdId = splitClipAt(contextMenu.clipId, currentBeat, 60 / bpm);
-              if (createdId) {
-                const createdClip = useTimelineStore.getState().clips[createdId];
-                if (createdClip) onDuplicateClip?.(createdClip);
-              }
+              onSplitClip?.(contextMenu.clipId, currentBeat);
               setContextMenu(null);
             }}
             style={menuItemStyle}
@@ -275,7 +301,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         <span style={{ fontSize: 11, color: COLORS.textMuted }}>Timeline</span>
         <div style={{ flex: 1 }} />
         <button
-          onClick={() => setZoom(zoom * 1.25)}
+          onClick={() => onZoomChange?.(zoom * 1.25)}
           style={zoomBtnStyle}
           title="Zoom in"
         >
@@ -285,7 +311,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           {zoom.toFixed(0)}px/beat
         </span>
         <button
-          onClick={() => setZoom(zoom / 1.25)}
+          onClick={() => onZoomChange?.(zoom / 1.25)}
           style={zoomBtnStyle}
           title="Zoom out"
         >
@@ -293,7 +319,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         </button>
         <div style={{ width: 1, height: 16, background: COLORS.border }} />
         <button
-          onClick={() => setSnapToGrid(!snapToGrid)}
+          onClick={() => onToggleSnap?.()}
           style={{
             ...zoomBtnStyle,
             background: snapToGrid ? COLORS.accent : "transparent",
@@ -336,16 +362,10 @@ export const Timeline: React.FC<TimelineProps> = ({
               key={track.id}
               track={track}
               isSelected={selectedTrackId === track.id}
-              onSelect={() => selectTrack(track.id)}
-              onToggleMute={() =>
-                updateTrack(track.id, { muted: !track.muted })
-              }
-              onToggleSolo={() =>
-                updateTrack(track.id, { solo: !track.solo })
-              }
-              onToggleArm={() =>
-                updateTrack(track.id, { arm: !track.arm })
-              }
+              onSelect={() => onSelectTrack?.(track.id)}
+              onToggleMute={() => onToggleMute?.(track.id, !track.muted)}
+              onToggleSolo={() => onToggleSolo?.(track.id, !track.solo)}
+              onToggleArm={() => onToggleArm?.(track.id, !track.arm)}
               onRemove={onRemoveTrack ? () => onRemoveTrack(track.id) : undefined}
             />
           ))}
@@ -413,6 +433,7 @@ export const Timeline: React.FC<TimelineProps> = ({
             {tracks.map((track, trackIdx) => (
               <div
                 key={track.id}
+                onClick={() => onSelectTrack?.(track.id)}
                 style={{
                   position: "relative",
                   height: TRACK_HEIGHT,
@@ -446,7 +467,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 
                 {/* Clips in this track */}
                 {track.clips.map((clipId: string) => {
-                  const clip = clips[clipId];
+                  const clip = clipsRecord[clipId];
                   if (!clip) return null;
                   const clipLeft = clip.start * zoom;
                   const clipWidth = Math.max(clip.duration * zoom, 8);
@@ -458,12 +479,12 @@ export const Timeline: React.FC<TimelineProps> = ({
                       data-testid={`timeline-clip-${clip.id}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        selectClip(clip.id);
+                        onSelectClip?.(clip.id);
                       }}
                       onMouseDown={(e) => {
                         if (e.button !== 0) return;
                         e.stopPropagation();
-                        selectClip(clip.id);
+                        onSelectClip?.(clip.id);
                         setContextMenu(null);
                         setDragState({
                           type: "move",
@@ -477,7 +498,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        selectClip(clip.id);
+                        onSelectClip?.(clip.id);
                         setContextMenu({ x: e.clientX, y: e.clientY, clipId: clip.id });
                       }}
                       onDoubleClick={() => onPlayClip?.(clip.id)}
@@ -549,7 +570,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                         onMouseDown={(e) => {
                           if (e.button !== 0) return;
                           e.stopPropagation();
-                          selectClip(clip.id);
+                          onSelectClip?.(clip.id);
                           setContextMenu(null);
                           setDragState({
                             type: "resize",

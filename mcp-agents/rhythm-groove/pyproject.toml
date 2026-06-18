@@ -10,3 +10,6 @@ requires-python = ">=3.11"
 
 [project.scripts]
 beehive-rhythm-agent = "rhythm_groove.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rhythm_groove"]
