@@ -1312,6 +1312,7 @@ function JetBeeApp() {
           icon: "🐝",
           content: (
             <AgentDirector
+              bpm={transport.bpm}
               onClipGenerated={(notes, reasoning) => {
                 setClips((prev) => [
                   ...prev,

@@ -43,6 +43,7 @@ interface HistoryEntry {
 }
 
 interface AgentDirectorProps {
+  bpm?: number;
   onClipGenerated?: (notes: Array<{ pitch: number; velocity: number; start: number; duration: number }>, reasoning: string[]) => void;
 }
 
@@ -59,7 +60,7 @@ const AGENTS = [
   { id: "mix_master", label: "Mix Master", color: "#f59e0b", icon: "🎛️" },
 ];
 
-export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
+export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps) {
   useLayoutEffect(() => {
     const id = "beehive-agent-director-styles";
     if (document.getElementById(id)) return;
@@ -106,7 +107,7 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
             type: "brief",
             brief: text,
             agent_id: activeAgent,
-            session_context: { bpm: 142, swing: 0.68 },
+            session_context: { bpm, swing: 0.15 },
           }));
         };
 
@@ -155,7 +156,7 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
         setIsLoading(false);
       }
     },
-    [activeAgent, onClipGenerated]
+    [activeAgent, bpm, onClipGenerated]
   );
 
   const streamViaHttp = useCallback(
@@ -171,7 +172,7 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
         if (activeAgent === "mix_master") {
           const data = await invoke<Record<string, unknown>>("send_agent_request", {
             endpoint: "agents/mix_master",
-            body: { brief: text.trim(), session_context: { bpm: 142 } },
+            body: { brief: text.trim(), session_context: { bpm, swing: 0.15 } },
           });
 
           pushStep({ type: "status", message: "Routing to Mix Master agent" });
@@ -198,7 +199,7 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
             endpoint: `agents/${activeAgent}`,
             body: {
               brief: text.trim(),
-              session_context: { bpm: 142 },
+              session_context: { bpm, swing: 0.15 },
             },
           });
 
@@ -241,7 +242,7 @@ export function AgentDirector({ onClipGenerated }: AgentDirectorProps) {
         setStatus("Agent error — is backend running on port 9876?");
       }
     },
-    [activeAgent, onClipGenerated]
+    [activeAgent, bpm, onClipGenerated]
   );
 
   const streamAgent = useCallback(
