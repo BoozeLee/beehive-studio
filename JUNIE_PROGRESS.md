@@ -28,9 +28,15 @@
 - Do not re-implement existing code; focus on wiring and verification.
 - Use a worker-thread design for the Rust audio engine so Tauri state remains `Send + Sync`.
 
-### Open / In Progress
-- Verify vLLM container starts and `/inference/health` reports both providers.
-- Verify MCP agent fleet connects and `/agents/tools` lists tools.
-- Smoke-test `just desktop-dev` launch.
-- Update `ROADMAP.md` and `docs/LIMITATIONS.md`.
-- Note: the working tree had many pre-existing uncommitted changes at the start of this session; only the v0.5.0-alpha wiring changes were committed.
+### Verification Results
+- `cargo check` passes for both `crates/beehive-audio-engine` and `apps/desktop/src-tauri`.
+- `pnpm build` passes in `apps/desktop`.
+- `just test` passes (frontend tests, Python smoke tests, plugin/package metadata, render smoke test).
+- Backend `/health`, `/inference/health`, `/agents/tools`, `/agents/health`, and `/agents/{agent}/tools/{tool}` all respond correctly.
+- MCP `rhythm-groove` agent is connected and `generate_bassline` returns MIDI data.
+- Ollama fallback is operational; Hive 999 Marco-o1 advisor is healthy.
+- vLLM container pull was started but stopped because the `vllm/vllm-openai:latest` image is multi-gigabyte and the session environment is not configured with NVIDIA CDI for Podman GPU passthrough. The orchestrator falls back to Ollama cleanly.
+
+### Notes
+- The working tree had many pre-existing uncommitted changes at the start of this session; only the v0.5.0-alpha wiring changes were committed.
+- Manual `just desktop-dev` UI launch requires a display server; it could not be exercised headlessly, but the build and cargo checks pass.
