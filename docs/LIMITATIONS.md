@@ -144,6 +144,15 @@ We will judge every decision against that standard.
 
 ---
 
+## v0.5.0-alpha Infrastructure
+
+- **vLLM container startup requires working GPU passthrough** (NVIDIA Container Toolkit / CDI on Linux). On machines without a configured container GPU runtime, vLLM stays offline and the orchestrator transparently falls back to Ollama.
+- **CPAL mixer only supports f32 output devices** in this milestone. If the default audio device reports another sample format, `audio_engine_init` will return an error and the UI falls back to Tone.js playback.
+- **`render_preview_via_cpal` is a silent-audio stub** in v0.5.0-alpha. Real offline rendering through the Rust engine is scheduled for a later phase.
+- **The Tauri desktop dev window cannot be exercised in a headless environment**. `cargo check` and `pnpm build` pass; manual UI verification requires a display server.
+
+---
+
 **This document will be updated every time we discover a new painful truth.**
 
-Last updated: 2026-05-30 (Initial)
+Last updated: 2026-06-17 (v0.5.0-alpha wiring)

@@ -4,10 +4,10 @@
 
 ---
 
-## Current Status: Phase 2 Complete ✅
+## Current Status: Phase 3.5 Complete ✅
 
-**Version:** 0.4.0-beta
-**Date:** 2026-05-30
+**Version:** 0.5.0-alpha
+**Date:** 2026-06-17
 
 ---
 
@@ -51,7 +51,7 @@
 - [x] **Arrangement Agent**: Song structure orchestration
 - [x] **VST Plugin**: NIH-plug CLAP plugin for DAWs
 
-### Phase 3: The DAW (In Progress)
+### Phase 3: The DAW ✅
 
 **Goal:** Build a real digital audio workstation.
 
@@ -62,6 +62,17 @@
 - [x] **Effects Chain**: Persistent FX chains (reverb, delay, filter, distortion)
 - [x] **Automation**: Persistent parameter automation curves
 - [x] **Mixer**: Track-level volume, pan, mute, solo, sends, meters, and master
+
+### Phase 3.5: v0.5.0-alpha Infrastructure ✅
+
+**Goal:** Stabilize the inference and audio engine scaffolding for the v0.5.0-alpha milestone.
+
+- [x] Containerized vLLM inference service (files present; verify GPU passthrough in target environment)
+- [x] Unified vLLM/Ollama fallback client
+- [x] MCP agent fleet bridge (Rhythm & Groove)
+- [x] Rust CPAL audio engine wired into Tauri
+- [x] Runnable desktop dev recipe (`just desktop-dev`)
+- [x] `JUNIE_PROGRESS.md` tracking
 
 ### Phase 4: Collaboration (In Progress)
 
