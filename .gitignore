@@ -46,3 +46,4 @@ Thumbs.db
 *.pem
 *.key
 vscode/
+.worktrees/
