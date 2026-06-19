@@ -8,6 +8,7 @@
 import { BEEHIVE } from "../../lib/theme";
 import { LikeButton } from "../TasteGraph/LikeButton";
 import { extractFeatures } from "../../lib/tasteFeatures";
+import { ScrollablePanel } from "../Layout/ScrollablePanel";
 
 interface Note {
   pitch: number;
@@ -81,43 +82,42 @@ export function SessionViewGrid({
   onVariations,
   onLaunchScene,
 }: Props) {
-  if (clips.length === 0) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          color: BEEHIVE.textMuted,
-          fontSize: 14,
-        }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🎵</div>
-          <p>No clips yet. Send a brief to an agent.</p>
-          <p style={{ fontSize: 12, marginTop: 4 }}>
-            Try: "142 BPM dark rolling psytrance bassline"
-          </p>
-        </div>
+  const emptyState = clips.length === 0 ? (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100%",
+        color: BEEHIVE.textMuted,
+        fontSize: 14,
+      }}
+    >
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>🎵</div>
+        <p>No clips yet. Send a brief to an agent.</p>
+        <p style={{ fontSize: 12, marginTop: 4 }}>
+          Try: "142 BPM dark rolling psytrance bassline"
+        </p>
       </div>
-    );
-  }
+    </div>
+  ) : null;
 
   return (
-    <>
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 4px 8px" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 4px 8px", flexShrink: 0 }}>
         <ActionBtn onClick={onLaunchScene} accent={BEEHIVE.comb}>
           Launch Scene
         </ActionBtn>
       </div>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-        gap: 12,
-        padding: 4,
-      }}>
-      {clips.map((clip) => {
+      <ScrollablePanel padding={4}>
+        {emptyState ?? (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+            gap: 12,
+          }}>
+          {clips.map((clip) => {
         const color = inferClipColor(clip.name, clip.color);
         const notes = clip.midiData?.notes ?? [];
         const noteCount = notes.length;
@@ -289,7 +289,9 @@ export function SessionViewGrid({
         );
       })}
       </div>
-    </>
+        )}
+      </ScrollablePanel>
+    </div>
   );
 }
 
