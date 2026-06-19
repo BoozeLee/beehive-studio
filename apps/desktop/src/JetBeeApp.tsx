@@ -1238,44 +1238,50 @@ function JetBeeApp() {
   // ── Layout construction ──
   const topBar = (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 12px", background: "var(--jb-toolbar-bg)", borderBottom: "1px solid var(--jb-border)", flexShrink: 0 }}>
-      <TransportControls
-        isPlaying={transport.isPlaying}
-        bpm={transport.bpm}
-        currentBeat={transport.currentBeat}
-        onPlay={handleTransportPlay}
-        onPause={transport.pause}
-        onStop={transport.stop}
-        onBpmChange={transport.setBpm}
-      />
-      <input
-        type="text"
-        value={projectName}
-        onChange={(e) => setProjectName(e.target.value)}
-        placeholder="Project name"
-        style={{ padding: "4px 8px", fontSize: 13, background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4, minWidth: 120 }}
-      />
-      <BranchSelector projectName={projectName} onBranchChange={handleBranchSwitch} />
-      <button className="jetbee-toolbtn" onClick={() => sendBrief()} disabled={isLoading || !brief.trim()}>
-        {isLoading ? "Generating..." : "Generate"}
-      </button>
-      <button className="jetbee-toolbtn" onClick={doResearch} disabled={isLoading || !brief.trim()}>
-        🔍 Research
-      </button>
-      <button className="jetbee-toolbtn" onClick={handleSaveProject}>
-        💾 Save
-      </button>
-      <button className="jetbee-toolbtn" onClick={() => setShowExportDialog(true)} disabled={exportPayload.renderClips.length === 0}>
-        🔊 Export
-      </button>
-      <button className="jetbee-toolbtn" onClick={() => void handlePublishFromExport()} disabled={exportPayload.renderClips.length === 0}>
-        🌐 Publish
-      </button>
-      <button className="jetbee-toolbtn" onClick={() => setShowExploreDialog(true)}>
-        🔍 Explore
-      </button>
-      <button className="jetbee-toolbtn" onClick={() => setShowTimeline(!showTimeline)}>
-        {showTimeline ? "Grid" : "Timeline"}
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <TransportControls
+          isPlaying={transport.isPlaying}
+          bpm={transport.bpm}
+          currentBeat={transport.currentBeat}
+          onPlay={handleTransportPlay}
+          onPause={transport.pause}
+          onStop={transport.stop}
+          onBpmChange={transport.setBpm}
+        />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input
+          type="text"
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          placeholder="Project name"
+          style={{ padding: "4px 8px", fontSize: 13, background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4, minWidth: 120 }}
+        />
+        <BranchSelector projectName={projectName} onBranchChange={handleBranchSwitch} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <button className="jetbee-toolbtn" onClick={() => sendBrief()} disabled={isLoading || !brief.trim()}>
+          {isLoading ? "Generating..." : "Generate"}
+        </button>
+        <button className="jetbee-toolbtn" onClick={doResearch} disabled={isLoading || !brief.trim()}>
+          🔍 Research
+        </button>
+        <button className="jetbee-toolbtn" onClick={handleSaveProject}>
+          💾 Save
+        </button>
+        <button className="jetbee-toolbtn" onClick={() => setShowExportDialog(true)} disabled={exportPayload.renderClips.length === 0}>
+          🔊 Export
+        </button>
+        <button className="jetbee-toolbtn" onClick={() => void handlePublishFromExport()} disabled={exportPayload.renderClips.length === 0}>
+          🌐 Publish
+        </button>
+        <button className="jetbee-toolbtn" onClick={() => setShowExploreDialog(true)}>
+          🔍 Explore
+        </button>
+        <button className="jetbee-toolbtn" onClick={() => setShowTimeline(!showTimeline)}>
+          {showTimeline ? "Grid" : "Timeline"}
+        </button>
+      </div>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
         <BackendHealth />
       </div>
