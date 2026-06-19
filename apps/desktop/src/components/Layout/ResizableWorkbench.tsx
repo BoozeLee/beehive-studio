@@ -91,7 +91,7 @@ export function ResizableWorkbench({
             collapsedSize={4}
             style={{ display: layout.leftRail.collapsed ? "none" : "flex" }}
           >
-            <div className="jetbee-rail" data-jetbee-pane="explorer" tabIndex={-1} style={{ width: "100%" }}>
+            <div className="jetbee-rail" data-jetbee-pane="explorer" tabIndex={-1} style={{ width: "100%", height: "100%", display: "flex", minHeight: 0, minWidth: 0, overflow: "hidden" }}>
               {leftRail}
             </div>
           </Panel>
@@ -118,7 +118,7 @@ export function ResizableWorkbench({
                 collapsible
                 collapsedSize={4}
               >
-                <div className="jetbee-rail jetbee-rail-bottom" data-jetbee-pane="console" tabIndex={-1} style={{ height: "100%" }}>
+                <div className="jetbee-rail jetbee-rail-bottom" data-jetbee-pane="console" tabIndex={-1} style={{ height: "100%", width: "100%", display: "flex", minHeight: 0, minWidth: 0, overflow: "hidden" }}>
                   {bottomRail}
                 </div>
               </Panel>
@@ -137,7 +137,7 @@ export function ResizableWorkbench({
             collapsedSize={4}
             style={{ display: layout.rightRail.collapsed ? "none" : "flex" }}
           >
-            <div className="jetbee-rail jetbee-rail-right" data-jetbee-pane="inspector" tabIndex={-1} style={{ width: "100%" }}>
+            <div className="jetbee-rail jetbee-rail-right" data-jetbee-pane="inspector" tabIndex={-1} style={{ width: "100%", height: "100%", display: "flex", minHeight: 0, minWidth: 0, overflow: "hidden" }}>
               {rightRail}
             </div>
           </Panel>
