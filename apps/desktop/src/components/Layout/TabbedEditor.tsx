@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { ScrollablePanel } from "./ScrollablePanel";
 
 export interface EditorTab {
   id: string;
@@ -75,9 +76,9 @@ export function TabbedEditor({ tabs, defaultTab, onTabChange, onTabClose }: Tabb
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+      <ScrollablePanel style={{ flex: 1, position: "relative" }}>
         {activeContent}
-      </div>
+      </ScrollablePanel>
     </div>
   );
 }
