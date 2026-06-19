@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef, useLayoutEffect } from "react";
 import { BEEHIVE, commonStyles, panelStyle } from "../../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
+import { ScrollablePanel } from "../Layout/ScrollablePanel";
 
 interface ReasoningStep {
   type: "status" | "reasoning" | "tool_call" | "midi" | "arrangement" | "qa_warning" | "advisory" | "complete" | "error";
@@ -329,6 +330,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
           alignItems: "center",
           gap: 8,
           marginBottom: 12,
+          flexShrink: 0,
         }}
       >
         <div
@@ -357,15 +359,16 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
         </div>
       </div>
 
-      {/* Agent selector */}
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          marginBottom: 10,
-          flexWrap: "wrap",
-        }}
-      >
+      <ScrollablePanel ref={logRef} gap={8} style={{ flex: 1, paddingRight: 4 }}>
+        {/* Agent selector */}
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            marginBottom: 10,
+            flexWrap: "wrap",
+          }}
+        >
         {AGENTS.map((agent) => (
           <button
             key={agent.id}
@@ -548,17 +551,14 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
 
       {/* Reasoning stream */}
       <div
-        ref={logRef}
         style={{
           flex: showHistory ? "0 0 auto" : 1,
-          overflow: "auto",
           background: BEEHIVE.bg,
           borderRadius: 6,
           padding: 10,
           fontSize: 12,
           lineHeight: 1.5,
           minHeight: showHistory ? 80 : 120,
-          maxHeight: showHistory ? 200 : "none",
         }}
       >
         {reasoning.length === 0 && !isLoading && (
@@ -736,6 +736,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
           )}
         </div>
       )}
+      </ScrollablePanel>
     </div>
   );
 }
