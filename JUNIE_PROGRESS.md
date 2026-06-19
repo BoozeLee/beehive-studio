@@ -58,3 +58,21 @@
 - Backend `/agents/rhythm_groove` returns a `clip_preview` with 4-bar C-minor acid bassline notes when given the demo brief.
 - Automated smoke test mocks the agent WebSocket, clicks Generate, and asserts a `Bass` track + `Rolling Acid Bass` clip land in `timelineStore`.
 - Manual UI smoke test pending a display server: run `just backend` + `just desktop-dev` and click Generate → Play.
+
+
+## 2026-06-18 — GUI Scrollbars & Tidy-Up
+
+### Completed
+- Added reusable `ScrollablePanel` wrapper component with themed scrollbar CSS and `forwardRef` support.
+- Fixed `ResizableWorkbench` rail containers so they shrink correctly inside `react-resizable-panels`.
+- Wrapped `TabbedEditor` content in `ScrollablePanel` so every tab scrolls consistently.
+- Made `SessionViewGrid` clip grid scrollable with a fixed "Launch Scene" header.
+- Made `AgentDirector` scroll as a single unit, keeping the header fixed.
+- Applied themed scrollbar to `BuildConsole` log output.
+- Grouped top toolbar controls (transport, project, actions) for clearer spacing.
+
+### Verification
+- `pnpm exec tsc --noEmit` clean.
+- `just desktop-check` passes.
+- `just test` passes (106 frontend tests + Python smoke tests + packaging/render smoke).
+- Manual visual smoke test pending a display server: confirm scrollbars in Agents panel, Session View, and rails.
