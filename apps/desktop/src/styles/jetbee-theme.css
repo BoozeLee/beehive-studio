@@ -8,26 +8,26 @@
 
 :root {
   /* ── Base surfaces ── */
-  --jb-bg:              #0F0A08;
-  --jb-bg-elevated:     #15100C;
-  --jb-panel:           #1A1410;
-  --jb-panel-hover:     #221A14;
-  --jb-border:          #2A1F18;
-  --jb-border-active:   #3D2E22;
-  --jb-gutter:          #120E0A;
+  --jb-bg:              #1e1d1d;
+  --jb-bg-elevated:     #252524;
+  --jb-panel:           #2c2b2a;
+  --jb-panel-hover:     #3d3d3c;
+  --jb-border:          #4c412e;
+  --jb-border-active:   #916c20;
+  --jb-gutter:          #1a1a1a;
 
   /* ── Text ── */
-  --jb-text:            #E8DCC8;
-  --jb-text-muted:      #8A7E72;
-  --jb-text-faint:      #5A5048;
-  --jb-text-inverse:    #0F0A08;
+  --jb-text:            #e0e0e0;
+  --jb-text-muted:      #a0a0a0;
+  --jb-text-faint:      #6e6e6e;
+  --jb-text-inverse:    #1e1d1d;
 
   /* ── Honeycomb accents (structural only) ── */
-  --jb-comb:            #FF8C42;
-  --jb-honey:           #F5C542;
-  --jb-amber:           #BF6F00;
-  --jb-wax:             #D4A017;
-  --jb-pollen:          #E8B84B;
+  --jb-comb:            #f3b217;
+  --jb-honey:           #f5c542;
+  --jb-amber:           #916c20;
+  --jb-wax:             #d4a017;
+  --jb-pollen:          #e8b84b;
 
   /* ── Semantic states ── */
   --jb-success:         #4ADE80;
@@ -36,8 +36,8 @@
   --jb-info:            #60A5FA;
 
   /* ── Agent swarm colors ── */
-  --jb-agent-rhythm:    #FF8C42;
-  --jb-agent-melody:    #F5C542;
+  --jb-agent-rhythm:    #f3b217;
+  --jb-agent-melody:    #f5c542;
   --jb-agent-harmony:   #6366F1;
   --jb-agent-drums:     #EF4444;
   --jb-agent-arrange:   #10B981;
@@ -46,22 +46,22 @@
   --jb-agent-mix:       #F59E0B;
 
   /* ── Glows ── */
-  --jb-glow:            rgba(255, 140, 66, 0.15);
-  --jb-glow-bright:     rgba(255, 140, 66, 0.35);
+  --jb-glow:            rgba(243, 178, 23, 0.15);
+  --jb-glow-bright:     rgba(243, 178, 23, 0.35);
   --jb-glow-success:    rgba(74, 222, 128, 0.15);
   --jb-glow-error:      rgba(239, 68, 68, 0.15);
 
   /* ── IDE chrome ── */
-  --jb-tab-bg:          #1A1410;
-  --jb-tab-bg-active:   #251E18;
-  --jb-tab-border:      #2A1F18;
-  --jb-toolbar-bg:      #18120E;
-  --jb-statusbar-bg:    #120E0A;
-  --jb-tooltip-bg:      #2A2018;
-  --jb-scrollbar:       #3D2E22;
-  --jb-scrollbar-hover: #5A4535;
-  --jb-resize-handle:   #3D2E22;
-  --jb-resize-handle-active: #FF8C42;
+  --jb-tab-bg:          #252524;
+  --jb-tab-bg-active:   #2c2b2a;
+  --jb-tab-border:      #4c412e;
+  --jb-toolbar-bg:      #222222;
+  --jb-statusbar-bg:    #1a1a1a;
+  --jb-tooltip-bg:      #2c2b2a;
+  --jb-scrollbar:       #4c412e;
+  --jb-scrollbar-hover: #916c20;
+  --jb-resize-handle:   #4c412e;
+  --jb-resize-handle-active: #f3b217;
 
   /* ── Fonts ── */
   --jb-font-sans:       system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
