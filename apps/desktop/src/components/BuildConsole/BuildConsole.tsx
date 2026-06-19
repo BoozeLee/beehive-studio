@@ -95,7 +95,7 @@ export function BuildConsole({ logs, onClear, title = "Build Console" }: BuildCo
       {/* Log output */}
       <div
         ref={scrollRef}
-        className="jetbee-console"
+        className="jetbee-console jb-scrollable"
         style={{ flex: 1, overflow: "auto" }}
         onScroll={(e) => {
           const el = e.currentTarget;
