@@ -47,6 +47,10 @@ export function TabbedEditor({ tabs, defaultTab, onTabChange, onTabClose }: Tabb
             data-active={activeTab === tab.id}
             onClick={() => handleTabClick(tab.id)}
             title={tab.label}
+            style={{
+              borderLeft: activeTab === tab.id ? "3px solid var(--jb-comb)" : "3px solid transparent",
+              paddingLeft: activeTab === tab.id ? 9 : 12,
+            }}
           >
             {tab.icon && <span style={{ opacity: 0.7 }}>{tab.icon}</span>}
             <span>{tab.label}</span>
