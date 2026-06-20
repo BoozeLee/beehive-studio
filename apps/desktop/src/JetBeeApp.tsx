@@ -1260,10 +1260,10 @@ function JetBeeApp() {
         <BranchSelector projectName={projectName} onBranchChange={handleBranchSwitch} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <button className="jetbee-toolbtn" onClick={() => sendBrief()} disabled={isLoading || !brief.trim()}>
+        <button className="jetbee-toolbtn" data-active={isLoading} onClick={() => sendBrief()} disabled={isLoading || !brief.trim()}>
           {isLoading ? "Generating..." : "Generate"}
         </button>
-        <button className="jetbee-toolbtn" onClick={doResearch} disabled={isLoading || !brief.trim()}>
+        <button className="jetbee-toolbtn" data-active={isLoading} onClick={doResearch} disabled={isLoading || !brief.trim()}>
           🔍 Research
         </button>
         <button className="jetbee-toolbtn" onClick={handleSaveProject}>
@@ -1278,7 +1278,7 @@ function JetBeeApp() {
         <button className="jetbee-toolbtn" onClick={() => setShowExploreDialog(true)}>
           🔍 Explore
         </button>
-        <button className="jetbee-toolbtn" onClick={() => setShowTimeline(!showTimeline)}>
+        <button className="jetbee-toolbtn" data-active={showTimeline} onClick={() => setShowTimeline(!showTimeline)}>
           {showTimeline ? "Grid" : "Timeline"}
         </button>
       </div>
