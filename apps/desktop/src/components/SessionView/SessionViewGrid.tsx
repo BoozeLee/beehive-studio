@@ -139,6 +139,16 @@ export function SessionViewGrid({
               display: "flex",
               flexDirection: "column",
               gap: 8,
+              transition: "all 0.15s ease",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = BEEHIVE.comb;
+              e.currentTarget.style.boxShadow = `0 0 0 1px ${BEEHIVE.comb}`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = BEEHIVE.border;
+              e.currentTarget.style.boxShadow = "none";
             }}
           >
             {/* Header */}
@@ -258,7 +268,7 @@ export function SessionViewGrid({
 
             {/* Actions */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: "auto", alignItems: "center" }}>
-              <ActionBtn onClick={() => onPlayClip?.(clip.id)} accent={color}>
+              <ActionBtn onClick={() => onPlayClip?.(clip.id)} accent={BEEHIVE.comb}>
                 ▶ Play
               </ActionBtn>
               <ActionBtn onClick={() => onAccept?.(clip.id)}>
