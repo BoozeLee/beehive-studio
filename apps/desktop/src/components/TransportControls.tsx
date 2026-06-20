@@ -31,8 +31,8 @@ export function TransportControls({
         alignItems: "center",
         gap: 12,
         padding: "10px 16px",
-        background: "#18181c",
-        border: "1px solid #2a2a30",
+        background: "var(--jb-bg-elevated)",
+        border: "1px solid var(--jb-border)",
         borderRadius: 8,
       }}
     >
@@ -44,11 +44,12 @@ export function TransportControls({
             padding: "8px 16px",
             fontSize: 14,
             fontWeight: 700,
-            border: "none",
             borderRadius: 6,
             cursor: "pointer",
-            background: isPlaying ? "#fbbf24" : "#4ade80",
-            color: "#000",
+            background: isPlaying ? "var(--jb-comb)" : "transparent",
+            color: isPlaying ? "var(--jb-text-inverse)" : "var(--jb-comb)",
+            border: "2px solid var(--jb-comb)",
+            transition: "all 0.15s ease",
           }}
         >
           {isPlaying ? "⏸ Pause" : "▶ Play"}
@@ -62,7 +63,7 @@ export function TransportControls({
             border: "none",
             borderRadius: 6,
             cursor: "pointer",
-            background: "#ef4444",
+            background: "var(--jb-error)",
             color: "#fff",
           }}
         >
@@ -72,7 +73,7 @@ export function TransportControls({
 
       {/* BPM */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 12, color: "#888" }}>BPM</span>
+        <span style={{ fontSize: 12, color: "var(--jb-text-muted)" }}>BPM</span>
         <input
           type="number"
           value={bpm}
@@ -84,9 +85,9 @@ export function TransportControls({
             padding: "6px 8px",
             fontSize: 14,
             fontWeight: 700,
-            background: "#0f0f12",
-            color: "#e0e0e0",
-            border: "1px solid #2a2a30",
+            background: "var(--jb-bg)",
+            color: "var(--jb-text)",
+            border: "1px solid var(--jb-border)",
             borderRadius: 4,
             textAlign: "center",
           }}
@@ -96,10 +97,10 @@ export function TransportControls({
       {/* Position */}
       <div
         style={{
-          fontFamily: "monospace",
+          fontFamily: "var(--jb-font-mono)",
           fontSize: 16,
           fontWeight: 700,
-          color: "#ff8c42",
+          color: "var(--jb-comb)",
           minWidth: 80,
           textAlign: "center",
         }}
@@ -113,11 +114,11 @@ export function TransportControls({
           width: 10,
           height: 10,
           borderRadius: "50%",
-          background: isPlaying ? "#4ade80" : "#ef4444",
+          background: isPlaying ? "var(--jb-success)" : "var(--jb-error)",
           marginLeft: "auto",
           boxShadow: isPlaying
-            ? "0 0 8px #4ade80"
-            : "0 0 4px #ef4444",
+            ? "0 0 8px var(--jb-success)"
+            : "0 0 4px var(--jb-error)",
         }}
       />
     </div>
