@@ -5,18 +5,20 @@ interface BottomPanelProps {
   agentPanel: React.ReactNode;
   consolePanel: React.ReactNode;
   problemsPanel: React.ReactNode;
+  buildPanel: React.ReactNode;
 }
 
 const TABS: { id: BottomTab; label: string; icon: string }[] = [
   { id: "agent", label: "Agent Chat", icon: "💬" },
   { id: "console", label: "Build Console", icon: "🛠️" },
   { id: "problems", label: "Problems", icon: "⚠️" },
+  { id: "build", label: "Build Plan", icon: "▶️" },
 ];
 
-export function BottomPanel({ agentPanel, consolePanel, problemsPanel }: BottomPanelProps) {
+export function BottomPanel({ agentPanel, consolePanel, problemsPanel, buildPanel }: BottomPanelProps) {
   const { panels, openPanel } = useWorkbenchStore();
   const activeTab = panels.bottom.activeTab;
-  const panelsMap: Record<BottomTab, React.ReactNode> = { agent: agentPanel, console: consolePanel, problems: problemsPanel };
+  const panelsMap: Record<BottomTab, React.ReactNode> = { agent: agentPanel, console: consolePanel, problems: problemsPanel, build: buildPanel };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>

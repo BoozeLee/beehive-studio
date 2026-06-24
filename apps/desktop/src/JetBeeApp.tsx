@@ -3,8 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { SessionViewGrid } from "./components/SessionView/SessionViewGrid";
-import { BackendHealth } from "./components/BackendHealth";
-import { TransportControls } from "./components/TransportControls";
 import { useTransport, ScheduledClip } from "./lib/transport";
 import { saveProject, loadProject, listProjects, deleteProject } from "./lib/db";
 import { MidiIoPanel } from "./components/MidiIoPanel";
@@ -17,7 +15,6 @@ import { exportProjectAudio } from "./lib/audioEngine";
 import { ExportAudioDialog } from "./components/ExportAudioDialog";
 import { PublishDialog } from "./components/PublishDialog/PublishDialog";
 import { ExploreDialog } from "./components/ExploreDialog/ExploreDialog";
-import { TastePanel } from "./components/TasteGraph";
 import { summarizeRender, type RenderPreset } from "./lib/exportWorkflow";
 import {
   initMixer,
@@ -38,7 +35,6 @@ import {
   removeAutomationPoint,
   type AutomationLane,
 } from "./lib/automationEngine";
-import { BranchSelector } from "./components/BranchSelector";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { saveSnapshot, ensureProjectInit, forkSession, readClips, tagCommit } from "./lib/projectGit";
 import {
@@ -66,13 +62,19 @@ import { cancelRenderJob, createRenderJob, waitForRenderJob } from "./lib/render
 
 // JetBee IDE layout components
 import { ResizableWorkbench } from "./components/Layout/ResizableWorkbench";
-import { TabbedEditor } from "./components/Layout/TabbedEditor";
+import { TopBar } from "./components/Layout/TopBar";
+import { LeftRail } from "./components/Layout/LeftRail";
+import { RightRail } from "./components/Layout/RightRail";
+import { BottomPanel } from "./components/Layout/BottomPanel";
+import { EditorWorkbench } from "./components/Layout/EditorWorkbench";
+import { AgentRoster } from "./components/AgentDirector/AgentRoster";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
+import { BackendHealth } from "./components/BackendHealth";
 import { PromptEditor } from "./components/PromptEditor/PromptEditor";
 import { LuaEditor } from "./components/LuaEditor/LuaEditor";
 import { WaveformViewer } from "./components/WaveformViewer/WaveformViewer";
+import { TastePanel } from "./components/TasteGraph";
 import { BuildConsole } from "./components/BuildConsole/BuildConsole";
-import type { BuildLogEntry } from "./components/BuildConsole/BuildConsole";
 import { SwarmTrace } from "./components/SwarmTrace/SwarmTrace";
 import type { SwarmStep } from "./components/SwarmTrace/SwarmTrace";
 import { useProjectSocket } from "./lib/useProjectSocket";
@@ -1250,595 +1252,449 @@ function JetBeeApp() {
   }, [lastMessage, addBuildLog, addTimelineClip, addTrack, consumeBuildEvent]);
 
   // ── Layout construction ──
-  const topBar = (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 12px", background: "var(--jb-toolbar-bg)", borderBottom: "1px solid var(--jb-border)", flexShrink: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <TransportControls
-          isPlaying={transport.isPlaying}
-          bpm={transport.bpm}
-          currentBeat={transport.currentBeat}
-          onPlay={handleTransportPlay}
-          onPause={transport.pause}
-          onStop={transport.stop}
-          onBpmChange={transport.setBpm}
-        />
+
+  const projectPanel = (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}>
+      <div style={{ padding: 8 }}>
+        <ProjectPanel projectName={projectName} visible={true} onClose={() => {}} onBranchSwitch={handleBranchSwitch} />
+        <div style={{ marginTop: 8 }}>
+          <div className="jetbee-panel-header" style={{ marginBottom: 4 }}>Saved Projects</div>
+          {savedProjects.length === 0 && <div style={{ color: "var(--jb-text-muted)", fontSize: 12 }}>No saved projects yet.</div>}
+          {savedProjects.map((name) => (
+            <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 6px", borderRadius: 4, marginBottom: 2, background: name === projectName ? "var(--jb-panel-hover)" : "transparent" }}>
+              <span onClick={() => handleLoadProject(name)} style={{ flex: 1, fontSize: 12, color: "var(--jb-text)", cursor: "pointer" }}>{name}</span>
+              <button onClick={() => handleDeleteProject(name)} style={{ padding: "1px 4px", fontSize: 10, background: "transparent", border: "none", color: "var(--jb-error)", cursor: "pointer" }}>×</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+          <button className="jetbee-toolbtn" onClick={handleNewProjectWithTemplate}>🆕 New</button>
+          <button className="jetbee-toolbtn" onClick={handleFork} disabled={clips.length === 0}>🪝 Fork</button>
+          <button className="jetbee-toolbtn" onClick={handleConsolidateProject} disabled={!Object.values(timelineClips).some((clip) => clip.audioFilePath)}>Consolidate</button>
+        </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input
-          type="text"
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-          placeholder="Project name"
-          style={{ padding: "4px 8px", fontSize: 13, background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4, minWidth: 120 }}
-        />
-        <BranchSelector projectName={projectName} onBranchChange={handleBranchSwitch} />
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <button className="jetbee-toolbtn" data-active={isLoading} onClick={() => sendBrief()} disabled={isLoading || !brief.trim()}>
-          {isLoading ? "Generating..." : "Generate"}
-        </button>
-        <button className="jetbee-toolbtn" data-active={isLoading} onClick={doResearch} disabled={isLoading || !brief.trim()}>
-          🔍 Research
-        </button>
-        <button className="jetbee-toolbtn" onClick={handleSaveProject}>
-          💾 Save
-        </button>
-        <button className="jetbee-toolbtn" onClick={() => setShowExportDialog(true)} disabled={exportPayload.renderClips.length === 0}>
-          🔊 Export
-        </button>
-        <button className="jetbee-toolbtn" onClick={() => void handlePublishFromExport()} disabled={exportPayload.renderClips.length === 0}>
-          🌐 Publish
-        </button>
-        <button className="jetbee-toolbtn" onClick={() => setShowExploreDialog(true)}>
-          🔍 Explore
-        </button>
-        <button className="jetbee-toolbtn" data-active={showTimeline} onClick={() => setShowTimeline(!showTimeline)}>
-          {showTimeline ? "Grid" : "Timeline"}
-        </button>
-      </div>
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-        <BackendHealth />
+      <div style={{ padding: 8, borderTop: "1px solid var(--jb-border)" }}>
+        <MidiIoPanel onStatus={setStatus} onNote={(note) => setClips((prev) => [...prev, { id: crypto.randomUUID(), name: `MIDI ${note.pitch}`, duration: 0.5, color: "#5a3a2a", midiData: { notes: [note] } }])} />
       </div>
     </div>
   );
 
+  const patternPanel = (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "var(--jb-toolbar-bg)", borderBottom: "1px solid var(--jb-border)", flexShrink: 0 }}>
+        <select aria-label="Pattern Bank" value={selectedPatternId ?? ""} onChange={(event) => selectPattern(event.target.value || null)} style={{ padding: "4px 6px", background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4 }}>
+          {patterns.map((pattern) => (
+            <option key={pattern.id} value={pattern.id}>{pattern.name}</option>
+          ))}
+        </select>
+        <button className="jetbee-toolbtn" onClick={() => addPattern(createDefaultPattern())}>New Pattern</button>
+        <button className="jetbee-toolbtn" onClick={() => selectedPatternId && duplicatePattern(selectedPatternId)} disabled={!selectedPatternId}>Duplicate</button>
+        <button className="jetbee-toolbtn" onClick={() => selectedPatternId && removePattern(selectedPatternId)} disabled={!selectedPatternId}>Delete</button>
+        {selectedPattern && (
+          <input aria-label="Pattern name" value={selectedPattern.name} onChange={(event) => updatePattern(selectedPattern.id, { name: event.target.value })} style={{ flex: 1, minWidth: 120, padding: "4px 6px", background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4 }} />
+        )}
+      </div>
+      {selectedPattern && (
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <PatternEditor
+            key={selectedPattern.id}
+            isPlaying={transport.isPlaying}
+            currentBeat={transport.currentBeat}
+            initialPattern={selectedPattern.pattern}
+            initialSwing={selectedPattern.swing}
+            initialQa={selectedPattern.qa}
+            initialReasoning={selectedPattern.reasoning}
+            onPatternChange={(pattern) => updatePattern(selectedPattern.id, { pattern })}
+            onSwingChange={(swing) => updatePattern(selectedPattern.id, { swing })}
+            onMetadataChange={(qa, reasoning) => updatePattern(selectedPattern.id, { qa, reasoning })}
+            onSendToTimeline={(notes, _name, qa) => sendPatternToTimeline(notes, selectedPattern.name, qa)}
+          />
+        </div>
+      )}
+      {!selectedPattern && (
+        <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>No pattern selected.</div>
+      )}
+    </div>
+  );
+
+  const samplePanel = (
+    <SampleBrowser
+      onSampleSelect={(path, info) => {
+        const state = useTimelineStore.getState();
+        let targetTrack = state.tracks.find(
+          (track) => track.id === state.selectedTrackId && track.type === "audio"
+        ) ?? state.tracks.find((track) => track.type === "audio");
+        if (!targetTrack) {
+          targetTrack = {
+            id: crypto.randomUUID(),
+            name: "Audio",
+            type: "audio",
+            color: "#4ade80",
+            volume: 0.8,
+            pan: 0,
+            muted: false,
+            solo: false,
+            arm: false,
+            clips: [],
+            automationLanes: [],
+          };
+          addTrack(targetTrack);
+          createChannel(targetTrack.id, targetTrack.name);
+        }
+        const clipId = crypto.randomUUID();
+        const duration = info.duration_secs > 0 ? info.duration_secs * (transport.bpm / 60) : 4;
+        const now = Date.now() / 1000;
+        addTimelineClip({
+          id: clipId,
+          name: info.filename.replace(/\.[^.]+$/, ""),
+          type: "audio",
+          trackId: targetTrack.id,
+          start: quantizeToBar(state.cursorPosition),
+          duration,
+          loop: false,
+          color: "#4ade80",
+          audioFilePath: path,
+          audioSourceOffset: 0,
+          audioSourceDuration: info.duration_secs || undefined,
+          gain: 1,
+          playback: { instrument: "sample" },
+          metadata: { generative: false, proposed: true },
+          createdAt: now,
+          updatedAt: now,
+        });
+        setClips((prev) => [
+          ...prev,
+          {
+            id: clipId,
+            name: info.filename.replace(/\.[^.]+$/, ""),
+            duration,
+            color: "#3a5a2a",
+            audioFilePath: path,
+            audioSourceOffset: 0,
+            audioSourceDuration: info.duration_secs || undefined,
+            gain: 1,
+          },
+        ]);
+        setStatus(`Sample loaded: ${info.filename}`);
+      }}
+    />
+  );
+
+  const gitPanel = (
+    <ProjectPanel projectName={projectName} visible={true} onClose={() => {}} onBranchSwitch={handleBranchSwitch} />
+  );
+
+  const arrangementPanel = showTimeline ? (
+    <Timeline
+      isPlaying={transport.isPlaying}
+      currentBeat={transport.currentBeat}
+      bpm={transport.bpm}
+      onPlayClip={(id) => {
+        const clip = clips.find((c) => c.id === id);
+        if (clip) playClip(clip);
+      }}
+      onSeek={handleSeek}
+      onAddTrack={handleAddTrack}
+      onRemoveTrack={handleRemoveTrack}
+      onDeleteClip={(id) => setClips((prev) => prev.filter((clip) => clip.id !== id))}
+      onDuplicateClip={(clip) => setClips((prev) => [...prev, clip])}
+    />
+  ) : (
+    <SessionViewGrid
+      clips={clips}
+      projectId={projectName}
+      onLaunchScene={launchSessionScene}
+      onPlayClip={(id) => {
+        const clip = clips.find((c) => c.id === id);
+        if (clip) playClip(clip);
+      }}
+      onAccept={acceptClip}
+      onReject={rejectClip}
+      onVariations={generateVariations}
+    />
+  );
+
+  const pianoPanel = selectedTimelineClip?.midiData ? (
+    <PianoRoll
+      notes={selectedTimelineClip.midiData.notes.map((note, index) => ({
+        ...note,
+        id: `${selectedTimelineClip.id}-note-${index}`,
+      }))}
+      onChange={(notes) => {
+        const nextNotes = notes.map(({ id: _id, ...note }) => note);
+        updateClipMidiNotes(selectedTimelineClip.id, nextNotes);
+        setClips((prev) =>
+          prev.map((clip) =>
+            clip.id === selectedTimelineClip.id
+              ? { ...clip, midiData: { notes: nextNotes } }
+              : clip
+          )
+        );
+      }}
+      isPlaying={transport.isPlaying}
+      currentBeat={transport.currentBeat - selectedTimelineClip.start}
+      snapToGrid
+      gridDivision={0.25}
+    />
+  ) : (
+    <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>
+      Select a MIDI clip in the Timeline to edit it in Piano Roll.
+    </div>
+  );
+
+  const mixerPanel = (
+    <Mixer onVolumeChange={(trackId, vol) => updateChannel(trackId, { volume: vol })} onPanChange={(trackId, pan) => updateChannel(trackId, { pan })} />
+  );
+
+  const effectsPanel = selectedTimelineTrack ? (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto", padding: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--jb-text)" }}>
+        {selectedTimelineTrack.name} ({selectedTimelineTrack.type})
+      </div>
+      {showEffects && (
+        <>
+          <EffectsChain effects={selectedTrackEffects} onChange={(effects) => updateTrack(selectedTimelineTrack.id, { effects })} />
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+            {[
+              "volume",
+              "pan",
+              "send.reverb",
+              "send.delay",
+              ...selectedTrackEffects.flatMap((effect) =>
+                Object.keys(effect.params).map((param) => `fx.${effect.id}.${param}`)
+              ),
+            ].map((parameter) => (
+              <button
+                key={parameter}
+                disabled={selectedTimelineTrack.automationLanes.some((lane) => lane.parameter === parameter)}
+                onClick={() => {
+                  const lane = createAutomationLane(selectedTimelineTrack.id, parameter);
+                  updateTrack(selectedTimelineTrack.id, {
+                    automationLanes: [
+                      ...selectedTimelineTrack.automationLanes,
+                      {
+                        id: lane.id,
+                        parameter: lane.parameter,
+                        points: lane.points,
+                        mode: "read",
+                      },
+                    ],
+                  });
+                }}
+                className="jetbee-toolbtn"
+                style={{ fontSize: 10, padding: "2px 6px" }}
+              >
+                Automate {parameter}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {!showEffects && (
+        <div style={{ color: "var(--jb-text-muted)", fontSize: 12 }}>Effects panel hidden.</div>
+      )}
+      {automationLanes.length > 0 && automationLanes.map((lane) => (
+        <AutomationLaneView
+          key={lane.id}
+          lane={lane}
+          totalBeats={16}
+          zoom={16}
+          isPlaying={transport.isPlaying}
+          currentBeat={transport.currentBeat}
+          onAddPoint={(time: number, value: number) => {
+            if (!selectedTimelineTrack) return;
+            const updated = addAutomationPoint(lane, time, value);
+            updateTrack(selectedTimelineTrack.id, {
+              automationLanes: selectedTimelineTrack.automationLanes.map((item) =>
+                item.id === lane.id
+                  ? { id: updated.id, parameter: updated.parameter, points: updated.points, mode: updated.mode }
+                  : item
+              ),
+            });
+          }}
+          onRemovePoint={(time: number) => {
+            if (!selectedTimelineTrack) return;
+            const updated = removeAutomationPoint(lane, time);
+            updateTrack(selectedTimelineTrack.id, {
+              automationLanes: selectedTimelineTrack.automationLanes.map((item) =>
+                item.id === lane.id
+                  ? { id: updated.id, parameter: updated.parameter, points: updated.points, mode: updated.mode }
+                  : item
+              ),
+            });
+          }}
+        />
+      ))}
+    </div>
+  ) : (
+    <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>Select a track to edit its FX and automation.</div>
+  );
+
+  const inspectorPanel = effectsPanel;
+
+  const agentPanel = (
+    <AgentDirector
+      bpm={transport.bpm}
+      onClipGenerated={(notes, reasoning) => {
+        const state = useTimelineStore.getState();
+        let targetTrack = state.tracks.find(
+          (t) => t.type === "midi" && t.name.toLowerCase().includes("bass")
+        );
+        if (!targetTrack) {
+          const trackId = crypto.randomUUID();
+          targetTrack = {
+            id: trackId,
+            name: "Bass",
+            type: "midi",
+            color: "#ff8c42",
+            volume: 0.8,
+            pan: 0,
+            muted: false,
+            solo: false,
+            arm: false,
+            clips: [],
+            automationLanes: [],
+            instrument: { type: "tonejs", preset: "bass" },
+          };
+          addTrack(targetTrack);
+          createChannel(targetTrack.id, targetTrack.name);
+        }
+
+        const clipId = crypto.randomUUID();
+        const duration = inferClipDuration(notes);
+        const now = Date.now() / 1000;
+        const timelineClip: TimelineClip = {
+          id: clipId,
+          name: "Rolling Acid Bass",
+          type: "midi",
+          trackId: targetTrack.id,
+          start: quantizeToBar(state.cursorPosition),
+          duration,
+          loop: false,
+          midiData: { notes },
+          playback: { instrument: "bass", preset: "acid" },
+          metadata: {
+            generative: true,
+            proposed: true,
+            agentId: "rhythm_groove",
+            reasoningTrace: reasoning.join("\n"),
+            confidence: 0.95,
+            tags: ["acid", "techno", "bassline"],
+          },
+          createdAt: now,
+          updatedAt: now,
+        };
+        addTimelineClip(timelineClip);
+
+        // Also mirror into the Session View grid
+        setClips((prev) => [
+          ...prev,
+          {
+            id: clipId,
+            name: timelineClip.name,
+            duration,
+            color: targetTrack.color,
+            midiData: { notes },
+            reasoning,
+          },
+        ]);
+        setStreamLog(reasoning);
+      }}
+    />
+  );
+
+  const promptPanel = (
+    <PromptEditor
+      value={brief}
+      onChange={setBrief}
+      onGenerate={() => sendBrief()}
+      onSendToCritic={() => {}}
+      onTag={async (tagName) => {
+        try {
+          await tagCommit(projectName, tagName, `State tag from prompt: ${brief.slice(0, 30)}...`);
+          setStatus(`Tagged state: ${tagName}`);
+        } catch (e) {
+          setStatus(`Tag failed: ${e}`);
+        }
+      }}
+    />
+  );
+
+  const luaPanel = <LuaEditor sessionId={projectName} />;
+  const waveformPanel = <WaveformViewer />;
+  const pluginsPanel = <PluginMarketplace />;
+  const tastePanel = <TastePanel projectId={projectName} />;
+
+  const proposalPanel = (
+    <ProposalPanel
+      proposal={hiveProposal}
+      isLoading={hiveLoading}
+      error={hiveError}
+      onDismiss={clearProposal}
+    />
+  );
+
+  const buildPanel = (
+    <BuildPlanReview
+      job={activeBuild}
+      loading={buildLoading}
+      error={buildError}
+      onApprove={handleApproveBuild}
+      onReject={handleRejectBuild}
+    />
+  );
+
+  const topBar = (
+    <TopBar
+      projectName={projectName}
+      bpm={transport.bpm}
+      isPlaying={transport.isPlaying}
+      onPlayPause={transport.isPlaying ? transport.stop : handleTransportPlay}
+      onStop={transport.stop}
+      onSave={handleSaveProject}
+      onExport={() => setShowExportDialog(true)}
+      onOpenProject={() => setShowProjects(true)}
+    />
+  );
+
   const leftRail = (
-    <TabbedEditor
-      tabs={[
-        {
-          id: "explorer",
-          label: "Explorer",
-          icon: "📁",
-          content: (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}>
-              <div style={{ padding: 8 }}>
-                <ProjectPanel projectName={projectName} visible={true} onClose={() => {}} onBranchSwitch={handleBranchSwitch} />
-                <div style={{ marginTop: 8 }}>
-                  <div className="jetbee-panel-header" style={{ marginBottom: 4 }}>Saved Projects</div>
-                  {savedProjects.length === 0 && <div style={{ color: "var(--jb-text-muted)", fontSize: 12 }}>No saved projects yet.</div>}
-                  {savedProjects.map((name) => (
-                    <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 6px", borderRadius: 4, marginBottom: 2, background: name === projectName ? "var(--jb-panel-hover)" : "transparent" }}>
-                      <span onClick={() => handleLoadProject(name)} style={{ flex: 1, fontSize: 12, color: "var(--jb-text)", cursor: "pointer" }}>{name}</span>
-                      <button onClick={() => handleDeleteProject(name)} style={{ padding: "1px 4px", fontSize: 10, background: "transparent", border: "none", color: "var(--jb-error)", cursor: "pointer" }}>×</button>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
-                  <button className="jetbee-toolbtn" onClick={handleNewProjectWithTemplate}>🆕 New</button>
-                  <button className="jetbee-toolbtn" onClick={handleFork} disabled={clips.length === 0}>🪝 Fork</button>
-                  <button className="jetbee-toolbtn" onClick={handleConsolidateProject} disabled={!Object.values(timelineClips).some((clip) => clip.audioFilePath)}>Consolidate</button>
-                </div>
-              </div>
-              <div style={{ padding: 8, borderTop: "1px solid var(--jb-border)" }}>
-                <MidiIoPanel onStatus={setStatus} onNote={(note) => setClips((prev) => [...prev, { id: crypto.randomUUID(), name: `MIDI ${note.pitch}`, duration: 0.5, color: "#5a3a2a", midiData: { notes: [note] } }])} />
-              </div>
-            </div>
-          ),
-        },
-        {
-          id: "marketplace",
-          label: "Plugins",
-          icon: "🔌",
-          content: <PluginMarketplace />,
-        },
-        {
-          id: "agents",
-          label: "Agents",
-          icon: "🐝",
-          content: (
-            <AgentDirector
-              bpm={transport.bpm}
-              onClipGenerated={(notes, reasoning) => {
-                const state = useTimelineStore.getState();
-                let targetTrack = state.tracks.find(
-                  (t) => t.type === "midi" && t.name.toLowerCase().includes("bass")
-                );
-                if (!targetTrack) {
-                  const trackId = crypto.randomUUID();
-                  targetTrack = {
-                    id: trackId,
-                    name: "Bass",
-                    type: "midi",
-                    color: "#ff8c42",
-                    volume: 0.8,
-                    pan: 0,
-                    muted: false,
-                    solo: false,
-                    arm: false,
-                    clips: [],
-                    automationLanes: [],
-                    instrument: { type: "tonejs", preset: "bass" },
-                  };
-                  addTrack(targetTrack);
-                  createChannel(targetTrack.id, targetTrack.name);
-                }
-
-                const clipId = crypto.randomUUID();
-                const duration = inferClipDuration(notes);
-                const now = Date.now() / 1000;
-                const timelineClip: TimelineClip = {
-                  id: clipId,
-                  name: "Rolling Acid Bass",
-                  type: "midi",
-                  trackId: targetTrack.id,
-                  start: quantizeToBar(state.cursorPosition),
-                  duration,
-                  loop: false,
-                  midiData: { notes },
-                  playback: { instrument: "bass", preset: "acid" },
-                  metadata: {
-                    generative: true,
-                    proposed: true,
-                    agentId: "rhythm_groove",
-                    reasoningTrace: reasoning.join("\n"),
-                    confidence: 0.95,
-                    tags: ["acid", "techno", "bassline"],
-                  },
-                  createdAt: now,
-                  updatedAt: now,
-                };
-                addTimelineClip(timelineClip);
-
-                // Also mirror into the Session View grid
-                setClips((prev) => [
-                  ...prev,
-                  {
-                    id: clipId,
-                    name: timelineClip.name,
-                    duration,
-                    color: targetTrack.color,
-                    midiData: { notes },
-                    reasoning,
-                  },
-                ]);
-                setStreamLog(reasoning);
-              }}
-            />
-          ),
-        },
-        {
-          id: "samples",
-          label: "Samples",
-          icon: "🎵",
-          content: (
-            <SampleBrowser
-              onSampleSelect={(path, info) => {
-                const state = useTimelineStore.getState();
-                let targetTrack = state.tracks.find(
-                  (track) => track.id === state.selectedTrackId && track.type === "audio"
-                ) ?? state.tracks.find((track) => track.type === "audio");
-                if (!targetTrack) {
-                  targetTrack = {
-                    id: crypto.randomUUID(),
-                    name: "Audio",
-                    type: "audio",
-                    color: "#4ade80",
-                    volume: 0.8,
-                    pan: 0,
-                    muted: false,
-                    solo: false,
-                    arm: false,
-                    clips: [],
-                    automationLanes: [],
-                  };
-                  addTrack(targetTrack);
-                  createChannel(targetTrack.id, targetTrack.name);
-                }
-                const clipId = crypto.randomUUID();
-                const duration = info.duration_secs > 0 ? info.duration_secs * (transport.bpm / 60) : 4;
-                const now = Date.now() / 1000;
-                addTimelineClip({
-                  id: clipId,
-                  name: info.filename.replace(/\.[^.]+$/, ""),
-                  type: "audio",
-                  trackId: targetTrack.id,
-                  start: quantizeToBar(state.cursorPosition),
-                  duration,
-                  loop: false,
-                  color: "#4ade80",
-                  audioFilePath: path,
-                  audioSourceOffset: 0,
-                  audioSourceDuration: info.duration_secs || undefined,
-                  gain: 1,
-                  playback: { instrument: "sample" },
-                  metadata: { generative: false, proposed: true },
-                  createdAt: now,
-                  updatedAt: now,
-                });
-                setClips((prev) => [
-                  ...prev,
-                  {
-                    id: clipId,
-                    name: info.filename.replace(/\.[^.]+$/, ""),
-                    duration,
-                    color: "#3a5a2a",
-                    audioFilePath: path,
-                    audioSourceOffset: 0,
-                    audioSourceDuration: info.duration_secs || undefined,
-                    gain: 1,
-                  },
-                ]);
-                setStatus(`Sample loaded: ${info.filename}`);
-              }}
-            />
-          ),
-        },
-      ]}
+    <LeftRail
+      projectPanel={projectPanel}
+      patternPanel={patternPanel}
+      samplePanel={samplePanel}
+      gitPanel={gitPanel}
+      pluginsPanel={pluginsPanel}
     />
   );
 
   const center = (
-    <TabbedEditor
-      tabs={[
-        {
-          id: "prompt",
-          label: "Prompt",
-          icon: "✨",
-          content: (
-            <PromptEditor
-              value={brief}
-              onChange={setBrief}
-              onGenerate={() => sendBrief()}
-              onSendToCritic={() => {}}
-              onTag={async (tagName) => {
-                try {
-                  await tagCommit(projectName, tagName, `State tag from prompt: ${brief.slice(0, 30)}...`);
-                  setStatus(`Tagged state: ${tagName}`);
-                } catch (e) {
-                  setStatus(`Tag failed: ${e}`);
-                }
-              }}
-            />
-          ),
-        },
-        {
-          id: "scripts",
-          label: "Scripts",
-          icon: "📜",
-          content: (
-            <LuaEditor sessionId={projectName} />
-          ),
-        },
-        {
-          id: "arrangement",
-          label: "Arrangement",
-          icon: "🎼",
-          content: showTimeline ? (
-            <Timeline
-              isPlaying={transport.isPlaying}
-              currentBeat={transport.currentBeat}
-              bpm={transport.bpm}
-              onPlayClip={(id) => {
-                const clip = clips.find((c) => c.id === id);
-                if (clip) playClip(clip);
-              }}
-              onSeek={handleSeek}
-              onAddTrack={handleAddTrack}
-              onRemoveTrack={handleRemoveTrack}
-              onDeleteClip={(id) => setClips((prev) => prev.filter((clip) => clip.id !== id))}
-              onDuplicateClip={(clip) => setClips((prev) => [...prev, clip])}
-            />
-          ) : (
-            <SessionViewGrid
-              clips={clips}
-              projectId={projectName}
-              onLaunchScene={launchSessionScene}
-              onPlayClip={(id) => {
-                const clip = clips.find((c) => c.id === id);
-                if (clip) playClip(clip);
-              }}
-              onAccept={acceptClip}
-              onReject={rejectClip}
-              onVariations={generateVariations}
-            />
-          ),
-        },
-        {
-          id: "piano",
-          label: "Piano Roll",
-          icon: "🎹",
-          content: selectedTimelineClip?.midiData ? (
-            <PianoRoll
-              notes={selectedTimelineClip.midiData.notes.map((note, index) => ({
-                ...note,
-                id: `${selectedTimelineClip.id}-note-${index}`,
-              }))}
-              onChange={(notes) => {
-                const nextNotes = notes.map(({ id: _id, ...note }) => note);
-                updateClipMidiNotes(selectedTimelineClip.id, nextNotes);
-                setClips((prev) =>
-                  prev.map((clip) =>
-                    clip.id === selectedTimelineClip.id
-                      ? { ...clip, midiData: { notes: nextNotes } }
-                      : clip
-                  )
-                );
-              }}
-              isPlaying={transport.isPlaying}
-              currentBeat={transport.currentBeat - selectedTimelineClip.start}
-              snapToGrid
-              gridDivision={0.25}
-            />
-          ) : (
-            <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>
-              Select a MIDI clip in the Timeline to edit it in Piano Roll.
-            </div>
-          ),
-        },
-        {
-          id: "pattern",
-          label: "Pattern",
-          icon: "🥁",
-          content: (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "var(--jb-toolbar-bg)", borderBottom: "1px solid var(--jb-border)", flexShrink: 0 }}>
-                <select aria-label="Pattern Bank" value={selectedPatternId ?? ""} onChange={(event) => selectPattern(event.target.value || null)} style={{ padding: "4px 6px", background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4 }}>
-                  {patterns.map((pattern) => (
-                    <option key={pattern.id} value={pattern.id}>{pattern.name}</option>
-                  ))}
-                </select>
-                <button className="jetbee-toolbtn" onClick={() => addPattern(createDefaultPattern())}>New Pattern</button>
-                <button className="jetbee-toolbtn" onClick={() => selectedPatternId && duplicatePattern(selectedPatternId)} disabled={!selectedPatternId}>Duplicate</button>
-                <button className="jetbee-toolbtn" onClick={() => selectedPatternId && removePattern(selectedPatternId)} disabled={!selectedPatternId}>Delete</button>
-                {selectedPattern && (
-                  <input aria-label="Pattern name" value={selectedPattern.name} onChange={(event) => updatePattern(selectedPattern.id, { name: event.target.value })} style={{ flex: 1, minWidth: 120, padding: "4px 6px", background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4 }} />
-                )}
-              </div>
-              {selectedPattern && (
-                <div style={{ flex: 1, overflow: "hidden" }}>
-                  <PatternEditor
-                    key={selectedPattern.id}
-                    isPlaying={transport.isPlaying}
-                    currentBeat={transport.currentBeat}
-                    initialPattern={selectedPattern.pattern}
-                    initialSwing={selectedPattern.swing}
-                    initialQa={selectedPattern.qa}
-                    initialReasoning={selectedPattern.reasoning}
-                    onPatternChange={(pattern) => updatePattern(selectedPattern.id, { pattern })}
-                    onSwingChange={(swing) => updatePattern(selectedPattern.id, { swing })}
-                    onMetadataChange={(qa, reasoning) => updatePattern(selectedPattern.id, { qa, reasoning })}
-                    onSendToTimeline={(notes, _name, qa) => sendPatternToTimeline(notes, selectedPattern.name, qa)}
-                  />
-                </div>
-              )}
-              {!selectedPattern && (
-                <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>No pattern selected.</div>
-              )}
-            </div>
-          ),
-        },
-        {
-          id: "waveform",
-          label: "Waveform",
-          icon: "〰️",
-          content: <WaveformViewer />,
-        },
-        {
-          id: "lua",
-          label: "Lua",
-          icon: "🌙",
-          content: (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", padding: 8 }}>
-              <textarea
-                value={luaScript}
-                onChange={(e) => setLuaScript(e.target.value)}
-                style={{ flex: 1, fontFamily: "monospace", fontSize: 12, padding: 10, background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 6, resize: "none", boxSizing: "border-box" }}
-                spellCheck={false}
-              />
-              <button className="jetbee-toolbtn" onClick={runLua} style={{ marginTop: 8, alignSelf: "flex-start" }}>Run Script</button>
-              {luaResult && (
-                <pre style={{ marginTop: 8, padding: 10, background: "var(--jb-bg)", borderRadius: 6, fontSize: 11, maxHeight: 150, overflow: "auto", color: "var(--jb-text)" }}>
-                  {luaResult}
-                </pre>
-              )}
-            </div>
-          ),
-        },
-        {
-          id: "mixer",
-          label: "Mixer",
-          icon: "🎛️",
-          content: <Mixer onVolumeChange={(trackId, vol) => updateChannel(trackId, { volume: vol })} onPanChange={(trackId, pan) => updateChannel(trackId, { pan })} />,
-        },
-      ]}
-      defaultTab={activeCenterTab}
-      onTabChange={setActiveCenterTab}
+    <EditorWorkbench
+      arrangement={arrangementPanel}
+      patternEditor={patternPanel}
+      pianoRoll={pianoPanel}
+      mixer={mixerPanel}
+      effects={effectsPanel}
+      prompt={promptPanel}
+      lua={luaPanel}
+      waveform={waveformPanel}
     />
   );
 
   const rightRail = (
-    <TabbedEditor
-      tabs={[
-        {
-          id: "inspector",
-          label: "Inspector",
-          icon: "🔍",
-          content: (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto", padding: 8 }}>
-              {selectedTimelineTrack ? (
-                <>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--jb-text)" }}>
-                    {selectedTimelineTrack.name} ({selectedTimelineTrack.type})
-                  </div>
-                  {showEffects && (
-                    <>
-                      <EffectsChain effects={selectedTrackEffects} onChange={(effects) => updateTrack(selectedTimelineTrack.id, { effects })} />
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
-                        {[
-                          "volume",
-                          "pan",
-                          "send.reverb",
-                          "send.delay",
-                          ...selectedTrackEffects.flatMap((effect) =>
-                            Object.keys(effect.params).map((param) => `fx.${effect.id}.${param}`)
-                          ),
-                        ].map((parameter) => (
-                          <button
-                            key={parameter}
-                            disabled={selectedTimelineTrack.automationLanes.some((lane) => lane.parameter === parameter)}
-                            onClick={() => {
-                              const lane = createAutomationLane(selectedTimelineTrack.id, parameter);
-                              updateTrack(selectedTimelineTrack.id, {
-                                automationLanes: [
-                                  ...selectedTimelineTrack.automationLanes,
-                                  {
-                                    id: lane.id,
-                                    parameter: lane.parameter,
-                                    points: lane.points,
-                                    mode: "read",
-                                  },
-                                ],
-                              });
-                            }}
-                            className="jetbee-toolbtn"
-                            style={{ fontSize: 10, padding: "2px 6px" }}
-                          >
-                            Automate {parameter}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {!showEffects && (
-                    <div style={{ color: "var(--jb-text-muted)", fontSize: 12 }}>Effects panel hidden.</div>
-                  )}
-                </>
-              ) : (
-                <div style={{ color: "var(--jb-text-muted)", fontSize: 12 }}>Select a track to edit its FX and automation.</div>
-              )}
-              {automationLanes.length > 0 && automationLanes.map((lane) => (
-                <AutomationLaneView
-                  key={lane.id}
-                  lane={lane}
-                  totalBeats={16}
-                  zoom={16}
-                  isPlaying={transport.isPlaying}
-                  currentBeat={transport.currentBeat}
-                  onAddPoint={(time: number, value: number) => {
-                    if (!selectedTimelineTrack) return;
-                    const updated = addAutomationPoint(lane, time, value);
-                    updateTrack(selectedTimelineTrack.id, {
-                      automationLanes: selectedTimelineTrack.automationLanes.map((item) =>
-                        item.id === lane.id
-                          ? { id: updated.id, parameter: updated.parameter, points: updated.points, mode: updated.mode }
-                          : item
-                      ),
-                    });
-                  }}
-                  onRemovePoint={(time: number) => {
-                    if (!selectedTimelineTrack) return;
-                    const updated = removeAutomationPoint(lane, time);
-                    updateTrack(selectedTimelineTrack.id, {
-                      automationLanes: selectedTimelineTrack.automationLanes.map((item) =>
-                        item.id === lane.id
-                          ? { id: updated.id, parameter: updated.parameter, points: updated.points, mode: updated.mode }
-                          : item
-                      ),
-                    });
-                  }}
-                />
-              ))}
-            </div>
-          ),
-        },
-        {
-          id: "trace",
-          label: "Trace",
-          icon: "🐝",
-          content: <SwarmTrace steps={swarmSteps} />,
-        },
-        {
-          id: "build-plan",
-          label: "Build Plan",
-          icon: "▶",
-          content: (
-            <BuildPlanReview
-              job={activeBuild}
-              loading={buildLoading}
-              error={buildError}
-              onApprove={handleApproveBuild}
-              onReject={handleRejectBuild}
-            />
-          ),
-        },
-        {
-          id: "proposal",
-          label: "Proposal",
-          icon: "🐝",
-          content: (
-            <ProposalPanel
-              proposal={hiveProposal}
-              isLoading={hiveLoading}
-              error={hiveError}
-              onDismiss={clearProposal}
-            />
-          ),
-        },
-        {
-          id: "git",
-          label: "Git",
-          icon: "🌿",
-          content: <ProjectPanel projectName={projectName} visible={true} onClose={() => {}} onBranchSwitch={handleBranchSwitch} />,
-        },
-      ]}
+    <RightRail
+      inspectorPanel={inspectorPanel}
+      agentsPanel={<AgentRoster />}
+      proposalPanel={proposalPanel}
+      tastePanel={tastePanel}
     />
   );
 
   const bottomRail = (
-    <TabbedEditor
-      tabs={[
-        {
-          id: "console",
-          label: "Console",
-          icon: "🖥️",
-          content: <BuildConsole logs={buildLogs} onClear={() => useBuildLogStore.getState().clearLogs()} />,
-        },
-        {
-          id: "taste",
-          label: "Taste",
-          icon: "🍯",
-          content: <TastePanel projectId={projectName} />,
-        },
-        {
-          id: "chat",
-          label: "Chat",
-          icon: "💬",
-          content: (
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto", padding: 8 }}>
-              {streamLog.length === 0 && (
-                <div style={{ color: "var(--jb-text-muted)", fontStyle: "italic", textAlign: "center", paddingTop: 20 }}>
-                  Agent chat output will appear here.
-                </div>
-              )}
-              {streamLog.map((line, i) => (
-                <div key={i} style={{ marginBottom: 3, color: "var(--jb-text)", fontSize: 12 }}>
-                  • {line}
-                </div>
-              ))}
-            </div>
-          ),
-        },
-      ]}
+    <BottomPanel
+      agentPanel={agentPanel}
+      consolePanel={<BuildConsole logs={buildLogs} onClear={() => useBuildLogStore.getState().clearLogs()} />}
+      problemsPanel={<div style={{ padding: 12, color: "var(--jb-text-muted)" }}>No problems detected.</div>}
+      buildPanel={buildPanel}
     />
   );
 
@@ -1848,7 +1704,7 @@ function JetBeeApp() {
         <span className="jetbee-statusbar-chip" style={{ color: wsConnected ? "var(--jb-success)" : wsReconnecting ? "var(--jb-warning)" : "var(--jb-error)" }}>
           {wsConnected ? "● WS" : wsReconnecting ? "◐ WS" : "○ WS"}
         </span>
-        <span className="jetbee-statusbar-chip">Backend: 9876</span>
+        <span className="jetbee-statusbar-chip"><BackendHealth /></span>
         <span className="jetbee-statusbar-chip" style={{ color: hiveProposal && !hiveProposal.degraded ? "var(--jb-success)" : hiveLoading ? "var(--jb-warning)" : "var(--jb-text-muted)" }}>
           {hiveLoading ? "◐ Hive" : hiveProposal && !hiveProposal.degraded ? "● Hive" : "○ Hive"}
         </span>

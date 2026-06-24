@@ -1,8 +1,8 @@
 import { create } from "zustand";
 
-export type LeftTab = "project" | "patterns" | "samples" | "git";
-export type RightTab = "inspector" | "agents";
-export type BottomTab = "agent" | "console" | "problems";
+export type LeftTab = "project" | "patterns" | "samples" | "git" | "plugins";
+export type RightTab = "inspector" | "agents" | "proposal" | "taste";
+export type BottomTab = "agent" | "console" | "problems" | "build";
 
 export interface AgentMessage {
   id: string;
@@ -65,7 +65,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     bottom: { open: true, activeTab: "agent" },
   },
   center: {
-    tabs: ["arrangement"],
+    tabs: ["arrangement", "prompt", "lua", "waveform"],
     activeTab: "arrangement",
   },
   chat: {

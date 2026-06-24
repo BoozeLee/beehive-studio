@@ -7,9 +7,12 @@ interface EditorWorkbenchProps {
   pianoRoll: React.ReactNode;
   mixer: React.ReactNode;
   effects: React.ReactNode;
+  prompt: React.ReactNode;
+  lua: React.ReactNode;
+  waveform: React.ReactNode;
 }
 
-export function EditorWorkbench({ arrangement, patternEditor, pianoRoll, mixer, effects }: EditorWorkbenchProps) {
+export function EditorWorkbench({ arrangement, patternEditor, pianoRoll, mixer, effects, prompt, lua, waveform }: EditorWorkbenchProps) {
   const { center, setActiveCenterTab, closeCenterTab } = useWorkbenchStore();
 
   const tabContent: Record<string, React.ReactNode> = {
@@ -18,6 +21,9 @@ export function EditorWorkbench({ arrangement, patternEditor, pianoRoll, mixer, 
     piano: pianoRoll,
     mixer,
     effects,
+    prompt,
+    lua,
+    waveform,
   };
 
   const tabs: EditorTab[] = center.tabs
@@ -46,6 +52,9 @@ const LABELS: Record<string, string> = {
   piano: "Piano Roll",
   mixer: "Mixer",
   effects: "Audio Graph",
+  prompt: "Prompt",
+  lua: "Lua",
+  waveform: "Waveform",
 };
 
 const ICONS: Record<string, string> = {
@@ -54,4 +63,7 @@ const ICONS: Record<string, string> = {
   piano: "🎼",
   mixer: "🎛️",
   effects: "🔌",
+  prompt: "✨",
+  lua: "📜",
+  waveform: "〰️",
 };

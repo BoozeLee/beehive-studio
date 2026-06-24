@@ -4,17 +4,21 @@ import { commonStyles } from "../../lib/theme";
 interface RightRailProps {
   inspectorPanel: React.ReactNode;
   agentsPanel: React.ReactNode;
+  proposalPanel: React.ReactNode;
+  tastePanel: React.ReactNode;
 }
 
 const TABS: { id: RightTab; label: string; icon: string }[] = [
   { id: "inspector", label: "Inspector", icon: "🔍" },
   { id: "agents", label: "Agents", icon: "🐝" },
+  { id: "proposal", label: "Proposal", icon: "🍯" },
+  { id: "taste", label: "Taste", icon: "🕸️" },
 ];
 
-export function RightRail({ inspectorPanel, agentsPanel }: RightRailProps) {
+export function RightRail({ inspectorPanel, agentsPanel, proposalPanel, tastePanel }: RightRailProps) {
   const { panels, openPanel } = useWorkbenchStore();
   const activeTab = panels.right.activeTab;
-  const panelsMap: Record<RightTab, React.ReactNode> = { inspector: inspectorPanel, agents: agentsPanel };
+  const panelsMap: Record<RightTab, React.ReactNode> = { inspector: inspectorPanel, agents: agentsPanel, proposal: proposalPanel, taste: tastePanel };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>

@@ -6,6 +6,7 @@ interface LeftRailProps {
   patternPanel: React.ReactNode;
   samplePanel: React.ReactNode;
   gitPanel: React.ReactNode;
+  pluginsPanel: React.ReactNode;
 }
 
 const TABS: { id: LeftTab; label: string; icon: string }[] = [
@@ -13,9 +14,10 @@ const TABS: { id: LeftTab; label: string; icon: string }[] = [
   { id: "patterns", label: "Patterns", icon: "🎹" },
   { id: "samples", label: "Samples", icon: "🎧" },
   { id: "git", label: "Git", icon: "🌿" },
+  { id: "plugins", label: "Plugins", icon: "🔌" },
 ];
 
-export function LeftRail({ projectPanel, patternPanel, samplePanel, gitPanel }: LeftRailProps) {
+export function LeftRail({ projectPanel, patternPanel, samplePanel, gitPanel, pluginsPanel }: LeftRailProps) {
   const { panels, openPanel } = useWorkbenchStore();
   const activeTab = panels.left.activeTab;
 
@@ -24,6 +26,7 @@ export function LeftRail({ projectPanel, patternPanel, samplePanel, gitPanel }: 
     patterns: patternPanel,
     samples: samplePanel,
     git: gitPanel,
+    plugins: pluginsPanel,
   };
 
   return (
