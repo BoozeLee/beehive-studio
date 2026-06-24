@@ -134,10 +134,10 @@ describe("Chat -> Clip -> Playback smoke", () => {
   it("streams a brief to the agent and creates a Bass track + clip in the timeline", async () => {
     render(<AgentDirector bpm={130} onClipGenerated={handleClipGenerated} />);
 
-    const briefArea = screen.getByDisplayValue(TEST_BRIEF);
-    expect(briefArea).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("Generate"));
+    // Enter the brief into the workbench composer and send it.
+    const briefArea = screen.getByPlaceholderText(/Ctrl\+Enter to send/i);
+    fireEvent.change(briefArea, { target: { value: TEST_BRIEF } });
+    fireEvent.click(screen.getByText("Send"));
 
     await waitFor(() => {
       expect(MockWebSocket.lastInstance).not.toBeNull();
@@ -158,7 +158,7 @@ describe("Chat -> Clip -> Playback smoke", () => {
         type: "brief",
         brief: TEST_BRIEF,
         agent_id: "rhythm_groove",
-        session_context: { bpm: 130, swing: 0.15 },
+        session_context: { bpm: 130, swing: 0.68 },
       }),
     ]);
 
