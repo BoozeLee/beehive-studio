@@ -451,6 +451,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                   const clipLeft = clip.start * zoom;
                   const clipWidth = Math.max(clip.duration * zoom, 8);
                   const isSelected = selectedClipId === clip.id;
+                  const isProposed = clip.metadata?.proposed === true;
 
                   return (
                     <div
@@ -489,9 +490,11 @@ export const Timeline: React.FC<TimelineProps> = ({
                         height: TRACK_HEIGHT - 8,
                         borderRadius: 4,
                         background: clip.color || COLORS.accent,
-                        opacity: track.muted ? 0.4 : 0.85,
+                        opacity: track.muted ? 0.4 : isProposed ? 0.55 : 0.85,
                         border: isSelected
                           ? `2px solid ${COLORS.accent}`
+                          : isProposed
+                          ? `2px dashed ${COLORS.accent}`
                           : "2px solid transparent",
                         cursor: dragState?.clipId === clip.id ? "grabbing" : "grab",
                         overflow: "hidden",

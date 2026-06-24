@@ -4,6 +4,7 @@ import {
   assignClipIdsToTracks,
   inferClipDuration,
   normalizeTimelineClip,
+  quantizeToBar,
 } from "../lib/timelineClipAdapter";
 
 describe("timeline clip adapter", () => {
@@ -47,6 +48,15 @@ describe("timeline clip adapter", () => {
     expect(clip.metadata.generative).toBe(true);
     expect(clip.metadata.confidence).toBe(0.72);
     expect(clip.metadata.tags).toEqual(["qa-warning"]);
+  });
+
+  it("quantizes a beat position to the nearest bar", () => {
+    expect(quantizeToBar(0)).toBe(0);
+    expect(quantizeToBar(1.3)).toBe(0); // rounds down to bar 0
+    expect(quantizeToBar(2)).toBe(4); // exact half rounds up to next bar
+    expect(quantizeToBar(2.1)).toBe(4); // rounds up to bar 1
+    expect(quantizeToBar(7.9)).toBe(8);
+    expect(quantizeToBar(-3)).toBe(0); // clamps negatives to 0
   });
 
   it("keeps existing track assignments and appends unassigned clips to fallback track", () => {

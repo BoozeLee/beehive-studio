@@ -28,6 +28,15 @@ export function inferClipDuration(clip: GeneratedClip): number {
   return 4;
 }
 
+/**
+ * Snap a beat position to the nearest bar boundary so proposed clips land
+ * musically (Ableton-style) instead of at an arbitrary cursor offset.
+ */
+export function quantizeToBar(beat: number, beatsPerBar = 4): number {
+  if (!Number.isFinite(beat) || beat <= 0 || beatsPerBar <= 0) return 0;
+  return Math.round(beat / beatsPerBar) * beatsPerBar;
+}
+
 function inferPlaybackInstrument(clip: GeneratedClip): NonNullable<TimelineClip["playback"]>["instrument"] {
   const name = clip.name.toLowerCase();
   if (name.includes("drum") || name.includes("kick") || name.includes("snare")) return "drum";
