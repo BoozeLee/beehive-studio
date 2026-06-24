@@ -45,6 +45,7 @@ import {
   assignClipIdsToTracks,
   findTrackIdForClip,
   normalizeTimelineClip,
+  quantizeToBar,
 } from "./lib/timelineClipAdapter";
 import type { Clip as TimelineClip, Track } from "../../../packages/core-models/index";
 import {
@@ -781,11 +782,24 @@ function JetBeeApp() {
     }
   }, [brief]);
 
-  function acceptClip(_id: string) {
-    setStatus(`✓ Clip accepted`);
+  function acceptClip(id: string) {
+    // Commit the proposed clip: clear its `proposed` flag on the timeline so it
+    // renders as a real arrangement clip, and drop it from the pending grid.
+    const { clips: tlClips, updateClip } = useTimelineStore.getState();
+    const existing = tlClips[id];
+    if (existing) {
+      updateClip(id, {
+        metadata: { ...existing.metadata, proposed: false },
+      });
+    }
+    setClips((prev) => prev.filter((c) => c.id !== id));
+    setStatus("✓ Clip committed to arrangement");
   }
 
   function rejectClip(id: string) {
+    // Humans dispose: remove the proposal from BOTH the pending grid and the
+    // timeline (it was placed speculatively on generation).
+    useTimelineStore.getState().removeClip(id);
     setClips((prev) => prev.filter((c) => c.id !== id));
     setStatus("Clip rejected");
   }
@@ -1367,13 +1381,14 @@ function JetBeeApp() {
                   name: "Rolling Acid Bass",
                   type: "midi",
                   trackId: targetTrack.id,
-                  start: state.cursorPosition,
+                  start: quantizeToBar(state.cursorPosition),
                   duration,
                   loop: false,
                   midiData: { notes },
                   playback: { instrument: "bass", preset: "acid" },
                   metadata: {
                     generative: true,
+                    proposed: true,
                     agentId: "rhythm_groove",
                     reasoningTrace: reasoning.join("\n"),
                     confidence: 0.95,
@@ -1437,7 +1452,7 @@ function JetBeeApp() {
                   name: info.filename.replace(/\.[^.]+$/, ""),
                   type: "audio",
                   trackId: targetTrack.id,
-                  start: state.cursorPosition,
+                  start: quantizeToBar(state.cursorPosition),
                   duration,
                   loop: false,
                   color: "#4ade80",
@@ -1446,7 +1461,7 @@ function JetBeeApp() {
                   audioSourceDuration: info.duration_secs || undefined,
                   gain: 1,
                   playback: { instrument: "sample" },
-                  metadata: { generative: false },
+                  metadata: { generative: false, proposed: true },
                   createdAt: now,
                   updatedAt: now,
                 });

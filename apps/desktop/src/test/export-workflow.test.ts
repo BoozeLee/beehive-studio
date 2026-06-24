@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { RenderClip } from "../lib/audioEngine";
+import {
+  buildStemRenderInputs,
+  type MixerTrackState,
+  type RenderClip,
+} from "../lib/audioEngine";
 import {
   formatRenderDuration,
   RENDER_PRESETS,
@@ -48,5 +52,35 @@ describe("export workflow", () => {
     expect(RENDER_PRESETS.club.targetLufs).toBe(-9.5);
     expect(RENDER_PRESETS.festival.targetLufs).toBe(-7.5);
     expect(formatRenderDuration(125.4)).toBe("2:05");
+  });
+
+  it("builds one stem per non-empty track, forwarding mixer state so stems match the master mix", () => {
+    const bassClips: RenderClip[] = [
+      { id: "c1", channel: "t1", notes: [{ pitch: 36, velocity: 120, start: 0, duration: 1 }] },
+    ];
+    const padClips: RenderClip[] = [
+      { id: "c2", channel: "t2", notes: [{ pitch: 60, velocity: 90, start: 0, duration: 2 }] },
+    ];
+    const tracks = [
+      { id: "t1", name: "Bass", clips: bassClips },
+      { id: "t2", name: "Pad", clips: padClips },
+      { id: "t3", name: "Empty", clips: [] as RenderClip[] },
+    ];
+    const mixerTracks: MixerTrackState[] = [
+      { id: "t1", volume: 1, pan: -0.3, muted: false, solo: false, instrument: "bass" },
+      { id: "t2", volume: 0.5, pan: 0.3, muted: true, solo: false, instrument: "pad" },
+    ];
+
+    const inputs = buildStemRenderInputs(tracks, mixerTracks);
+
+    // Empty track is skipped; one stem per non-empty track, names preserved.
+    expect(inputs.map((i) => i.name)).toEqual(["Bass", "Pad"]);
+    // Each stem carries its own track's clips...
+    expect(inputs[0].clips).toBe(bassClips);
+    expect(inputs[1].clips).toBe(padClips);
+    // ...and the FULL mixer state (the bug fix) so per-channel instrument/gain/
+    // pan and mute/solo are honored identically to the master path.
+    expect(inputs[0].mixerTracks).toBe(mixerTracks);
+    expect(inputs[1].mixerTracks).toBe(mixerTracks);
   });
 });

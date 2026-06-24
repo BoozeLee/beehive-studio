@@ -279,17 +279,38 @@ export async function exportProjectAudio(
   return wav;
 }
 
+export interface StemRenderInput {
+  name: string;
+  clips: RenderClip[];
+  mixerTracks?: MixerTrackState[];
+}
+
+/**
+ * Decide what to render for each stem: one entry per non-empty track, each
+ * carrying the FULL mixer state so the stem renders with its channel's real
+ * instrument/gain/pan and honors mute/solo exactly like the master mix.
+ * Pure (no Web Audio) so it is unit-testable without an OfflineAudioContext.
+ */
+export function buildStemRenderInputs(
+  tracks: Array<{ id: string; name: string; clips: RenderClip[] }>,
+  mixerTracks?: MixerTrackState[]
+): StemRenderInput[] {
+  return tracks
+    .filter((track) => track.clips.length > 0)
+    .map((track) => ({ name: track.name, clips: track.clips, mixerTracks }));
+}
+
 export async function exportTrackStems(
   tracks: Array<{ id: string; name: string; clips: RenderClip[] }>,
-  bpm: number
+  bpm: number,
+  mixerTracks?: MixerTrackState[]
 ): Promise<Array<{ name: string; data: Uint8Array }>> {
   const stems: Array<{ name: string; data: Uint8Array }> = [];
 
-  for (const track of tracks) {
-    if (track.clips.length === 0) continue;
-    const buffer = await renderAudioBuffer(track.clips, bpm);
+  for (const input of buildStemRenderInputs(tracks, mixerTracks)) {
+    const buffer = await renderAudioBuffer(input.clips, bpm, 44100, input.mixerTracks);
     const wav = audioBufferToWav(buffer);
-    stems.push({ name: track.name, data: wav });
+    stems.push({ name: input.name, data: wav });
   }
 
   return stems;

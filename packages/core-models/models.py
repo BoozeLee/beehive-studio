@@ -87,6 +87,7 @@ class TempoAutomationPoint(BaseModel):
 
 class ClipMetadata(BaseModel):
     generative: bool = False
+    proposed: bool = False  # Agent proposal awaiting human Accept/Reject; False = committed
     agent_id: Optional[ID] = None
     prompt_id: Optional[ID] = None
     source_pattern_id: Optional[ID] = None

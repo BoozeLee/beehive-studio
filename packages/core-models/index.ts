@@ -27,6 +27,7 @@ export interface TempoAutomationPoint {
 
 export interface ClipMetadata {
   generative: boolean;
+  proposed?: boolean;        // Agent proposal awaiting human Accept/Reject; absent/false = committed
   agentId?: ID;
   promptId?: ID;
   sourcePatternId?: ID;

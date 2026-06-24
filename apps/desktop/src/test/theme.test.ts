@@ -3,9 +3,9 @@ import { BEEHIVE, buttonStyle, panelStyle, commonStyles, hexRow } from "../lib/t
 
 describe("BEEHIVE theme", () => {
   it("has all required colors", () => {
-    expect(BEEHIVE.bg).toBe("#0F0A08");
-    expect(BEEHIVE.comb).toBe("#FF8C42");
-    expect(BEEHIVE.text).toBe("#E8DCC8");
+    expect(BEEHIVE.bg).toBe("#1e1d1d");
+    expect(BEEHIVE.comb).toBe("#f3b217");
+    expect(BEEHIVE.text).toBe("#e0e0e0");
     expect(BEEHIVE.success).toBe("#4ADE80");
     expect(BEEHIVE.error).toBe("#EF4444");
     expect(BEEHIVE.warning).toBe("#FBBF24");
