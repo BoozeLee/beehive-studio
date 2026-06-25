@@ -6,6 +6,7 @@ export interface TimelineState {
   clips: Record<ID, Clip>;
   selectedTrackId: ID | null;
   selectedClipId: ID | null;
+  selectedClipIds: ID[];
   cursorPosition: number;
   zoom: number;
   scrollOffset: { x: number; y: number };
@@ -28,7 +29,10 @@ export interface TimelineState {
   updateClipMidiNotes: (id: ID, notes: NonNullable<Clip["midiData"]>["notes"]) => void;
 
   selectTrack: (id: ID | null) => void;
-  selectClip: (id: ID | null) => void;
+  selectClip: (id: ID | null, opts?: { additive?: boolean }) => void;
+  clearSelection: () => void;
+  selectAllOnTrack: (trackId: ID) => void;
+  removeSelectedClips: () => void;
   setCursorPosition: (beats: number) => void;
   setZoom: (zoom: number) => void;
   setScrollOffset: (offset: { x: number; y: number }) => void;
@@ -40,6 +44,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   clips: {},
   selectedTrackId: null,
   selectedClipId: null,
+  selectedClipIds: [],
   cursorPosition: 0,
   zoom: 16,
   scrollOffset: { x: 0, y: 0 },
@@ -95,6 +100,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         })),
         selectedClipId:
           state.selectedClipId === id ? null : state.selectedClipId,
+        selectedClipIds: state.selectedClipIds.filter((c) => c !== id),
       };
     }),
 
@@ -120,6 +126,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         }),
         selectedTrackId: null,
         selectedClipId: id,
+        selectedClipIds: [id],
       };
     }),
 
@@ -138,6 +145,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
           },
         },
         selectedClipId: id,
+        selectedClipIds: [id],
       };
     }),
 
@@ -167,6 +175,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         ),
         selectedTrackId: null,
         selectedClipId: newId,
+        selectedClipIds: [newId],
       };
     });
     return createdId;
@@ -219,6 +228,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
             : track
         ),
         selectedClipId: newId,
+        selectedClipIds: [newId],
       };
     });
     return createdId;
@@ -246,9 +256,64 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       };
     }),
 
-  selectTrack: (id) => set({ selectedTrackId: id, selectedClipId: null }),
-  selectClip: (id) =>
-    set(id ? { selectedClipId: id, selectedTrackId: null } : { selectedClipId: null }),
+  selectTrack: (id) =>
+    set({ selectedTrackId: id, selectedClipId: null, selectedClipIds: [] }),
+
+  selectClip: (id, opts) =>
+    set((state) => {
+      if (!id) return { selectedClipId: null, selectedClipIds: [] };
+      if (opts?.additive) {
+        const has = state.selectedClipIds.includes(id);
+        const selectedClipIds = has
+          ? state.selectedClipIds.filter((c) => c !== id)
+          : [...state.selectedClipIds, id];
+        return {
+          selectedClipIds,
+          selectedClipId: has ? (selectedClipIds[selectedClipIds.length - 1] ?? null) : id,
+          selectedTrackId: null,
+        };
+      }
+      return { selectedClipId: id, selectedClipIds: [id], selectedTrackId: null };
+    }),
+
+  clearSelection: () => set({ selectedClipId: null, selectedClipIds: [] }),
+
+  selectAllOnTrack: (trackId) =>
+    set((state) => {
+      const track = state.tracks.find((t) => t.id === trackId);
+      const ids = track ? [...track.clips] : [];
+      return {
+        selectedClipIds: ids,
+        selectedClipId: ids[ids.length - 1] ?? null,
+        selectedTrackId: null,
+      };
+    }),
+
+  removeSelectedClips: () =>
+    set((state) => {
+      const ids = new Set(
+        state.selectedClipIds.length > 0
+          ? state.selectedClipIds
+          : state.selectedClipId
+          ? [state.selectedClipId]
+          : []
+      );
+      if (ids.size === 0) return state;
+      const clips: Record<ID, Clip> = {};
+      for (const [cid, clip] of Object.entries(state.clips)) {
+        if (!ids.has(cid)) clips[cid] = clip;
+      }
+      return {
+        clips,
+        tracks: state.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.filter((cId) => !ids.has(cId)),
+        })),
+        selectedClipId: null,
+        selectedClipIds: [],
+      };
+    }),
+
   setCursorPosition: (beats) => set({ cursorPosition: beats }),
   setZoom: (zoom) => set({ zoom: Math.max(4, Math.min(128, zoom)) }),
   setScrollOffset: (offset) => set({ scrollOffset: offset }),

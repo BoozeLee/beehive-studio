@@ -60,6 +60,7 @@ import {
 import { consolidateProjectAssets, resolveProjectAsset } from "./lib/projectAssets";
 import { cancelRenderJob, createRenderJob, waitForRenderJob } from "./lib/renderJobs";
 import { renderOffline } from "./lib/rustRender";
+import { undo as undoTimeline, redo as redoTimeline } from "./lib/timelineHistory";
 
 // JetBee IDE layout components
 import { ResizableWorkbench } from "./components/Layout/ResizableWorkbench";
@@ -1188,6 +1189,8 @@ function JetBeeApp() {
     registerCommand({ id: "agent.sendBrief", label: "Send Brief", category: "Agent", shortcut: "ctrl+return", action: () => sendBrief() });
     registerCommand({ id: "agent.critic", label: "Send to Critic", category: "Agent", shortcut: "ctrl+shift+c", action: () => {} });
     registerCommand({ id: "git.commit", label: "Commit", category: "Git", shortcut: "ctrl+k", action: () => handleSaveProject() });
+    registerCommand({ id: "edit.undo", label: "Undo", category: "Edit", shortcut: "ctrl+z", action: () => undoTimeline() });
+    registerCommand({ id: "edit.redo", label: "Redo", category: "Edit", shortcut: "ctrl+shift+z", action: () => redoTimeline() });
     registerCommand({ id: "window.reload", label: "Reload Window", category: "Window", shortcut: "ctrl+shift+f5", action: () => window.location.reload() });
 
     for (const entry of DEFAULT_KEYMAP) {
@@ -1200,7 +1203,7 @@ function JetBeeApp() {
         unbindShortcut(entry.shortcut);
       }
       unbindShortcut("ctrl+e");
-      const ids = ["palette.open", "generate.build", "transport.playPause", "transport.stop", "file.save", "file.export", "project.focusExplorer", "project.focusInspector", "project.focusConsole", "editor.intention", "agent.sendBrief", "agent.critic", "git.commit", "window.reload"];
+      const ids = ["palette.open", "generate.build", "transport.playPause", "transport.stop", "file.save", "file.export", "project.focusExplorer", "project.focusInspector", "project.focusConsole", "editor.intention", "agent.sendBrief", "agent.critic", "git.commit", "edit.undo", "edit.redo", "window.reload"];
       for (const id of ids) {
         unregisterCommand(id);
       }

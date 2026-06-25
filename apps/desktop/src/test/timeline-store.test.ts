@@ -108,6 +108,39 @@ describe("timeline store editing actions", () => {
     ]);
   });
 
+  it("builds a multi-clip selection with additive select", () => {
+    useTimelineStore.setState({ clips: { "clip-1": clip("clip-1"), "clip-2": clip("clip-2", "track-2") } });
+    useTimelineStore.getState().selectClip("clip-1");
+    useTimelineStore.getState().selectClip("clip-2", { additive: true });
+    expect(useTimelineStore.getState().selectedClipIds).toEqual(["clip-1", "clip-2"]);
+    // additive toggling removes it again
+    useTimelineStore.getState().selectClip("clip-1", { additive: true });
+    expect(useTimelineStore.getState().selectedClipIds).toEqual(["clip-2"]);
+  });
+
+  it("removes all selected clips in one operation", () => {
+    useTimelineStore.setState({
+      tracks: [track("track-1", ["clip-1", "clip-2"])],
+      clips: { "clip-1": clip("clip-1"), "clip-2": clip("clip-2") },
+      selectedClipIds: ["clip-1", "clip-2"],
+    });
+    useTimelineStore.getState().removeSelectedClips();
+    const state = useTimelineStore.getState();
+    expect(state.clips["clip-1"]).toBeUndefined();
+    expect(state.clips["clip-2"]).toBeUndefined();
+    expect(state.tracks[0].clips).toEqual([]);
+    expect(state.selectedClipIds).toEqual([]);
+  });
+
+  it("selects all clips on a track", () => {
+    useTimelineStore.setState({
+      tracks: [track("track-1", ["clip-1", "clip-2"])],
+      clips: { "clip-1": clip("clip-1"), "clip-2": clip("clip-2") },
+    });
+    useTimelineStore.getState().selectAllOnTrack("track-1");
+    expect(useTimelineStore.getState().selectedClipIds).toEqual(["clip-1", "clip-2"]);
+  });
+
   it("splits an audio clip non-destructively with adjusted source offset", () => {
     useTimelineStore.setState({
       clips: {

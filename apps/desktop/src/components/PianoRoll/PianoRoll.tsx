@@ -436,6 +436,21 @@ export function PianoRoll({
         >
           −
         </button>
+        <div style={{ width: 1, height: 16, background: BEEHIVE.border }} />
+        <button
+          onClick={() =>
+            onChange(
+              notes.map((n) => ({
+                ...n,
+                start: Math.max(0, Math.round(n.start / gridDivision) * gridDivision),
+              }))
+            )
+          }
+          style={commonStyles.toolBtn}
+          title="Snap all notes to the grid"
+        >
+          ⊞ Quantize
+        </button>
         {selectedNoteId && noteMap[selectedNoteId] && (() => {
           const n = noteMap[selectedNoteId];
           const nn = NOTE_NAMES[n.pitch % 12] + Math.floor(n.pitch / 12 - 1);

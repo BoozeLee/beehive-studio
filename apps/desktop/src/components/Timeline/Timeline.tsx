@@ -1,6 +1,7 @@
 import React, { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import { TrackHeader } from "./TrackHeader";
 import { useTimelineStore } from "../../lib/timelineStore";
+import { useWorkbenchStore } from "../../lib/workbenchStore";
 import type { Clip as TimelineClip } from "../../../../../packages/core-models/index";
 
 const COLORS = {
@@ -46,12 +47,16 @@ export const Timeline: React.FC<TimelineProps> = ({
     clips,
     selectedTrackId,
     selectedClipId,
+    selectedClipIds,
     zoom,
     scrollOffset,
     snapToGrid,
     gridDivision,
     selectTrack,
     selectClip,
+    clearSelection,
+    selectAllOnTrack,
+    removeSelectedClips,
     updateTrack,
     moveClipToTrack,
     resizeClip,
@@ -190,6 +195,54 @@ export const Timeline: React.FC<TimelineProps> = ({
     window.addEventListener("click", closeContextMenu);
     return () => window.removeEventListener("click", closeContextMenu);
   }, [contextMenu]);
+
+  // Selection keyboard: Delete removes selected clips, Escape clears, Cmd/Ctrl+A
+  // selects all clips on the active track. Ignored while typing in a field.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const ids =
+          selectedClipIds.length > 0
+            ? selectedClipIds
+            : selectedClipId
+            ? [selectedClipId]
+            : [];
+        if (ids.length === 0) return;
+        e.preventDefault();
+        removeSelectedClips();
+        ids.forEach((id) => onDeleteClip?.(id));
+      } else if (e.key === "Escape") {
+        clearSelection();
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        const trackId =
+          selectedTrackId ?? (selectedClipId ? clips[selectedClipId]?.trackId : undefined);
+        if (trackId) {
+          e.preventDefault();
+          selectAllOnTrack(trackId);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    selectedClipIds,
+    selectedClipId,
+    selectedTrackId,
+    clips,
+    removeSelectedClips,
+    clearSelection,
+    selectAllOnTrack,
+    onDeleteClip,
+  ]);
 
   return (
     <div
@@ -450,7 +503,8 @@ export const Timeline: React.FC<TimelineProps> = ({
                   if (!clip) return null;
                   const clipLeft = clip.start * zoom;
                   const clipWidth = Math.max(clip.duration * zoom, 8);
-                  const isSelected = selectedClipId === clip.id;
+                  const isSelected =
+                    selectedClipId === clip.id || selectedClipIds.includes(clip.id);
                   const isProposed = clip.metadata?.proposed === true;
 
                   return (
@@ -459,11 +513,16 @@ export const Timeline: React.FC<TimelineProps> = ({
                       data-testid={`timeline-clip-${clip.id}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        selectClip(clip.id);
+                        selectClip(clip.id, { additive: e.shiftKey || e.metaKey || e.ctrlKey });
                       }}
                       onMouseDown={(e) => {
                         if (e.button !== 0) return;
                         e.stopPropagation();
+                        // Shift/Cmd/Ctrl-click toggles multi-selection without starting a drag.
+                        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                          selectClip(clip.id, { additive: true });
+                          return;
+                        }
                         selectClip(clip.id);
                         setContextMenu(null);
                         setDragState({
@@ -481,7 +540,14 @@ export const Timeline: React.FC<TimelineProps> = ({
                         selectClip(clip.id);
                         setContextMenu({ x: e.clientX, y: e.clientY, clipId: clip.id });
                       }}
-                      onDoubleClick={() => onPlayClip?.(clip.id)}
+                      onDoubleClick={() => {
+                        if (clip.midiData) {
+                          selectClip(clip.id);
+                          useWorkbenchStore.getState().openCenterTab("piano");
+                        } else {
+                          onPlayClip?.(clip.id);
+                        }
+                      }}
                       style={{
                         position: "absolute",
                         left: clipLeft,
