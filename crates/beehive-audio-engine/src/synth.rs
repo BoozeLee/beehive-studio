@@ -37,7 +37,7 @@ const DECAY: f64 = 0.08;
 const SUSTAIN: f64 = 0.4;
 const RELEASE: f64 = 0.35;
 
-fn osc_sample(osc: Osc, phase: f64) -> f64 {
+pub fn osc_sample(osc: Osc, phase: f64) -> f64 {
     // `phase` is in [0, 1).
     match osc {
         Osc::Sine => (2.0 * PI * phase).sin(),

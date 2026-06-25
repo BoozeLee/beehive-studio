@@ -278,3 +278,165 @@ pub fn render_offline(
         engine: "rust".into(),
     })
 }
+
+// ── Realtime playback (M2b) ─────────────────────────────────────────────────
+// Lock-free Rust transport. The CPAL stream (not `Send`) lives on its own
+// parked thread; the Tauri `State` holds only the `RtHandle` (ring-buffer
+// producer + atomics), which is `Send`.
+
+use beehive_audio_engine::realtime::{self, RtClip, RtCommand, RtHandle, RtNote};
+use beehive_audio_engine::synth::osc_for_instrument;
+
+pub struct RealtimeState {
+    handle: Mutex<Option<RtHandle>>,
+}
+
+impl RealtimeState {
+    pub fn new() -> Self {
+        Self {
+            handle: Mutex::new(None),
+        }
+    }
+}
+
+impl Default for RealtimeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SchedNoteInput {
+    pitch: u8,
+    velocity: u8,
+    start: f64,
+    duration: f64,
+}
+
+#[derive(serde::Deserialize)]
+struct SchedClipInput {
+    #[serde(default)]
+    notes: Vec<SchedNoteInput>,
+    #[serde(default, rename = "startBeat")]
+    start_beat: f64,
+    #[serde(default)]
+    channel: u32,
+    #[serde(default)]
+    instrument: Option<String>,
+    #[serde(default)]
+    gain: Option<f32>,
+    #[serde(default)]
+    pan: Option<f32>,
+}
+
+fn with_handle<F: FnOnce(&mut RtHandle)>(
+    state: &State<RealtimeState>,
+    f: F,
+) -> Result<(), String> {
+    let mut guard = state.handle.lock().map_err(|e| e.to_string())?;
+    let h = guard.as_mut().ok_or("realtime engine not initialized")?;
+    f(h);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn realtime_init(state: State<RealtimeState>) -> Result<String, String> {
+    let mut guard = state.handle.lock().map_err(|e| e.to_string())?;
+    if guard.is_some() {
+        return Ok("already-initialized".into());
+    }
+    let (tx, rx) = mpsc::sync_channel::<Result<RtHandle, String>>(1);
+    std::thread::spawn(move || match realtime::start_output(4096) {
+        Ok((stream, handle)) => {
+            if tx.send(Ok(handle)).is_ok() {
+                // Keep the !Send CPAL stream alive on this thread.
+                std::thread::park();
+            }
+            drop(stream);
+        }
+        Err(e) => {
+            let _ = tx.send(Err(e));
+        }
+    });
+    let handle = rx.recv().map_err(|e| e.to_string())??;
+    *guard = Some(handle);
+    Ok("initialized".into())
+}
+
+#[tauri::command]
+pub fn transport_play(state: State<RealtimeState>) -> Result<(), String> {
+    with_handle(&state, |h| {
+        h.send(RtCommand::Play);
+    })
+}
+
+#[tauri::command]
+pub fn transport_pause(state: State<RealtimeState>) -> Result<(), String> {
+    with_handle(&state, |h| {
+        h.send(RtCommand::Pause);
+    })
+}
+
+#[tauri::command]
+pub fn transport_stop(state: State<RealtimeState>) -> Result<(), String> {
+    with_handle(&state, |h| {
+        h.send(RtCommand::Stop);
+    })
+}
+
+#[tauri::command]
+pub fn transport_seek(beat: f64, state: State<RealtimeState>) -> Result<(), String> {
+    with_handle(&state, |h| {
+        h.send(RtCommand::Seek(beat));
+    })
+}
+
+#[tauri::command]
+pub fn transport_set_bpm(bpm: f64, state: State<RealtimeState>) -> Result<(), String> {
+    with_handle(&state, |h| {
+        h.send(RtCommand::SetBpm(bpm));
+    })
+}
+
+#[tauri::command]
+pub fn transport_clear_clips(state: State<RealtimeState>) -> Result<(), String> {
+    with_handle(&state, |h| {
+        h.send(RtCommand::ClearClips);
+    })
+}
+
+#[tauri::command]
+pub fn transport_schedule_clip(
+    clip: serde_json::Value,
+    state: State<RealtimeState>,
+) -> Result<(), String> {
+    let input: SchedClipInput = serde_json::from_value(clip).map_err(|e| e.to_string())?;
+    let osc = osc_for_instrument(input.instrument.as_deref().unwrap_or("synth"));
+    let rt_clip = RtClip {
+        channel: input.channel,
+        start_beat: input.start_beat,
+        osc,
+        gain: input.gain.unwrap_or(1.0),
+        pan: input.pan.unwrap_or(0.0),
+        notes: input
+            .notes
+            .into_iter()
+            .map(|n| RtNote {
+                pitch: n.pitch,
+                velocity: n.velocity,
+                start: n.start,
+                duration: n.duration,
+            })
+            .collect(),
+    };
+    with_handle(&state, move |h| {
+        h.send(RtCommand::ScheduleClip(rt_clip));
+    })
+}
+
+#[tauri::command]
+pub fn transport_current_beat(state: State<RealtimeState>) -> Result<f64, String> {
+    let mut guard = state.handle.lock().map_err(|e| e.to_string())?;
+    let h = guard.as_mut().ok_or("realtime engine not initialized")?;
+    Ok(h.current_beat())
+}

@@ -1,6 +1,7 @@
 import * as Tone from "tone";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getInputNode } from "./audioMixer";
+import { rt, rustTransportEnabled } from "./rustTransport";
 import { useState, useCallback, useRef, useEffect } from "react";
 
 export interface TransportState {
@@ -50,13 +51,27 @@ export function useTransport() {
   const synthsRef = useRef<Map<string, Tone.Synth>>(new Map());
   const playersRef = useRef<Map<string, Tone.Player>>(new Map());
   const rafRef = useRef<number>(0);
+  // Engine selection is fixed for the session (Tone.js default, Rust opt-in).
+  const useRustRef = useRef<boolean>(rustTransportEnabled());
 
   // Initialize on first use
   useEffect(() => {
     initTransport();
     setState((s) => ({ ...s, isReady: true }));
 
-    // Animation frame loop for current beat display
+    if (useRustRef.current) {
+      // Native Rust engine: init the device stream and poll the transport beat.
+      void rt.init().catch(() => undefined);
+      const id = window.setInterval(() => {
+        void rt
+          .currentBeat()
+          .then((beat) => setState((s) => ({ ...s, currentBeat: beat })))
+          .catch(() => undefined);
+      }, 33);
+      return () => window.clearInterval(id);
+    }
+
+    // Tone.js: animation frame loop for current beat display
     const updateLoop = () => {
       const beat = Tone.Transport.position
         .toString()
@@ -102,6 +117,21 @@ export function useTransport() {
 
   const scheduleClip = useCallback(
     (clip: ScheduledClip) => {
+      if (useRustRef.current) {
+        // Rust RT engine renders MIDI voices natively; audio-clip RT playback
+        // is not yet supported on this path.
+        if (!clip.audioFilePath) {
+          void rt.scheduleClip({
+            notes: clip.notes ?? [],
+            startBeat: clip.startBeat,
+            channel: clip.channel,
+            instrument: clip.instrument,
+            gain: clip.gain,
+            pan: 0,
+          });
+        }
+        return;
+      }
       // Remove existing part for this clip if any
       const existing = partsRef.current.get(clip.id);
       if (existing) {
@@ -173,17 +203,32 @@ export function useTransport() {
   }, []);
 
   const play = useCallback(async () => {
+    if (useRustRef.current) {
+      void rt.play();
+      setState((s) => ({ ...s, isPlaying: true }));
+      return;
+    }
     await Tone.start();
     Tone.Transport.start();
     setState((s) => ({ ...s, isPlaying: true }));
   }, []);
 
   const pause = useCallback(() => {
+    if (useRustRef.current) {
+      void rt.pause();
+      setState((s) => ({ ...s, isPlaying: false }));
+      return;
+    }
     Tone.Transport.pause();
     setState((s) => ({ ...s, isPlaying: false }));
   }, []);
 
   const stop = useCallback(() => {
+    if (useRustRef.current) {
+      void rt.stop();
+      setState((s) => ({ ...s, isPlaying: false, currentBeat: 0 }));
+      return;
+    }
     Tone.Transport.stop();
     Tone.Transport.position = 0;
     setState((s) => ({ ...s, isPlaying: false, currentBeat: 0 }));
@@ -191,6 +236,11 @@ export function useTransport() {
 
   const seek = useCallback((beat: number) => {
     const safeBeat = Math.max(0, beat);
+    if (useRustRef.current) {
+      void rt.seek(safeBeat);
+      setState((s) => ({ ...s, currentBeat: safeBeat }));
+      return;
+    }
     const bars = Math.floor(safeBeat / 4);
     const quarters = Math.floor(safeBeat % 4);
     const sixteenths = Math.round((safeBeat % 1) * 4);
@@ -199,6 +249,11 @@ export function useTransport() {
   }, []);
 
   const setBpm = useCallback((bpm: number) => {
+    if (useRustRef.current) {
+      void rt.setBpm(bpm);
+      setState((s) => ({ ...s, bpm }));
+      return;
+    }
     Tone.Transport.bpm.rampTo(bpm, 0.1);
     setState((s) => ({ ...s, bpm }));
   }, []);
@@ -206,6 +261,14 @@ export function useTransport() {
   // Scene launch: quantize to next bar boundary
   const launchScene = useCallback(
     async (clips: ScheduledClip[]) => {
+      if (useRustRef.current) {
+        const beat = await rt.currentBeat().catch(() => 0);
+        const nextBar = (Math.floor(beat / 4) + 1) * 4;
+        clips.forEach((clip) => scheduleClip({ ...clip, startBeat: nextBar }));
+        void rt.play();
+        setState((s) => ({ ...s, isPlaying: true }));
+        return;
+      }
       await Tone.start();
 
       // Calculate next bar boundary
@@ -229,6 +292,12 @@ export function useTransport() {
 
   const launchClipImmediate = useCallback(
     async (clip: ScheduledClip) => {
+      if (useRustRef.current) {
+        scheduleClip(clip);
+        void rt.play();
+        setState((s) => ({ ...s, isPlaying: true }));
+        return;
+      }
       await Tone.start();
       scheduleClip(clip);
       if (!Tone.Transport.state.includes("started")) {
@@ -240,6 +309,10 @@ export function useTransport() {
   );
 
   const clearAll = useCallback(() => {
+    if (useRustRef.current) {
+      void rt.clear();
+      return;
+    }
     partsRef.current.forEach((part) => {
       part.stop();
       part.dispose();

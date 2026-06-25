@@ -339,6 +339,7 @@ fn main() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .manage(AudioEngineState::new())
+        .manage(audio_engine::RealtimeState::new())
         .invoke_handler(tauri::generate_handler![
             send_brief,
             check_backend_health,
@@ -363,6 +364,15 @@ fn main() {
             audio_engine::audio_engine_remove_track,
             audio_engine::render_preview_via_cpal,
             audio_engine::render_offline,
+            audio_engine::realtime_init,
+            audio_engine::transport_play,
+            audio_engine::transport_pause,
+            audio_engine::transport_stop,
+            audio_engine::transport_seek,
+            audio_engine::transport_set_bpm,
+            audio_engine::transport_clear_clips,
+            audio_engine::transport_schedule_clip,
+            audio_engine::transport_current_beat,
             asset_commands::consolidate_project_assets,
             asset_commands::resolve_project_asset,
             sample_commands::get_sample_info,

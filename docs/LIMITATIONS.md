@@ -148,11 +148,12 @@ We will judge every decision against that standard.
 
 - **vLLM container startup requires working GPU passthrough** (NVIDIA Container Toolkit / CDI on Linux). On machines without a configured container GPU runtime, vLLM stays offline and the orchestrator transparently falls back to Ollama.
 - **CPAL mixer only supports f32 output devices** in this milestone. If the default audio device reports another sample format, `audio_engine_init` will return an error and the UI falls back to Tone.js playback.
-- **`render_preview_via_cpal` is a silent-audio stub** in v0.5.0-alpha. Real offline rendering through the Rust engine is scheduled for a later phase.
-- **The Tauri desktop dev window cannot be exercised in a headless environment**. `cargo check` and `pnpm build` pass; manual UI verification requires a display server.
+- **`render_preview_via_cpal` is a silent-audio stub** (kept for `cpalBridge.ts`). It has been superseded by the real **`render_offline`** command (M2a): a unit-tested Rust offline renderer (`crates/beehive-audio-engine`: `synth`/`render`/`encode`) that mixes multi-track MIDI + audio to a LUFS-normalised stereo master + per-track stems and encodes **WAV (hound) / FLAC (flacenc)**. Selectable in the export dialog as the **"Rust engine (native)"** option.
+- **Rust realtime playback (M2b) is opt-in, not yet live-verified.** A lock-free `ringbuf` command queue + sample-accurate transport + voice mixer (`realtime.rs`) drives a CPAL stream via `realtime_init` + `transport_*` commands, and `lib/transport.ts` routes to it when enabled. It is **off by default** (Tone.js stays the default) — enable with `localStorage.setItem("beehive.rustTransport","1")` (reload) or `VITE_RUST_TRANSPORT=1`. The engine is unit-tested offline (`RealtimeEngine::process`), but **end-to-end audio parity and round-trip latency (<10ms target) still require manual verification on a real audio device** (`just desktop-dev`); audio-clip RT playback is not yet supported on this path (MIDI voices only).
+- **The Tauri desktop dev window cannot be exercised in a headless environment**. `cargo check`/`cargo test`/`pnpm build` pass; manual UI + audio verification requires a display server and audio device.
 
 ---
 
 **This document will be updated every time we discover a new painful truth.**
 
-Last updated: 2026-06-17 (v0.5.0-alpha wiring)
+Last updated: 2026-06-25 (M2 — real Rust audio engine: offline render/export live, realtime playback opt-in pending live verification)
