@@ -9,10 +9,10 @@ interface ExportAudioDialogProps {
   progress: number;
   progressLabel: string;
   summary: RenderSummary;
-  renderEngine: "python" | "desktop";
+  renderEngine: "python" | "desktop" | "rust";
   outputMode: "master" | "master_and_stems";
   onPresetChange: (preset: RenderPreset) => void;
-  onRenderEngineChange: (engine: "python" | "desktop") => void;
+  onRenderEngineChange: (engine: "python" | "desktop" | "rust") => void;
   onOutputModeChange: (mode: "master" | "master_and_stems") => void;
   onClose: () => void;
   onCancelExport?: () => void;
@@ -143,12 +143,13 @@ export function ExportAudioDialog({
                 value={renderEngine}
                 disabled={isExporting}
                 onChange={(event) =>
-                  onRenderEngineChange(event.target.value as "python" | "desktop")
+                  onRenderEngineChange(event.target.value as "python" | "desktop" | "rust")
                 }
                 style={{ display: "block", width: "100%", marginTop: 4, padding: 7 }}
               >
                 <option value="python">Python HQ (desktop fallback)</option>
-                <option value="desktop">Desktop local</option>
+                <option value="rust">Rust engine (native)</option>
+                <option value="desktop">Desktop local (Tone.js)</option>
               </select>
             </label>
             <label style={{ fontSize: 11, color: BEEHIVE.textMuted }}>

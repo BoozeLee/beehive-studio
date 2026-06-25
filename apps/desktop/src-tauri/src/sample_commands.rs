@@ -24,7 +24,7 @@ pub struct SampleData {
     pub samples: Vec<f32>,
 }
 
-fn decode_audio(path: &str) -> Result<(u32, u16, Vec<f32>), String> {
+pub(crate) fn decode_audio(path: &str) -> Result<(u32, u16, Vec<f32>), String> {
     let file = File::open(path).map_err(|e| format!("Failed to open: {}", e))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();

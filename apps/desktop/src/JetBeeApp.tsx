@@ -59,6 +59,7 @@ import {
 } from "./lib/patternBankStore";
 import { consolidateProjectAssets, resolveProjectAsset } from "./lib/projectAssets";
 import { cancelRenderJob, createRenderJob, waitForRenderJob } from "./lib/renderJobs";
+import { renderOffline } from "./lib/rustRender";
 
 // JetBee IDE layout components
 import { ResizableWorkbench } from "./components/Layout/ResizableWorkbench";
@@ -190,7 +191,7 @@ function JetBeeApp() {
   const [showMixer, setShowMixer] = useState(false);
   const [showGit, setShowGit] = useState(false);
   const [renderPreset, setRenderPreset] = useState<RenderPreset>("festival");
-  const [renderEngine, setRenderEngine] = useState<"python" | "desktop">("python");
+  const [renderEngine, setRenderEngine] = useState<"python" | "desktop" | "rust">("python");
   const [renderOutputMode, setRenderOutputMode] = useState<"master" | "master_and_stems">("master");
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
@@ -1002,7 +1003,10 @@ function JetBeeApp() {
     try {
       const savePath = await save({
         defaultPath: `${projectName.replace(/\s+/g, "-").toLowerCase()}-${renderPreset}.wav`,
-        filters: [{ name: "WAV", extensions: ["wav"] }],
+        filters: [
+          { name: "WAV", extensions: ["wav"] },
+          { name: "FLAC", extensions: ["flac"] },
+        ],
       });
       if (!savePath) {
         setStatus("Export cancelled");
@@ -1021,8 +1025,21 @@ function JetBeeApp() {
       );
       let wavData: Uint8Array;
       let stemSources: string[] = [];
-      let usedEngine: "python" | "desktop" = renderEngine;
-      if (renderEngine === "python") {
+      let usedEngine: "python" | "desktop" | "rust" = renderEngine;
+      if (renderEngine === "rust") {
+        setStatus(`Rendering audio with the Rust engine (${renderPreset})...`);
+        const format = savePath.toLowerCase().endsWith(".flac") ? "flac" : "wav";
+        const result = await renderOffline(
+          resolvedClips,
+          exportPayload.mixerTracks,
+          transport.bpm,
+          renderPreset,
+          format,
+          renderOutputMode
+        );
+        wavData = new Uint8Array(await invoke<number[]>("read_file_bytes", { path: result.master_path }));
+        stemSources = result.stem_paths ?? [];
+      } else if (renderEngine === "python") {
         try {
           setStatus(`Rendering audio with Python HQ (${renderPreset})...`);
           const created = await createRenderJob(

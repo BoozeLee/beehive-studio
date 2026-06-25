@@ -36,7 +36,7 @@ export interface ProjectDocumentV5 {
   patterns: PatternRecord[];
   settings: {
     masterGain: number;
-    renderEngine: "python" | "desktop";
+    renderEngine: "python" | "desktop" | "rust";
   };
   artifacts: Record<ID, ProjectArtifactRecord>;
   dslSources: Record<string, string>;

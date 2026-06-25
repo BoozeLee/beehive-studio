@@ -362,6 +362,7 @@ fn main() {
             audio_engine::audio_engine_set_pan,
             audio_engine::audio_engine_remove_track,
             audio_engine::render_preview_via_cpal,
+            audio_engine::render_offline,
             asset_commands::consolidate_project_assets,
             asset_commands::resolve_project_asset,
             sample_commands::get_sample_info,

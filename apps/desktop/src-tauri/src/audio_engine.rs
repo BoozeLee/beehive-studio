@@ -187,3 +187,94 @@ pub fn render_preview_via_cpal(
     let total_samples = sample_rate * 2 * seconds;
     Ok(vec![0.0f32; total_samples])
 }
+
+#[derive(serde::Serialize)]
+pub struct RustRenderResult {
+    pub master_path: String,
+    pub stem_paths: Vec<String>,
+    pub engine: String,
+}
+
+fn now_ms() -> u128 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+/// Real offline render via the Rust audio engine (replaces the Tone.js/Python
+/// paths when `renderEngine === "rust"`). Decodes audio clips, renders master +
+/// optional per-track stems, encodes to WAV/FLAC, writes files, returns paths.
+#[tauri::command]
+pub fn render_offline(
+    clips: serde_json::Value,
+    tracks: serde_json::Value,
+    bpm: f64,
+    preset: String,
+    format: String,
+    output_mode: String,
+) -> Result<RustRenderResult, String> {
+    use beehive_audio_engine::encode;
+    use beehive_audio_engine::render::{self, AudioBuf, MixerTrack, RenderClip, RenderPreset};
+    use std::collections::HashMap;
+
+    let clips: Vec<RenderClip> = serde_json::from_value(clips).map_err(|e| format!("clips: {e}"))?;
+    let tracks: Vec<MixerTrack> =
+        serde_json::from_value(tracks).map_err(|e| format!("tracks: {e}"))?;
+    let preset = RenderPreset::parse(&preset);
+    let sample_rate = 44_100u32;
+
+    // Decode each referenced audio file once.
+    let mut audio_by_path: HashMap<String, AudioBuf> = HashMap::new();
+    for c in &clips {
+        if let Some(p) = &c.audio_file_path {
+            if !audio_by_path.contains_key(p) {
+                if let Ok((sr, ch, samples)) = crate::sample_commands::decode_audio(p) {
+                    audio_by_path.insert(
+                        p.clone(),
+                        AudioBuf { sample_rate: sr, channels: ch, samples },
+                    );
+                }
+            }
+        }
+    }
+
+    let out = render::render_offline(&clips, &tracks, bpm, sample_rate, preset, &audio_by_path);
+
+    let flac = format.eq_ignore_ascii_case("flac");
+    let ext = if flac { "flac" } else { "wav" };
+    let encode_buf = |buf: &[f32]| -> Result<Vec<u8>, String> {
+        if flac {
+            encode::encode_flac(buf, sample_rate, 2)
+        } else {
+            encode::encode_wav(buf, sample_rate, 2)
+        }
+    };
+
+    let dir = std::env::temp_dir().join(format!("beehive-render-{}", now_ms()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let master_path = dir.join(format!("master.{ext}"));
+    std::fs::write(&master_path, encode_buf(&out.master)?).map_err(|e| e.to_string())?;
+
+    let mut stem_paths = Vec::new();
+    if output_mode == "master_and_stems" {
+        for stem in &out.stems {
+            let safe: String = stem
+                .name
+                .chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                .collect();
+            let p = dir.join(format!("{safe}.{ext}"));
+            std::fs::write(&p, encode_buf(&stem.samples)?).map_err(|e| e.to_string())?;
+            stem_paths.push(p.to_string_lossy().to_string());
+        }
+    }
+
+    Ok(RustRenderResult {
+        master_path: master_path.to_string_lossy().to_string(),
+        stem_paths,
+        engine: "rust".into(),
+    })
+}

@@ -41,6 +41,11 @@ impl Mixer {
         })
     }
 
+    /// Output device sample rate detected at stream creation.
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
     fn build_stream<T>(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
