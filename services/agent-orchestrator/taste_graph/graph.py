@@ -33,6 +33,9 @@ class TasteGraph:
         self._data["edges"] = list(self._edges.values())
         save_graph(self._path, self._data)
 
+    def all_nodes(self) -> list[dict[str, Any]]:
+        return list(self._nodes.values())
+
     def export_to_user(self) -> None:
         user_path = user_graph_path()
         user_data = load_graph(user_path)

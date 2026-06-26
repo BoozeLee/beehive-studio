@@ -384,6 +384,48 @@ class BriefRequest(BaseModel):
     brief: str
     session_context: dict[str, Any] = {}
     style_references: list[str] = []
+    profile: str = "fast_pattern"  # "reasoning" consults Hive 999 / Marco-o1
+
+
+async def _agent_proposal(
+    role: str,
+    task: dict[str, Any],
+    *,
+    brief: str,
+    profile: str = "fast_pattern",
+    session_context: dict[str, Any] | None = None,
+    style_references: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build the transparent proposal envelope for an agent's HTTP response.
+
+    Centralised so every specialist emits the same contract (confidence radar,
+    rationale, alternatives, evidence, attribution) and cites ÆNIMAL taste-graph
+    references, routed by the request profile.
+    """
+    from agents.proposal import make_proposal
+    from taste_graph.graph import TasteGraph
+    from taste_graph.seed_aenimal import ensure_seeded
+
+    taste_labels: list[str] = []
+    try:
+        advisor = TasteGraph("__advisor__")
+        ensure_seeded(advisor)
+        matched = advisor.query(brief or role, top_k=3).get("nodes", [])
+        taste_labels = [n.get("label", "") for n in matched if n.get("label")]
+    except Exception:
+        taste_labels = []
+
+    return await make_proposal(
+        role,
+        brief,
+        profile=profile,
+        notes=task.get("notes"),
+        qa=task.get("qa"),
+        reasoning=task.get("reasoning"),
+        taste_references=taste_labels,
+        session_context=session_context or {},
+        style_references=style_references or [],
+    )
 
 
 class LuaRunRequest(BaseModel):
@@ -819,6 +861,10 @@ async def agent_melody(req: BriefRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "clip_preview": task.get("_generated_midi_data"),
+        "proposal": await _agent_proposal(
+            "melody", task, brief=req.brief, profile=req.profile,
+            session_context=req.session_context, style_references=req.style_references,
+        ),
     }
 
 
@@ -837,6 +883,10 @@ async def agent_harmony(req: BriefRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "clip_preview": task.get("_generated_midi_data"),
+        "proposal": await _agent_proposal(
+            "harmony", task, brief=req.brief, profile=req.profile,
+            session_context=req.session_context, style_references=req.style_references,
+        ),
     }
 
 
@@ -846,6 +896,7 @@ class ArrangeRequest(BaseModel):
     structure: str = "intro-build-drop-outro"
     energy_curve: str = "rise-fall"
     bpm: int = 142
+    profile: str = "fast_pattern"
 
 
 class TasteQueryRequest(BaseModel):
@@ -872,6 +923,7 @@ class DrumRequest(BaseModel):
     density: float = 0.5
     swing: float = 0.0
     session_context: dict[str, Any] = {}
+    profile: str = "fast_pattern"
 
 
 @app.post("/agents/drums")
@@ -890,6 +942,10 @@ async def agent_drums(req: DrumRequest):
         "steps": task["steps"],
         "style": task["style"],
         "step_count": task["step_count"],
+        "proposal": await _agent_proposal(
+            "drums", task, brief=req.brief, profile=req.profile,
+            session_context=req.session_context,
+        ),
     }
 
 
@@ -910,6 +966,9 @@ async def agent_arrangement(req: ArrangeRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "arrangement": task["arrangement"],
+        "proposal": await _agent_proposal(
+            "arrangement", task, brief=req.brief, profile=req.profile,
+        ),
     }
 
 
@@ -928,6 +987,10 @@ async def agent_style_reference(req: BriefRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "clip_preview": task.get("_generated_midi_data"),
+        "proposal": await _agent_proposal(
+            "style_reference", task, brief=req.brief, profile=req.profile,
+            session_context=req.session_context, style_references=req.style_references,
+        ),
     }
 
 
@@ -945,6 +1008,10 @@ async def agent_texture_atmosphere(req: BriefRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "clip_preview": task.get("_generated_midi_data"),
+        "proposal": await _agent_proposal(
+            "texture_atmosphere", task, brief=req.brief, profile=req.profile,
+            session_context=req.session_context, style_references=req.style_references,
+        ),
     }
 
 
@@ -962,6 +1029,10 @@ async def agent_mix_master(req: BriefRequest):
         "status": task["status"],
         "reasoning": task["reasoning"],
         "mix_report": task.get("mix_report"),
+        "proposal": await _agent_proposal(
+            "mix_master", task, brief=req.brief, profile=req.profile,
+            session_context=req.session_context, style_references=req.style_references,
+        ),
     }
 
 

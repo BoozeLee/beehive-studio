@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BEEHIVE, panelStyle } from "../../lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { AgentComposer, type AgentOption } from "./AgentComposer";
@@ -63,6 +63,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
   const { chat, addMessage, updateSessionStatus, setActiveSession, createSession } = useWorkbenchStore();
   const session = chat.sessions.find((s) => s.id === chat.activeSessionId) ?? chat.sessions[0];
   const activeAgent = session?.agentId ?? "rhythm_groove";
+  const [profile, setProfile] = useState<"reasoning" | "fast_pattern">("fast_pattern");
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -86,7 +87,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
     try {
       const data = await invoke<Record<string, unknown>>("send_agent_request", {
         endpoint: `agents/${activeAgent}`,
-        body: { brief: text.trim(), session_context: { bpm } },
+        body: { brief: text.trim(), profile, session_context: { bpm } },
       });
       pushStep({ type: "status", message: `Routing to ${activeAgent}` }, sessionId);
       if (data.clip_preview) pushStep({ type: "midi", data: data.clip_preview, message: "Clip generated" }, sessionId);
@@ -101,7 +102,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
       pushStep({ type: "error", message: `Backend error: ${String(err).slice(0, 120)}` }, sessionId);
       updateSessionStatus(sessionId, "error");
     }
-  }, [activeAgent, bpm, pushStep, updateSessionStatus]);
+  }, [activeAgent, bpm, profile, pushStep, updateSessionStatus]);
 
   const streamViaWebSocket = useCallback(async (text: string, sessionId: string) => {
     updateSessionStatus(sessionId, "streaming");
@@ -109,7 +110,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
     try {
       const ws = new WebSocket("ws://localhost:9876/ws/agent");
       wsRef.current = ws;
-      ws.onopen = () => ws.send(JSON.stringify({ type: "brief", brief: text, agent_id: activeAgent, session_context: { bpm, swing: 0.68 } }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: "brief", brief: text, agent_id: activeAgent, profile, session_context: { bpm, swing: 0.68 } }));
       await new Promise<void>((resolve, reject) => {
         ws.onmessage = (event) => {
           try {
@@ -130,7 +131,7 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
       wsRef.current?.close();
       wsRef.current = null;
     }
-  }, [activeAgent, bpm, pushStep, streamViaHttp, updateSessionStatus]);
+  }, [activeAgent, bpm, profile, pushStep, streamViaHttp, updateSessionStatus]);
 
   const handleSend = useCallback((text: string) => {
     if (!session) return;
@@ -160,8 +161,23 @@ export function AgentDirector({ bpm = 142, onClipGenerated }: AgentDirectorProps
   return (
     <div style={{ ...panelStyle(), display: "flex", flexDirection: "column", height: "100%", padding: 0 }}>
       <div style={{ padding: "10px 12px 0 12px" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: BEEHIVE.text }}>Agent Director</div>
-        <div style={{ fontSize: 11, color: BEEHIVE.textMuted }}>Natural-language creative collaborator</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: BEEHIVE.text }}>Agent Director</div>
+          <select
+            aria-label="Advisor model"
+            value={profile}
+            onChange={(e) => setProfile(e.target.value as "reasoning" | "fast_pattern")}
+            style={{ fontSize: 11, padding: "2px 4px", background: BEEHIVE.bg, color: BEEHIVE.text, border: `1px solid ${BEEHIVE.border}`, borderRadius: 4 }}
+          >
+            <option value="fast_pattern">Fast pattern</option>
+            <option value="reasoning">Reasoning (Marco-o1)</option>
+          </select>
+        </div>
+        <div style={{ fontSize: 11, color: BEEHIVE.textMuted }}>
+          {profile === "reasoning"
+            ? "⚠ Marco-o1 may be slow (~90s on 8GB); degrades to deterministic tools."
+            : "Natural-language creative collaborator"}
+        </div>
       </div>
       <AgentMessageList messages={session.messages} onTryAlternative={handleTryAlternative} />
       <AgentComposer

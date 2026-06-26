@@ -38,25 +38,38 @@ def degraded_proposal(reason: str) -> dict[str, Any]:
     }
 
 
-async def request_rhythm_advice(
+def _read_specialist_prompt() -> str:
+    try:
+        return PROMPT_PATH.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+async def request_advice(
+    agent_role: str,
     brief: str,
     session_context: dict[str, Any],
     style_references: list[str],
 ) -> dict[str, Any]:
-    """Request a structured planning packet without giving Hive execution authority."""
+    """Request a structured planning packet for any agent role (reasoning profile).
+
+    Hive 999 advises; it never gets execution authority. Returns a degraded
+    proposal envelope when the sidecar is unavailable or invalid.
+    """
     payload = {
         "brief": brief,
-        "agent_role": "rhythm_groove",
+        "agent_role": agent_role,
         "session_context": session_context,
         "style_references": style_references,
         "specialist_prompt": {
             "version": PROMPT_VERSION,
-            "instructions": PROMPT_PATH.read_text(encoding="utf-8"),
+            "instructions": _read_specialist_prompt(),
         },
     }
+    endpoint = agent_role.replace("_", "-")
     try:
         async with httpx.AsyncClient(timeout=HIVE_999_TIMEOUT, trust_env=False) as client:
-            response = await client.post(f"{HIVE_999_URL}/api/v1/advice/rhythm-groove", json=payload)
+            response = await client.post(f"{HIVE_999_URL}/api/v1/advice/{endpoint}", json=payload)
             response.raise_for_status()
             proposal = response.json()
         if proposal.get("status") != "ok" or not isinstance(proposal.get("creative_plan"), dict):
@@ -65,6 +78,15 @@ async def request_rhythm_advice(
         return proposal
     except Exception as exc:
         return degraded_proposal(f"Hive 999 unavailable: {type(exc).__name__}")
+
+
+async def request_rhythm_advice(
+    brief: str,
+    session_context: dict[str, Any],
+    style_references: list[str],
+) -> dict[str, Any]:
+    """Backwards-compatible rhythm_groove advisor (delegates to request_advice)."""
+    return await request_advice("rhythm_groove", brief, session_context, style_references)
 
 
 async def hive_999_health() -> dict[str, Any]:

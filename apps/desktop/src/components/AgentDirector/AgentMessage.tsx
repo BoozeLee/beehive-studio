@@ -1,5 +1,6 @@
 import { BEEHIVE, commonStyles } from "../../lib/theme";
 import type { AgentMessage as AgentMessageType } from "../../lib/workbenchStore";
+import { ConfidenceRadar } from "../ProposalPanel/ConfidenceRadar";
 
 interface AgentMessageProps {
   message: AgentMessageType;
@@ -30,17 +31,39 @@ export function AgentMessage({ message, onTryAlternative }: AgentMessageProps) {
 
   if (message.proposal) {
     const proposal = message.proposal as {
-      creative_plan?: { summary?: string; rationale?: string[]; alternatives?: Array<{ direction?: string; why?: string }> };
+      creative_plan?: {
+        summary?: string;
+        rationale?: string[];
+        confidence?: Record<string, number>;
+        evidence?: string[];
+        alternatives?: Array<{ direction?: string; why?: string }>;
+      };
     };
+    const plan = proposal.creative_plan;
+    const radarDims = plan?.confidence
+      ? Object.keys(plan.confidence).filter((k) => k !== "overall")
+      : [];
     return (
       <div className="jetbee-chat-message jetbee-chat-message-proposal">
         <div style={{ fontSize: 11, color: BEEHIVE.comb, marginBottom: 4 }}>🐝 Advisory proposal</div>
-        <div>{proposal.creative_plan?.summary}</div>
-        {proposal.creative_plan?.rationale?.map((r, i) => (
+        <div>{plan?.summary}</div>
+        {plan?.confidence && radarDims.length >= 3 && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 4 }}>
+            <ConfidenceRadar confidence={plan.confidence} size={140} />
+          </div>
+        )}
+        {plan?.rationale?.map((r, i) => (
           <div key={i} style={{ color: BEEHIVE.textMuted, fontSize: 11, marginTop: 4 }}>• {r}</div>
         ))}
+        {plan?.evidence && plan.evidence.length > 0 && (
+          <div style={{ marginTop: 6, fontSize: 10, color: BEEHIVE.textMuted }}>
+            {plan.evidence.map((e, i) => (
+              <div key={i}>🔎 {e}</div>
+            ))}
+          </div>
+        )}
         <div style={{ marginTop: 6 }}>
-          {proposal.creative_plan?.alternatives?.map((alt, i) => (
+          {plan?.alternatives?.map((alt, i) => (
             <button key={i} onClick={() => onTryAlternative?.(alt.direction ?? "alternative")} style={{ ...commonStyles.toolBtn, marginRight: 4 }}>
               Try: {alt.direction}
             </button>

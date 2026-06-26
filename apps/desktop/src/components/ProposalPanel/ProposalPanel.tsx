@@ -1,5 +1,7 @@
-import React from "react";
 import type { HiveProposal } from "../../lib/useHiveAdvisor";
+import { ConfidenceRadar } from "./ConfidenceRadar";
+
+export type AdvisorProfile = "reasoning" | "fast_pattern";
 
 interface ProposalPanelProps {
   proposal: HiveProposal | null;
@@ -7,9 +9,49 @@ interface ProposalPanelProps {
   error?: string | null;
   onApply?: () => void;
   onDismiss?: () => void;
+  onTryAlternative?: (direction: string) => void;
+  onExplain?: () => void;
+  profile?: AdvisorProfile;
+  onProfileChange?: (profile: AdvisorProfile) => void;
 }
 
-export function ProposalPanel({ proposal, isLoading, error, onApply, onDismiss }: ProposalPanelProps) {
+export function ProposalPanel({
+  proposal,
+  isLoading,
+  error,
+  onApply,
+  onDismiss,
+  onTryAlternative,
+  onExplain,
+  profile = "fast_pattern",
+  onProfileChange,
+}: ProposalPanelProps) {
+  const modelControls = (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <select
+        aria-label="Advisor model"
+        value={profile}
+        disabled={!onProfileChange}
+        onChange={(e) => onProfileChange?.(e.target.value as AdvisorProfile)}
+        style={{ fontSize: 11, padding: "2px 4px", background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4 }}
+      >
+        <option value="fast_pattern">Fast pattern</option>
+        <option value="reasoning">Reasoning (Marco-o1)</option>
+      </select>
+      {onExplain && (
+        <button className="jetbee-toolbtn" onClick={onExplain} title="Re-run the advisor to justify this proposal">
+          Why this?
+        </button>
+      )}
+    </div>
+  );
+  const marcoWarning =
+    profile === "reasoning" ? (
+      <div style={{ fontSize: 10, color: "var(--jb-warning)", marginTop: 4 }}>
+        ⚠ Marco-o1 may exceed ~90s on an 8GB GPU; Studio degrades to deterministic tools if it stalls.
+      </div>
+    ) : null;
+
   if (isLoading) {
     return (
       <div style={{ padding: 16, color: "var(--jb-text-muted)", fontSize: 13 }}>
@@ -32,8 +74,12 @@ export function ProposalPanel({ proposal, isLoading, error, onApply, onDismiss }
 
   if (!proposal) {
     return (
-      <div style={{ padding: 16, color: "var(--jb-text-muted)", fontSize: 13, fontStyle: "italic" }}>
-        No advisory proposal yet. Generate music to receive a Hive 999 creative plan.
+      <div style={{ padding: 16, color: "var(--jb-text-muted)", fontSize: 13 }}>
+        <div style={{ marginBottom: 8 }}>{modelControls}</div>
+        {marcoWarning}
+        <div style={{ fontStyle: "italic", marginTop: 8 }}>
+          No advisory proposal yet. Generate music to receive a Hive 999 creative plan.
+        </div>
       </div>
     );
   }
@@ -66,22 +112,31 @@ export function ProposalPanel({ proposal, isLoading, error, onApply, onDismiss }
         </div>
       </div>
 
-      {/* Confidence bar */}
+      {/* Model picker + Why this? */}
+      <div style={{ marginBottom: 8 }}>{modelControls}{marcoWarning}</div>
+
+      {/* Confidence — radar when multi-dimensional, else bar */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--jb-text-muted)", marginBottom: 4 }}>
           <span>Confidence</span>
           <span>{Math.round(overallConfidence * 100)}%</span>
         </div>
-        <div style={{ height: 4, background: "var(--jb-border)", borderRadius: 2, overflow: "hidden" }}>
-          <div
-            style={{
-              width: `${Math.round(overallConfidence * 100)}%`,
-              height: "100%",
-              background: overallConfidence >= 0.8 ? "var(--jb-success)" : overallConfidence >= 0.5 ? "var(--jb-warning)" : "var(--jb-error)",
-              transition: "width 0.3s ease",
-            }}
-          />
-        </div>
+        {plan?.confidence && Object.keys(plan.confidence).filter((k) => k !== "overall").length >= 3 ? (
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <ConfidenceRadar confidence={plan.confidence} />
+          </div>
+        ) : (
+          <div style={{ height: 4, background: "var(--jb-border)", borderRadius: 2, overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${Math.round(overallConfidence * 100)}%`,
+                height: "100%",
+                background: overallConfidence >= 0.8 ? "var(--jb-success)" : overallConfidence >= 0.5 ? "var(--jb-warning)" : "var(--jb-error)",
+                transition: "width 0.3s ease",
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Summary */}
@@ -129,7 +184,19 @@ export function ProposalPanel({ proposal, isLoading, error, onApply, onDismiss }
           </div>
           {plan.alternatives.map((alt, i) => (
             <div key={i} style={{ padding: 8, background: "var(--jb-bg)", borderRadius: 4, marginBottom: 6, border: "1px solid var(--jb-border)" }}>
-              <div style={{ fontWeight: 600, color: "var(--jb-accent)" }}>{alt.direction}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                <div style={{ fontWeight: 600, color: "var(--jb-accent)" }}>{alt.direction}</div>
+                {onTryAlternative && alt.direction && (
+                  <button
+                    className="jetbee-toolbtn"
+                    style={{ fontSize: 10, padding: "1px 6px", flexShrink: 0 }}
+                    onClick={() => onTryAlternative(alt.direction as string)}
+                    title="Re-run the advisor toward this direction"
+                  >
+                    Try this
+                  </button>
+                )}
+              </div>
               {alt.why && <div style={{ marginTop: 2, color: "var(--jb-text-muted)" }}>{alt.why}</div>}
               {alt.delta_summary && <div style={{ marginTop: 2, fontSize: 11 }}>{alt.delta_summary}</div>}
             </div>

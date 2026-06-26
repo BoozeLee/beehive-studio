@@ -232,7 +232,8 @@ function JetBeeApp() {
   const [swarmSteps, setSwarmSteps] = useState<SwarmStep[]>([]);
 
   // ── Hive 999 advisor ──
-  const { proposal: hiveProposal, isLoading: hiveLoading, error: hiveError, clearProposal } = useHiveAdvisor();
+  const { proposal: hiveProposal, isLoading: hiveLoading, error: hiveError, clearProposal, requestAdvice } = useHiveAdvisor();
+  const [advisorProfile, setAdvisorProfile] = useState<"reasoning" | "fast_pattern">("fast_pattern");
   const {
     job: activeBuild,
     error: buildError,
@@ -1651,6 +1652,14 @@ function JetBeeApp() {
       isLoading={hiveLoading}
       error={hiveError}
       onDismiss={clearProposal}
+      profile={advisorProfile}
+      onProfileChange={setAdvisorProfile}
+      onTryAlternative={(direction) =>
+        void requestAdvice(`${brief} — explore this direction: ${direction}`, { profile: advisorProfile })
+      }
+      onExplain={() =>
+        void requestAdvice(`${brief} — explain your reasoning for this proposal`, { profile: advisorProfile })
+      }
     />
   );
 
