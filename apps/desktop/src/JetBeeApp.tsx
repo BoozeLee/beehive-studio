@@ -11,6 +11,7 @@ import { useTimelineStore } from "./lib/timelineStore";
 import { PatternEditor } from "./components/PatternEditor/PatternEditor";
 import type { QaResult } from "./components/PatternEditor/PatternEditor";
 import { PianoRoll } from "./components/PianoRoll/PianoRoll";
+import { MidiToolsPanel } from "./components/MidiToolsPanel/MidiToolsPanel";
 import { exportProjectAudio } from "./lib/audioEngine";
 import { ExportAudioDialog } from "./components/ExportAudioDialog";
 import { PublishDialog } from "./components/PublishDialog/PublishDialog";
@@ -1436,27 +1437,33 @@ function JetBeeApp() {
   );
 
   const pianoPanel = selectedTimelineClip?.midiData ? (
-    <PianoRoll
-      notes={selectedTimelineClip.midiData.notes.map((note, index) => ({
-        ...note,
-        id: `${selectedTimelineClip.id}-note-${index}`,
-      }))}
-      onChange={(notes) => {
-        const nextNotes = notes.map(({ id: _id, ...note }) => note);
-        updateClipMidiNotes(selectedTimelineClip.id, nextNotes);
+    (() => {
+      const clipId = selectedTimelineClip.id;
+      const applyNotes = (nextNotes: NonNullable<TimelineClip["midiData"]>["notes"]) => {
+        updateClipMidiNotes(clipId, nextNotes);
         setClips((prev) =>
-          prev.map((clip) =>
-            clip.id === selectedTimelineClip.id
-              ? { ...clip, midiData: { notes: nextNotes } }
-              : clip
-          )
+          prev.map((clip) => (clip.id === clipId ? { ...clip, midiData: { notes: nextNotes } } : clip))
         );
-      }}
-      isPlaying={transport.isPlaying}
-      currentBeat={transport.currentBeat - selectedTimelineClip.start}
-      snapToGrid
-      gridDivision={0.25}
-    />
+      };
+      return (
+        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          <MidiToolsPanel notes={selectedTimelineClip.midiData.notes} onChange={applyNotes} />
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <PianoRoll
+              notes={selectedTimelineClip.midiData.notes.map((note, index) => ({
+                ...note,
+                id: `${clipId}-note-${index}`,
+              }))}
+              onChange={(notes) => applyNotes(notes.map(({ id: _id, ...note }) => note))}
+              isPlaying={transport.isPlaying}
+              currentBeat={transport.currentBeat - selectedTimelineClip.start}
+              snapToGrid
+              gridDivision={0.25}
+            />
+          </div>
+        </div>
+      );
+    })()
   ) : (
     <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>
       Select a MIDI clip in the Timeline to edit it in Piano Roll.
