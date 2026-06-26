@@ -18,6 +18,9 @@ export interface RenderClip {
   sourceOffset?: number;
   duration?: number;
   gain?: number;
+  warpStretchFactor?: number; // varispeed time-stretch (1 = off)
+  fadeInBeats?: number;
+  fadeOutBeats?: number;
 }
 
 export interface MixerTrackState {
@@ -142,13 +145,27 @@ async function mixAudioClips(
     const rightGain = gain * (pan < 0 ? 1 + pan : 1);
     const availableFrames = Math.floor((data.samples.length - sourceOffset) / sourceChannels);
     const frames = Math.min(availableFrames, maxFrames);
+    const warp = clip.warpStretchFactor && clip.warpStretchFactor > 0 ? clip.warpStretchFactor : 1;
+    const secPerBeat = 60 / bpm;
+    const clipBeats = clip.duration ?? frames / sourceRate / secPerBeat;
+    const fadeIn = clip.fadeInBeats ?? 0;
+    const fadeOut = clip.fadeOutBeats ?? 0;
 
     for (let frame = 0; frame < frames; frame++) {
-      const target = targetOffset + Math.floor((frame / sourceRate) * buffer.sampleRate);
+      // Varispeed warp: pack source frames into a shorter/longer output span.
+      const outSec = frame / sourceRate / warp;
+      const target = targetOffset + Math.floor(outSec * buffer.sampleRate);
       if (target >= buffer.length) break;
+      // Linear fade envelope over the clip's output beat position.
+      const outBeat = outSec / secPerBeat;
+      let env = 1;
+      if (fadeIn > 0 && outBeat < fadeIn) env *= outBeat / fadeIn;
+      if (fadeOut > 0 && outBeat > clipBeats - fadeOut) {
+        env *= Math.max(0, (clipBeats - outBeat) / fadeOut);
+      }
       const source = sourceOffset + frame * sourceChannels;
-      const left = data.samples[source] ?? 0;
-      const right = sourceChannels > 1 ? data.samples[source + 1] ?? left : left;
+      const left = (data.samples[source] ?? 0) * env;
+      const right = (sourceChannels > 1 ? data.samples[source + 1] ?? left : left) * env;
       buffer.getChannelData(0)[target] = Math.max(
         -1,
         Math.min(1, buffer.getChannelData(0)[target] + left * leftGain)

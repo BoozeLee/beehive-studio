@@ -72,6 +72,9 @@ export interface Clip {
   audioSourceOffset?: number; // seconds from source start
   audioSourceDuration?: number; // seconds available from source
   gain?: number; // 0-2 clip gain
+  warpStretchFactor?: number; // 0.5-2.0 time-stretch (1 = off); >1 = faster
+  fadeInBeats?: number;  // linear fade-in length in beats
+  fadeOutBeats?: number; // linear fade-out length in beats
   generativePrompt?: string;
 
   // Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)

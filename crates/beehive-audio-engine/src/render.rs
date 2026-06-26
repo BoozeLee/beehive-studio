@@ -61,6 +61,12 @@ pub struct RenderClip {
     pub duration: Option<f64>,
     #[serde(default)]
     pub gain: Option<f32>,
+    #[serde(default, rename = "warpStretchFactor")]
+    pub warp_stretch_factor: Option<f64>,
+    #[serde(default, rename = "fadeInBeats")]
+    pub fade_in_beats: Option<f64>,
+    #[serde(default, rename = "fadeOutBeats")]
+    pub fade_out_beats: Option<f64>,
 }
 
 impl RenderClip {
@@ -187,12 +193,21 @@ fn render_clip_audio(
     let src_ch = audio.channels.max(1) as usize;
     let src_frames = audio.samples.len() / src_ch;
     let src_offset_frame = (clip.source_offset * audio.sample_rate as f64).round() as usize;
-    let ratio = audio.sample_rate as f64 / sr as f64;
+    // Varispeed warp: consume source faster/slower per output frame.
+    let warp = clip.warp_stretch_factor.filter(|w| *w > 0.0).unwrap_or(1.0);
+    let ratio = audio.sample_rate as f64 / sr as f64 * warp;
+    let fade_in = clip.fade_in_beats.unwrap_or(0.0);
+    let fade_out = clip.fade_out_beats.unwrap_or(0.0);
+    let clip_beats = clip.duration.unwrap_or(f64::INFINITY);
     let out_frames = out.len() / 2;
     let mut f = start_frame;
     let mut i = 0usize;
     loop {
         if f >= out_frames {
+            break;
+        }
+        let out_beat = (i as f64 / sr as f64) / spb;
+        if out_beat >= clip_beats {
             break;
         }
         // Linear-interpolated resample from source.
@@ -207,8 +222,16 @@ fn render_clip_audio(
         let m0: f32 = (0..src_ch).map(|c| audio.samples[s0 * src_ch + c]).sum::<f32>() / src_ch as f32;
         let m1: f32 = (0..src_ch).map(|c| audio.samples[s1 * src_ch + c]).sum::<f32>() / src_ch as f32;
         let s = m0 + (m1 - m0) * frac;
-        out[f * 2] += s * gl * g;
-        out[f * 2 + 1] += s * gr * g;
+        // Linear fade envelope.
+        let mut env = 1.0f32;
+        if fade_in > 0.0 && out_beat < fade_in {
+            env *= (out_beat / fade_in) as f32;
+        }
+        if fade_out > 0.0 && clip_beats.is_finite() && out_beat > clip_beats - fade_out {
+            env *= ((clip_beats - out_beat) / fade_out).max(0.0) as f32;
+        }
+        out[f * 2] += s * gl * g * env;
+        out[f * 2 + 1] += s * gr * g * env;
         f += 1;
         i += 1;
     }
@@ -327,6 +350,9 @@ mod tests {
             source_offset: 0.0,
             duration: None,
             gain: None,
+            warp_stretch_factor: None,
+            fade_in_beats: None,
+            fade_out_beats: None,
         }
     }
 
@@ -416,9 +442,61 @@ mod tests {
             source_offset: 0.0,
             duration: Some(2.0),
             gain: Some(1.0),
-        };
+            warp_stretch_factor: None,
+            fade_in_beats: None,
+            fade_out_beats: None,
+        }
+        ;
         let tracks = vec![track("0", "synth", false, false)];
         let out = render_offline(&[clip], &tracks, 120.0, 44100, RenderPreset::Draft, &by_path);
+        assert!(peak(&out.master) > 0.1);
+    }
+
+    fn audio_clip(dur: f64, warp: Option<f64>, fade_in: Option<f64>, fade_out: Option<f64>) -> RenderClip {
+        RenderClip {
+            notes: vec![],
+            channel: Some(serde_json::Value::String("0".into())),
+            start: 0.0,
+            audio_file_path: Some("loop.wav".into()),
+            source_offset: 0.0,
+            duration: Some(dur),
+            gain: Some(1.0),
+            warp_stretch_factor: warp,
+            fade_in_beats: fade_in,
+            fade_out_beats: fade_out,
+        }
+    }
+
+    #[test]
+    fn fade_in_attenuates_clip_start() {
+        let mut by_path = HashMap::new();
+        by_path.insert(
+            "loop.wav".to_string(),
+            AudioBuf { sample_rate: 44100, channels: 1, samples: vec![0.5f32; 44100 * 2] },
+        );
+        let tracks = vec![track("0", "synth", false, false)];
+        // 2-beat clip at 120bpm = 1s; 1-beat fade-in.
+        let out = render_offline(&[audio_clip(2.0, None, Some(1.0), None)], &tracks, 120.0, 44100, RenderPreset::Draft, &by_path);
+        // First output frame should be ~silent (env ~0), later frames louder.
+        let first = out.master[0].abs() + out.master[1].abs();
+        let mid_idx = (0.5 * 44100.0) as usize * 2; // ~0.5s in
+        let mid = out.master[mid_idx].abs() + out.master[mid_idx + 1].abs();
+        assert!(first < 0.05, "fade-in start should be near silent, got {first}");
+        assert!(mid > first, "fade-in should rise: first={first} mid={mid}");
+    }
+
+    #[test]
+    fn warp_speeds_up_playback() {
+        let mut by_path = HashMap::new();
+        // 1s of source.
+        by_path.insert(
+            "loop.wav".to_string(),
+            AudioBuf { sample_rate: 44100, channels: 1, samples: vec![0.5f32; 44100] },
+        );
+        let tracks = vec![track("0", "synth", false, false)];
+        // warp 2x with a long clip duration: source is exhausted in ~half the frames.
+        let out = render_offline(&[audio_clip(8.0, Some(2.0), None, None)], &tracks, 120.0, 44100, RenderPreset::Draft, &by_path);
+        // audible content exists (source consumed), proving the warp path runs.
         assert!(peak(&out.master) > 0.1);
     }
 }

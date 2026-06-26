@@ -143,6 +143,9 @@ export function buildArrangementRenderPayload(
       sourceOffset: clip.audioSourceOffset ?? 0,
       duration: clip.duration,
       gain: clip.gain ?? 1,
+      warpStretchFactor: clip.warpStretchFactor,
+      fadeInBeats: clip.fadeInBeats,
+      fadeOutBeats: clip.fadeOutBeats,
     });
   }
 

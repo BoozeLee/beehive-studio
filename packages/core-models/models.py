@@ -125,6 +125,9 @@ class Clip(BaseModel):
     audio_source_offset: float = Field(0.0, ge=0.0)
     audio_source_duration: Optional[float] = Field(None, ge=0.0)
     gain: float = Field(1.0, ge=0.0, le=2.0)
+    warp_stretch_factor: Optional[float] = Field(None, ge=0.25, le=4.0)
+    fade_in_beats: Optional[float] = Field(None, ge=0.0)
+    fade_out_beats: Optional[float] = Field(None, ge=0.0)
     generative_prompt: Optional[str] = None
 
     # Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)

@@ -1558,7 +1558,70 @@ function JetBeeApp() {
     <div style={{ color: "var(--jb-text-muted)", fontSize: 12, padding: 20 }}>Select a track to edit its FX and automation.</div>
   );
 
-  const inspectorPanel = effectsPanel;
+  const audioClipControls =
+    selectedTimelineClip && selectedTimelineClip.type === "audio" ? (
+      <div style={{ padding: 10, borderBottom: "1px solid var(--jb-border)", fontSize: 11 }}>
+        <div style={{ fontWeight: 600, color: "var(--jb-text)", marginBottom: 6 }}>
+          Audio Clip — {selectedTimelineClip.name}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, color: "var(--jb-text-muted)" }}>
+          Warp ×{(selectedTimelineClip.warpStretchFactor ?? 1).toFixed(2)}
+          <input
+            type="range"
+            aria-label="Warp"
+            min={0.5}
+            max={2}
+            step={0.05}
+            value={selectedTimelineClip.warpStretchFactor ?? 1}
+            onChange={(e) =>
+              useTimelineStore.getState().updateClip(selectedTimelineClip.id, {
+                warpStretchFactor: parseFloat(e.target.value),
+              })
+            }
+            style={{ flex: 1 }}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, color: "var(--jb-text-muted)" }}>
+          Fade in (beats)
+          <input
+            type="number"
+            aria-label="Fade in beats"
+            min={0}
+            step={0.25}
+            value={selectedTimelineClip.fadeInBeats ?? 0}
+            onChange={(e) =>
+              useTimelineStore.getState().updateClip(selectedTimelineClip.id, {
+                fadeInBeats: Math.max(0, parseFloat(e.target.value) || 0),
+              })
+            }
+            style={{ width: 60, background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4, padding: "2px 4px" }}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--jb-text-muted)" }}>
+          Fade out (beats)
+          <input
+            type="number"
+            aria-label="Fade out beats"
+            min={0}
+            step={0.25}
+            value={selectedTimelineClip.fadeOutBeats ?? 0}
+            onChange={(e) =>
+              useTimelineStore.getState().updateClip(selectedTimelineClip.id, {
+                fadeOutBeats: Math.max(0, parseFloat(e.target.value) || 0),
+              })
+            }
+            style={{ width: 60, background: "var(--jb-bg)", color: "var(--jb-text)", border: "1px solid var(--jb-border)", borderRadius: 4, padding: "2px 4px" }}
+          />
+        </label>
+      </div>
+    ) : null;
+
+  const inspectorPanel = (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "auto" }}>
+      {audioClipControls}
+      <div style={{ flex: 1 }}>{effectsPanel}</div>
+    </div>
+  );
 
   const agentPanel = (
     <AgentDirector
