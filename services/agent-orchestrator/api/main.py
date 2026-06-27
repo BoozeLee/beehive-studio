@@ -1334,6 +1334,15 @@ def _render_request(
                 current_progress = min(0.6, 0.2 + len(track_segments) / len(tracks) * 0.4)
                 throttled_progress(current_progress, "Processing tracks in parallel")
 
+    # Lua instrument devices: synthesize each device's emitted notes into its track.
+    try:
+        from agents.lua_device import apply_lua_devices_to_tracks
+
+        lua_ms = apply_lua_devices_to_tracks(tracks, track_segments, req.bpm, sample_rate)
+        max_duration_ms = max(max_duration_ms, lua_ms)
+    except Exception:
+        pass
+
     if progress:
         throttled_progress(0.7, "Mixing final audio")
 
