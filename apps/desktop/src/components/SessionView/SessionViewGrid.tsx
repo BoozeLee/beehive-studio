@@ -26,6 +26,12 @@ interface Clip {
   qa?: { pass?: boolean; score?: number; warnings?: string[] };
 }
 
+interface SceneRowData {
+  id: string;
+  name: string;
+  clipIds: string[];
+}
+
 interface Props {
   clips: Clip[];
   projectId?: string;
@@ -34,6 +40,10 @@ interface Props {
   onReject?: (clipId: string) => void;
   onVariations?: (clipId: string) => void;
   onLaunchScene?: () => void;
+  scenes?: SceneRowData[];
+  onNewScene?: () => void;
+  onLaunchSceneById?: (sceneId: string, mode: "bar" | "8th" | "16th") => void;
+  onAddSelectedToScene?: (sceneId: string) => void;
 }
 
 const AGENT_COLORS: Record<string, string> = {
@@ -81,6 +91,10 @@ export function SessionViewGrid({
   onReject,
   onVariations,
   onLaunchScene,
+  scenes = [],
+  onNewScene,
+  onLaunchSceneById,
+  onAddSelectedToScene,
 }: Props) {
   const emptyState = clips.length === 0 ? (
     <div
@@ -105,7 +119,25 @@ export function SessionViewGrid({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 4px 8px", flexShrink: 0 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: "4px 4px 8px", flexShrink: 0 }}>
+        {scenes.map((scene) => (
+          <div
+            key={scene.id}
+            style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 6px", border: `1px solid ${BEEHIVE.border}`, borderRadius: 4, fontSize: 11 }}
+          >
+            <span style={{ color: BEEHIVE.text }}>{scene.name}</span>
+            <span style={{ color: BEEHIVE.textMuted }}>({scene.clipIds.length})</span>
+            <button className="jetbee-toolbtn" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => onLaunchSceneById?.(scene.id, "bar")} title="Launch on next bar">▶ bar</button>
+            <button className="jetbee-toolbtn" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => onLaunchSceneById?.(scene.id, "8th")} title="Launch on next 8th">8th</button>
+            {onAddSelectedToScene && (
+              <button className="jetbee-toolbtn" style={{ fontSize: 10, padding: "0 4px" }} onClick={() => onAddSelectedToScene(scene.id)} title="Add selected clip to scene">+clip</button>
+            )}
+          </div>
+        ))}
+        {onNewScene && (
+          <button className="jetbee-toolbtn" style={{ fontSize: 11 }} onClick={onNewScene}>＋ Scene</button>
+        )}
+        <div style={{ flex: 1 }} />
         <ActionBtn onClick={onLaunchScene} accent={BEEHIVE.comb}>
           Launch Scene
         </ActionBtn>

@@ -2,7 +2,15 @@ import * as Tone from "tone";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getInputNode } from "./audioMixer";
 import { rt, rustTransportEnabled } from "./rustTransport";
+import type { LaunchQuantize } from "../../../../packages/core-models/index";
 import { useState, useCallback, useRef, useEffect } from "react";
+
+/** Next launch boundary (beats) for a quantize mode. Pure — exported for tests. */
+export function nextLaunchBeat(currentBeat: number, mode: LaunchQuantize): number {
+  const unit = mode === "16th" ? 0.25 : mode === "8th" ? 0.5 : mode === "none" ? 0 : 4;
+  if (unit === 0) return Math.max(0, currentBeat);
+  return (Math.floor(Math.max(0, currentBeat) / unit) + 1) * unit;
+}
 
 export interface TransportState {
   isPlaying: boolean;
@@ -308,6 +316,34 @@ export function useTransport() {
     [scheduleClip]
   );
 
+  // Scene launch with an explicit quantize mode (bar/8th/16th/none).
+  const launchSceneQuantized = useCallback(
+    async (clips: ScheduledClip[], mode: LaunchQuantize = "bar") => {
+      const cur = useRustRef.current
+        ? await rt.currentBeat().catch(() => 0)
+        : Tone.Transport.position
+            .toString()
+            .split(":")
+            .map(Number)
+            .reduce((acc, val, idx) => acc + val * [4, 1, 0.25][idx], 0);
+      const at = nextLaunchBeat(cur, mode);
+      if (useRustRef.current) {
+        clips.forEach((clip) => scheduleClip({ ...clip, startBeat: at }));
+        void rt.play();
+        setState((s) => ({ ...s, isPlaying: true }));
+        return at;
+      }
+      await Tone.start();
+      clips.forEach((clip) => scheduleClip({ ...clip, startBeat: at }));
+      if (!Tone.Transport.state.includes("started")) {
+        Tone.Transport.start();
+        setState((s) => ({ ...s, isPlaying: true }));
+      }
+      return at;
+    },
+    [scheduleClip]
+  );
+
   const clearAll = useCallback(() => {
     if (useRustRef.current) {
       void rt.clear();
@@ -335,6 +371,7 @@ export function useTransport() {
     scheduleClip,
     unscheduleClip,
     launchScene,
+    launchSceneQuantized,
     launchClipImmediate,
     clearAll,
   };

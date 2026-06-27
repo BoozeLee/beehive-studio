@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Track, Clip, ID } from "../../../../packages/core-models/index";
+import type { Track, Clip, ID, Scene } from "../../../../packages/core-models/index";
 
 export interface TimelineState {
   tracks: Track[];
@@ -7,6 +7,8 @@ export interface TimelineState {
   selectedTrackId: ID | null;
   selectedClipId: ID | null;
   selectedClipIds: ID[];
+  scenes: Scene[];
+  selectedSceneId: ID | null;
   cursorPosition: number;
   zoom: number;
   scrollOffset: { x: number; y: number };
@@ -28,6 +30,12 @@ export interface TimelineState {
   splitClipAt: (id: ID, beat: number, secondsPerBeat: number, newId?: ID) => ID | null;
   updateClipMidiNotes: (id: ID, notes: NonNullable<Clip["midiData"]>["notes"]) => void;
 
+  addScene: (scene: Scene) => void;
+  updateScene: (id: ID, partial: Partial<Scene>) => void;
+  removeScene: (id: ID) => void;
+  moveClipToScene: (clipId: ID, sceneId: ID | null) => void;
+  selectScene: (id: ID | null) => void;
+
   selectTrack: (id: ID | null) => void;
   selectClip: (id: ID | null, opts?: { additive?: boolean }) => void;
   clearSelection: () => void;
@@ -45,6 +53,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   selectedTrackId: null,
   selectedClipId: null,
   selectedClipIds: [],
+  scenes: [],
+  selectedSceneId: null,
   cursorPosition: 0,
   zoom: 16,
   scrollOffset: { x: 0, y: 0 },
@@ -255,6 +265,39 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         },
       };
     }),
+
+  addScene: (scene) => set((state) => ({ scenes: [...state.scenes, scene] })),
+
+  updateScene: (id, partial) =>
+    set((state) => ({
+      scenes: state.scenes.map((s) => (s.id === id ? { ...s, ...partial } : s)),
+    })),
+
+  removeScene: (id) =>
+    set((state) => ({
+      scenes: state.scenes.filter((s) => s.id !== id),
+      selectedSceneId: state.selectedSceneId === id ? null : state.selectedSceneId,
+      clips: Object.fromEntries(
+        Object.entries(state.clips).map(([cid, c]) =>
+          c.sceneId === id ? [cid, { ...c, sceneId: undefined }] : [cid, c]
+        )
+      ),
+    })),
+
+  moveClipToScene: (clipId, sceneId) =>
+    set((state) => {
+      const clip = state.clips[clipId];
+      if (!clip) return state;
+      return {
+        clips: { ...state.clips, [clipId]: { ...clip, sceneId: sceneId ?? undefined } },
+        scenes: state.scenes.map((s) => {
+          const without = s.clipIds.filter((c) => c !== clipId);
+          return s.id === sceneId ? { ...s, clipIds: [...without, clipId] } : { ...s, clipIds: without };
+        }),
+      };
+    }),
+
+  selectScene: (id) => set({ selectedSceneId: id }),
 
   selectTrack: (id) =>
     set({ selectedTrackId: id, selectedClipId: null, selectedClipIds: [] }),

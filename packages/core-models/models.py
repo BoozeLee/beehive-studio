@@ -110,6 +110,13 @@ class MidiClipData(BaseModel):
     tempo_automation: list[TempoAutomationPoint] = Field(default_factory=list)
 
 
+class Scene(BaseModel):
+    id: ID
+    name: str
+    clip_ids: list[ID] = Field(default_factory=list)
+    follow_action: Optional[dict] = None  # {mode, bars?, next_scene_id?}
+
+
 class Clip(BaseModel):
     id: ID
     name: str
@@ -128,6 +135,8 @@ class Clip(BaseModel):
     warp_stretch_factor: Optional[float] = Field(None, ge=0.25, le=4.0)
     fade_in_beats: Optional[float] = Field(None, ge=0.0)
     fade_out_beats: Optional[float] = Field(None, ge=0.0)
+    scene_id: Optional[ID] = None
+    launch_quantize: Optional[str] = None  # 'bar' | '8th' | '16th' | 'none'
     generative_prompt: Optional[str] = None
 
     # Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)

@@ -56,6 +56,20 @@ export interface MidiClipData {
 
 export type ClipType = 'midi' | 'audio' | 'generative' | 'group';
 
+export type LaunchQuantize = 'bar' | '8th' | '16th' | 'none';
+
+/** A Session-view scene: a launchable row of clips, with an optional follow action. */
+export interface Scene {
+  id: ID;
+  name: string;
+  clipIds: ID[];
+  followAction?: {
+    mode: 'manual' | 'after_bars' | 'on_clip_end';
+    bars?: number;        // for 'after_bars'
+    nextSceneId?: ID;     // scene to advance to
+  };
+}
+
 export interface Clip {
   id: ID;
   name: string;
@@ -75,6 +89,8 @@ export interface Clip {
   warpStretchFactor?: number; // 0.5-2.0 time-stretch (1 = off); >1 = faster
   fadeInBeats?: number;  // linear fade-in length in beats
   fadeOutBeats?: number; // linear fade-out length in beats
+  sceneId?: ID;          // Session-view scene this clip belongs to
+  launchQuantize?: LaunchQuantize; // per-clip launch quantization
   generativePrompt?: string;
 
   // Lightweight playback hint for MVP Tone.js scheduling (Sprint 1+)

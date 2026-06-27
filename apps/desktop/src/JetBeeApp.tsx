@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -177,6 +177,7 @@ function JetBeeApp() {
     updateTrack,
     updateClipMidiNotes,
   } = useTimelineStore();
+  const timelineScenes = useTimelineStore((s) => s.scenes);
   const [showPatternEditor, setShowPatternEditor] = useState(false);
   const {
     patterns,
@@ -628,6 +629,55 @@ function JetBeeApp() {
     await transport.launchScene(resolved);
     setStatus(`Launched scene with ${resolved.length} clips`);
   }, [projectName, transport]);
+
+  const launchSceneRef = useRef<((sceneId: string, mode: "bar" | "8th" | "16th") => void) | null>(null);
+  const launchSceneById = useCallback(
+    async (sceneId: string, mode: "bar" | "8th" | "16th") => {
+      const state = useTimelineStore.getState();
+      const scene = state.scenes.find((s) => s.id === sceneId);
+      if (!scene) return;
+      const ids = new Set(scene.clipIds);
+      const sceneClips = Object.fromEntries(
+        Object.entries(state.clips).filter(([cid]) => ids.has(cid))
+      ) as Record<string, TimelineClip>;
+      const scheduled = buildArrangementPlaybackClips(state.tracks, sceneClips);
+      const resolved = await Promise.all(
+        scheduled.map(async (clip) => ({
+          ...clip,
+          audioFilePath: clip.audioFilePath
+            ? await resolveProjectAsset(projectName, clip.audioFilePath).catch(() => clip.audioFilePath)
+            : undefined,
+        }))
+      );
+      const at = await transport.launchSceneQuantized(resolved, mode);
+      setStatus(`Launched "${scene.name}" (${resolved.length} clips) at beat ${at?.toFixed(2) ?? "?"}`);
+      // Follow action: advance to the next scene after N bars.
+      const fa = scene.followAction;
+      if (fa?.mode === "after_bars" && fa.nextSceneId) {
+        const bars = fa.bars ?? 4;
+        const ms = bars * 4 * (60_000 / transport.bpm);
+        const next = fa.nextSceneId;
+        window.setTimeout(() => launchSceneRef.current?.(next, mode), ms);
+      }
+    },
+    [projectName, transport]
+  );
+  launchSceneRef.current = launchSceneById;
+
+  const newScene = useCallback(() => {
+    const count = useTimelineStore.getState().scenes.length + 1;
+    useTimelineStore.getState().addScene({ id: crypto.randomUUID(), name: `Scene ${count}`, clipIds: [] });
+  }, []);
+
+  const addSelectedToScene = useCallback((sceneId: string) => {
+    const sel = useTimelineStore.getState().selectedClipId;
+    if (sel) {
+      useTimelineStore.getState().moveClipToScene(sel, sceneId);
+      setStatus("Added clip to scene");
+    } else {
+      setStatus("Select a clip first");
+    }
+  }, []);
 
   const sendBrief = useCallback(async (variationBrief?: string) => {
     const text = variationBrief ?? brief;
@@ -1426,6 +1476,10 @@ function JetBeeApp() {
       clips={clips}
       projectId={projectName}
       onLaunchScene={launchSessionScene}
+      scenes={timelineScenes}
+      onNewScene={newScene}
+      onLaunchSceneById={launchSceneById}
+      onAddSelectedToScene={addSelectedToScene}
       onPlayClip={(id) => {
         const clip = clips.find((c) => c.id === id);
         if (clip) playClip(clip);
