@@ -9,4 +9,5 @@ BEEHIVE_SKIP_OLLAMA_CHECK=1 BEEHIVE_HIVE999_TIMEOUT=2 PYTHONPATH=. uv run pytest
   tests/test_proposal_contract.py \
   tests/test_seed.py \
   tests/test_lua_api.py \
+  tests/test_plugin_loader.py \
   -q

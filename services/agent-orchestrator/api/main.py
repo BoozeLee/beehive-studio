@@ -701,6 +701,48 @@ async def list_agents():
     }
 
 
+# ── Third-party agent plugins (M6.2) ───────────────────────────────────────
+_plugin_registry = None
+
+
+def _get_plugin_registry():
+    """Lazily build the plugin registry watching services/agent-orchestrator/plugins."""
+    global _plugin_registry
+    if _plugin_registry is None:
+        from pathlib import Path
+
+        from lua_agent import AgentRegistry
+
+        reg = AgentRegistry()
+        plugins_dir = Path(__file__).resolve().parents[1] / "plugins"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        reg.add_agent_dir(str(plugins_dir))
+        _plugin_registry = reg
+    # Re-scan so newly-dropped plugins are picked up at request time.
+    _plugin_registry.discover()
+    return _plugin_registry
+
+
+@app.get("/agents/plugins")
+async def list_agent_plugins():
+    """List third-party agents discovered in the plugins directory."""
+    reg = _get_plugin_registry()
+    return {"plugins": reg.list_with_metadata(), "errors": reg.load_errors}
+
+
+@app.post("/agents/plugins/{name}/run")
+async def run_agent_plugin(name: str):
+    """Run a discovered third-party agent by name."""
+    reg = _get_plugin_registry()
+    if name not in reg:
+        raise HTTPException(status_code=404, detail=f"Plugin agent '{name}' not found")
+    try:
+        result = reg.run_agent(name)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Plugin run failed: {exc}") from exc
+    return {"name": name, "result": result}
+
+
 class ResearchRequest(BaseModel):
     query: str
     mode: str = "full"
