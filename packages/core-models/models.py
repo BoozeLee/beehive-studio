@@ -117,6 +117,15 @@ class Scene(BaseModel):
     follow_action: Optional[dict] = None  # {mode, bars?, next_scene_id?}
 
 
+class LuaDevice(BaseModel):
+    id: ID
+    name: str
+    kind: str  # 'instrument' | 'effect'
+    script: str = ""
+    params: dict[str, float] = Field(default_factory=dict)
+    enabled: bool = True
+
+
 class Clip(BaseModel):
     id: ID
     name: str

@@ -127,6 +127,16 @@ export interface TrackEffect {
   bypass: boolean;
 }
 
+/** A Lua-scripted instrument or effect device attached to a track. */
+export interface LuaDevice {
+  id: ID;
+  name: string;
+  kind: 'instrument' | 'effect';
+  script: string;
+  params: Record<string, number>;
+  enabled: boolean;
+}
+
 export interface Track {
   id: ID;
   name: string;
@@ -147,10 +157,13 @@ export interface Track {
 
   // For MIDI tracks
   instrument?: {
-    type: 'tonejs' | 'sample' | 'external'; // external = future VST placeholder
+    type: 'tonejs' | 'sample' | 'external' | 'lua'; // external = future VST placeholder
     preset?: string;
     settings?: Record<string, unknown>;
   };
+
+  luaInstrument?: LuaDevice;   // Lua-scripted instrument device
+  luaEffects?: LuaDevice[];    // Lua-scripted effect chain
 }
 
 // ============================================
