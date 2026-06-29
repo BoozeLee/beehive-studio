@@ -10,9 +10,10 @@ interface TopBarProps {
   onSave: () => void;
   onExport: () => void;
   onOpenProject: () => void;
+  onPublish?: () => void;
 }
 
-export function TopBar({ projectName, bpm, isPlaying, onPlayPause, onStop, onSave, onExport, onOpenProject }: TopBarProps) {
+export function TopBar({ projectName, bpm, isPlaying, onPlayPause, onStop, onSave, onExport, onOpenProject, onPublish }: TopBarProps) {
   const openPalette = useKeyboardStore((s) => s.openPalette);
 
   return (
@@ -52,6 +53,11 @@ export function TopBar({ projectName, bpm, isPlaying, onPlayPause, onStop, onSav
         <button style={commonStyles.toolBtn} onClick={onOpenProject}>Open</button>
         <button style={commonStyles.toolBtn} onClick={onSave}>Save</button>
         <button style={commonStyles.toolBtn} onClick={onExport}>Export</button>
+        {onPublish && (
+          <button style={commonStyles.toolBtn} onClick={onPublish} title="Render & publish to MixHive">
+            🌐 Publish
+          </button>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>

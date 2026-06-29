@@ -1807,6 +1807,7 @@ function JetBeeApp() {
       onSave={handleSaveProject}
       onExport={() => setShowExportDialog(true)}
       onOpenProject={() => setShowProjects(true)}
+      onPublish={handlePublishFromExport}
     />
   );
 
