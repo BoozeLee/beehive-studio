@@ -21,7 +21,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 reqwest = { version = "0.12", features = ["json"] }
 midir = "0.10"
 hound = "3"
-sha2 = "0.10"
+sha2 = "0.11"
 symphonia = { version = "0.5", features = ["all"] }
 git2 = "0.19"
 flate2 = "1"
