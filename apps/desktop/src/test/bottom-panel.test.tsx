@@ -10,9 +10,10 @@ describe("BottomPanel", () => {
         agentPanel={<div>Chat</div>}
         consolePanel={<div>Console</div>}
         problemsPanel={<div>Problems</div>}
+        buildPanel={<div>Build</div>}
       />
     );
-    fireEvent.click(screen.getByText("🛠️ Build Console"));
+    fireEvent.click(screen.getByTitle("Build Console"));
     expect(useWorkbenchStore.getState().panels.bottom.activeTab).toBe("console");
     expect(screen.getByText("Console")).toBeInTheDocument();
   });

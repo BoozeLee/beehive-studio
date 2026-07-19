@@ -64,15 +64,14 @@ import { renderOffline } from "./lib/rustRender";
 import { undo as undoTimeline, redo as redoTimeline } from "./lib/timelineHistory";
 
 // JetBee IDE layout components
-import { ResizableWorkbench } from "./components/Layout/ResizableWorkbench";
+import { WorkbenchLayout } from "./components/Layout/WorkbenchLayout";
 import { TopBar } from "./components/Layout/TopBar";
-import { LeftRail } from "./components/Layout/LeftRail";
-import { RightRail } from "./components/Layout/RightRail";
-import { BottomPanel } from "./components/Layout/BottomPanel";
 import { EditorWorkbench } from "./components/Layout/EditorWorkbench";
+import { StatusBar } from "./components/Layout/StatusBar";
+import { SwarmField } from "./components/SwarmField/SwarmField";
+import { syncEngineToTransport, type ReactiveEngine } from "./lib/musicReactiveEngine";
 import { AgentRoster } from "./components/AgentDirector/AgentRoster";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
-import { BackendHealth } from "./components/BackendHealth";
 import { PromptEditor } from "./components/PromptEditor/PromptEditor";
 import { LuaEditor } from "./components/LuaEditor/LuaEditor";
 import { WaveformViewer } from "./components/WaveformViewer/WaveformViewer";
@@ -232,6 +231,7 @@ function JetBeeApp() {
   const buildLogs = useBuildLogStore((s) => s.logs);
   const addBuildLog = useBuildLogStore((s) => s.addLog);
   const [swarmSteps, setSwarmSteps] = useState<SwarmStep[]>([]);
+  const [swarmEngine, setSwarmEngine] = useState<ReactiveEngine | null>(null);
 
   // ── Hive 999 advisor ──
   const { proposal: hiveProposal, isLoading: hiveLoading, error: hiveError, clearProposal, requestAdvice } = useHiveAdvisor();
@@ -1323,6 +1323,25 @@ function JetBeeApp() {
     }
   }, [lastMessage, addBuildLog, addTimelineClip, addTrack, consumeBuildEvent]);
 
+  // ── Ambient SwarmField reactivity ──
+  // Feed transport state to the swarm engine. The engine advances the beat itself,
+  // so we only re-sync on play/pause and BPM changes (currentBeat is the seed).
+  useEffect(() => {
+    if (!swarmEngine) return;
+    syncEngineToTransport(swarmEngine, {
+      isPlaying: transport.isPlaying,
+      bpm: transport.bpm,
+      beat: transport.currentBeat,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swarmEngine, transport.isPlaying, transport.bpm]);
+
+  // Pulse the swarm's energy whenever an agent takes a step.
+  useEffect(() => {
+    if (!swarmEngine || swarmSteps.length === 0) return;
+    swarmEngine.triggerAgent(swarmSteps[swarmSteps.length - 1].agentId);
+  }, [swarmSteps, swarmEngine]);
+
   // ── Layout construction ──
 
   const projectPanel = (
@@ -1811,15 +1830,13 @@ function JetBeeApp() {
     />
   );
 
-  const leftRail = (
-    <LeftRail
-      projectPanel={projectPanel}
-      patternPanel={patternPanel}
-      samplePanel={samplePanel}
-      gitPanel={gitPanel}
-      pluginsPanel={pluginsPanel}
-    />
-  );
+  const leftTabs = useMemo(() => [
+    { id: "project", icon: "📁", label: "Project", content: projectPanel },
+    { id: "patterns", icon: "🎹", label: "Patterns", content: patternPanel },
+    { id: "samples", icon: "🎧", label: "Samples", content: samplePanel },
+    { id: "git", icon: "🌿", label: "Git", content: gitPanel },
+    { id: "plugins", icon: "🔌", label: "Plugins", content: pluginsPanel },
+  ], [projectPanel, patternPanel, samplePanel, gitPanel, pluginsPanel]);
 
   const center = (
     <EditorWorkbench
@@ -1834,55 +1851,42 @@ function JetBeeApp() {
     />
   );
 
-  const rightRail = (
-    <RightRail
-      inspectorPanel={inspectorPanel}
-      agentsPanel={<AgentRoster />}
-      proposalPanel={proposalPanel}
-      tastePanel={tastePanel}
-    />
-  );
+  const rightTabs = useMemo(() => [
+    { id: "inspector", icon: "🔍", label: "Inspector", content: inspectorPanel },
+    { id: "agents", icon: "🐝", label: "Agents", content: <AgentRoster /> },
+    { id: "proposal", icon: "🍯", label: "Proposal", content: proposalPanel },
+    { id: "taste", icon: "🕸️", label: "Taste", content: tastePanel },
+  ], [inspectorPanel, proposalPanel, tastePanel]);
 
-  const bottomRail = (
-    <BottomPanel
-      agentPanel={agentPanel}
-      consolePanel={<BuildConsole logs={buildLogs} onClear={() => useBuildLogStore.getState().clearLogs()} />}
-      problemsPanel={<div style={{ padding: 12, color: "var(--jb-text-muted)" }}>No problems detected.</div>}
-      buildPanel={buildPanel}
-    />
-  );
+  const bottomTabs = useMemo(() => [
+    { id: "agent", icon: "💬", label: "Agent Chat", content: agentPanel },
+    { id: "console", icon: "🛠️", label: "Build Console", content: <BuildConsole logs={buildLogs} onClear={() => useBuildLogStore.getState().clearLogs()} /> },
+    { id: "problems", icon: "⚠️", label: "Problems", content: <div style={{ padding: 12, color: "var(--jb-text-muted)" }}>No problems detected.</div> },
+    { id: "build", icon: "▶️", label: "Build Plan", content: buildPanel },
+  ], [agentPanel, buildLogs, buildPanel]);
 
   const statusBar = (
-    <div className="jetbee-statusbar">
-      <div className="jetbee-statusbar-section">
-        <span className="jetbee-statusbar-chip" style={{ color: wsConnected ? "var(--jb-success)" : wsReconnecting ? "var(--jb-warning)" : "var(--jb-error)" }}>
-          {wsConnected ? "● WS" : wsReconnecting ? "◐ WS" : "○ WS"}
-        </span>
-        <span className="jetbee-statusbar-chip"><BackendHealth /></span>
-        <span className="jetbee-statusbar-chip" style={{ color: hiveProposal && !hiveProposal.degraded ? "var(--jb-success)" : hiveLoading ? "var(--jb-warning)" : "var(--jb-text-muted)" }}>
-          {hiveLoading ? "◐ Hive" : hiveProposal && !hiveProposal.degraded ? "● Hive" : "○ Hive"}
-        </span>
-        <span className="jetbee-statusbar-chip">Ollama: 11434</span>
-        <span className="jetbee-statusbar-chip">Baker Street: 3001</span>
-        <span>{transport.isPlaying ? "▶ Playing" : "⏹ Stopped"}</span>
-      </div>
-      <div className="jetbee-statusbar-section" style={{ marginLeft: "auto" }}>
-        <span>{status}</span>
-        <span>JetBee v0.6.0-alpha</span>
-      </div>
-    </div>
+    <StatusBar
+      wsConnected={wsConnected}
+      wsReconnecting={wsReconnecting}
+      isPlaying={transport.isPlaying}
+      status={status}
+      hiveLoading={hiveLoading}
+      hiveDegraded={!!hiveProposal?.degraded}
+    />
   );
 
   return (
     <>
-      <ResizableWorkbench
+      <WorkbenchLayout
         topBar={topBar}
-        leftRail={leftRail}
+        leftTabs={leftTabs}
+        rightTabs={rightTabs}
+        bottomTabs={bottomTabs}
         center={center}
-        rightRail={rightRail}
-        bottomRail={bottomRail}
         statusBar={statusBar}
       />
+      <SwarmField onEngine={setSwarmEngine} />
       <CommandPalette />
       <ExportAudioDialog
         isOpen={showExportDialog}

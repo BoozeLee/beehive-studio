@@ -21,7 +21,7 @@ describe("M1 dock re-homing — all panels reachable", () => {
         pluginsPanel={<div>PluginMarketplaceContent</div>}
       />
     );
-    fireEvent.click(screen.getByText("🔌 Plugins"));
+    fireEvent.click(screen.getByTitle("Plugins"));
     expect(useWorkbenchStore.getState().panels.left.activeTab).toBe("plugins");
     expect(screen.getByText("PluginMarketplaceContent")).toBeInTheDocument();
   });
@@ -35,10 +35,10 @@ describe("M1 dock re-homing — all panels reachable", () => {
         tastePanel={<div>TasteContent</div>}
       />
     );
-    fireEvent.click(screen.getByText("🍯 Proposal"));
+    fireEvent.click(screen.getByTitle("Proposal"));
     expect(useWorkbenchStore.getState().panels.right.activeTab).toBe("proposal");
     expect(screen.getByText("ProposalContent")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("🕸️ Taste"));
+    fireEvent.click(screen.getByTitle("Taste"));
     expect(useWorkbenchStore.getState().panels.right.activeTab).toBe("taste");
     expect(screen.getByText("TasteContent")).toBeInTheDocument();
   });
@@ -52,7 +52,7 @@ describe("M1 dock re-homing — all panels reachable", () => {
         buildPanel={<div>BuildPlanContent</div>}
       />
     );
-    fireEvent.click(screen.getByText("▶️ Build Plan"));
+    fireEvent.click(screen.getByTitle("Build Plan"));
     expect(useWorkbenchStore.getState().panels.bottom.activeTab).toBe("build");
     expect(screen.getByText("BuildPlanContent")).toBeInTheDocument();
   });

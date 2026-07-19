@@ -11,9 +11,10 @@ describe("LeftRail", () => {
         patternPanel={<div>Patterns</div>}
         samplePanel={<div>Samples</div>}
         gitPanel={<div>Git</div>}
+        pluginsPanel={<div>Plugins</div>}
       />
     );
-    fireEvent.click(screen.getByText("🎹 Patterns"));
+    fireEvent.click(screen.getByTitle("Patterns"));
     expect(useWorkbenchStore.getState().panels.left.activeTab).toBe("patterns");
     expect(screen.getByText("Patterns")).toBeInTheDocument();
   });

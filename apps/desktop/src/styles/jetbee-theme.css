@@ -102,58 +102,96 @@ html, body, #root {
   color: var(--jb-text);
 }
 
-/* ── react-resizable-panels styling ── */
-[data-panel-group] {
-  display: flex;
-  flex-direction: row;
-  height: 100%;
-}
+/* ── Allotment split-pane styling ── */
+.split-view-view { background: var(--jb-bg-elevated); }
+.split-view-view > .split-view-view { background: var(--jb-bg); }
 
-[data-panel-group][data-panel-group-direction="vertical"] {
-  flex-direction: column;
-}
-
-[data-resize-handle] {
+.sash-container .sash {
   background: var(--jb-resize-handle);
   transition: background 0.15s ease;
-  outline: none;
-  position: relative;
 }
-
-[data-resize-handle]:hover,
-[data-resize-handle][data-resize-handle-active="pointer"],
-[data-resize-handle][data-resize-handle-state="drag"] {
-  background: var(--jb-resize-handle-active);
+.sash-container .sash:hover,
+.sash-container .sash.active {
+  background: var(--jb-comb);
 }
-
-[data-resize-handle]::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--jb-border-active);
-  border-radius: 2px;
-}
-
-/* Horizontal resize handle (between vertical panels) */
-[data-panel-group-direction="horizontal"] > [data-resize-handle] {
-  width: 3px;
+.sash-container .sash.vertical {
+  width: 3px !important;
   cursor: col-resize;
 }
-[data-panel-group-direction="horizontal"] > [data-resize-handle]::after {
-  width: 1px;
-  height: 24px;
-}
-
-/* Vertical resize handle (between horizontal panels) */
-[data-panel-group-direction="vertical"] > [data-resize-handle] {
-  height: 3px;
+.sash-container .sash.horizontal {
+  height: 3px !important;
   cursor: row-resize;
 }
-[data-panel-group-direction="vertical"] > [data-resize-handle]::after {
-  width: 24px;
-  height: 1px;
+
+/* ── Tool window tabs (vertical strip on edges) ── */
+.toolwindow-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--jb-text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  position: relative;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.toolwindow-tab:hover {
+  color: var(--jb-text);
+  background: var(--jb-panel-hover);
+}
+
+.toolwindow-tab[data-active="true"] {
+  color: var(--jb-text);
+  background: var(--jb-panel);
+}
+
+.toolwindow-tab[data-active="true"][data-side="left"]::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  width: 2px;
+  height: 16px;
+  background: var(--jb-comb);
+  border-radius: 1px;
+}
+
+.toolwindow-tab[data-active="true"][data-side="right"]::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  width: 2px;
+  height: 16px;
+  background: var(--jb-comb);
+  border-radius: 1px;
+}
+
+.toolwindow-tab[data-active="true"][data-side="bottom"]::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  width: 16px;
+  height: 2px;
+  background: var(--jb-comb);
+  border-radius: 1px;
+}
+
+.toolwindow-tab-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.toolwindow-tab-label {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* ── Tab styling ── */
@@ -491,36 +529,6 @@ html, body, #root {
 .jetbee-chat-message-agent {
   align-self: flex-start;
   background: var(--jb-bg-elevated);
-}
-
-/* ── Tool windows ── */
-.jetbee-toolwindow-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--jb-border);
-  background: var(--jb-toolbar-bg);
-}
-
-.jetbee-toolwindow-tab {
-  padding: 3px 8px;
-  font-size: 11px;
-  border-radius: var(--jb-border-radius-sm);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--jb-text-muted);
-  cursor: pointer;
-}
-
-.jetbee-toolwindow-tab:hover {
-  color: var(--jb-text);
-  background: var(--jb-panel-hover);
-}
-
-.jetbee-toolwindow-tab[data-active="true"] {
-  background: var(--jb-comb);
-  color: var(--jb-text-inverse);
-  border-color: var(--jb-comb);
 }
 
 /* ── Status bar chips ── */

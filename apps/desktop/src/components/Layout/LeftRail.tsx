@@ -1,5 +1,5 @@
 import { useWorkbenchStore, type LeftTab } from "../../lib/workbenchStore";
-import { commonStyles } from "../../lib/theme";
+import { ToolWindow, type ToolWindowTab } from "./ToolWindow";
 
 interface LeftRailProps {
   projectPanel: React.ReactNode;
@@ -9,7 +9,7 @@ interface LeftRailProps {
   pluginsPanel: React.ReactNode;
 }
 
-const TABS: { id: LeftTab; label: string; icon: string }[] = [
+const TAB_DEFS: { id: LeftTab; label: string; icon: string }[] = [
   { id: "project", label: "Project", icon: "📁" },
   { id: "patterns", label: "Patterns", icon: "🎹" },
   { id: "samples", label: "Samples", icon: "🎧" },
@@ -17,9 +17,14 @@ const TABS: { id: LeftTab; label: string; icon: string }[] = [
   { id: "plugins", label: "Plugins", icon: "🔌" },
 ];
 
-export function LeftRail({ projectPanel, patternPanel, samplePanel, gitPanel, pluginsPanel }: LeftRailProps) {
+export function LeftRail({
+  projectPanel,
+  patternPanel,
+  samplePanel,
+  gitPanel,
+  pluginsPanel,
+}: LeftRailProps) {
   const { panels, openPanel } = useWorkbenchStore();
-  const activeTab = panels.left.activeTab;
 
   const panelsMap: Record<LeftTab, React.ReactNode> = {
     project: projectPanel,
@@ -29,26 +34,21 @@ export function LeftRail({ projectPanel, patternPanel, samplePanel, gitPanel, pl
     plugins: pluginsPanel,
   };
 
+  const tabs: ToolWindowTab[] = TAB_DEFS.map((t) => ({
+    id: t.id,
+    icon: t.icon,
+    label: t.label,
+    content: panelsMap[t.id],
+  }));
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", gap: 2, padding: "4px 6px", borderBottom: "1px solid var(--jb-border)" }}>
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            data-active={activeTab === tab.id}
-            onClick={() => openPanel("left", tab.id)}
-            style={{
-              ...commonStyles.toolBtn,
-              background: activeTab === tab.id ? "var(--jb-comb)" : "transparent",
-              color: activeTab === tab.id ? "#000" : "var(--jb-text)",
-              borderColor: activeTab === tab.id ? "var(--jb-comb)" : "var(--jb-border)",
-            }}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
-      </div>
-      <div style={{ flex: 1, overflow: "auto" }}>{panelsMap[activeTab]}</div>
-    </div>
+    <ToolWindow
+      side="left"
+      tabs={tabs}
+      activeTab={panels.left.activeTab}
+      isOpen={panels.left.open}
+      onTabClick={(id) => openPanel("left", id)}
+      onToggle={() => openPanel("left")}
+    />
   );
 }
