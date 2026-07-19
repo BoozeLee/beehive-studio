@@ -23,7 +23,7 @@ midir = "0.10"
 hound = "3"
 sha2 = "0.10"
 symphonia = { version = "0.5", features = ["all"] }
-git2 = "0.19"
+git2 = "0.21"
 flate2 = "1"
 tar = "0.4"
 dirs = "6"
