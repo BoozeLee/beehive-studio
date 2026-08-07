@@ -62,8 +62,7 @@ jobs:
         cd services/agent-orchestrator
         uv sync --dev
         cd ../../apps/desktop
-        echo '{"esbuild": true}' > ../../approvals.json
-        cd ../..
+        pnpm config set only-built-dependencies esbuild
         pnpm install
 
     - name: Run tests
