@@ -61,6 +61,8 @@ jobs:
 
     - name: Run secret scanning
       uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         args: --config=.gitleaks.toml
 
@@ -70,27 +72,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Java
-      uses: actions/setup-java@v4
+    - name: Scan Python service with Trivy
+      uses: aquasecurity/trivy-action@master
       with:
-        java-version: '17'
-        distribution: 'temurin'
+        scan-type: 'fs'
+        scan-ref: './services/agent-orchestrator'
+        format: 'sarif'
+        output: 'trivy-python.sarif'
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Upload Trivy Python results
+      uses: github/codeql-action/upload-sarif@v4
       with:
-        python-version: '3.12'
-
-    - name: Install OWASP Dependency Check
-      run: |
-        pip install dependency-check
-
-    - name: Run dependency check
-      run: |
-        dependency-check --project "Beehive Studio" --scan "./services/agent-orchestrator" --format "HTML" --out "dependency-check-results"
-
-    - name: Upload dependency check results
-      uses: actions/upload-artifact@v4
-      with:
-        name: dependency-check-results
-        path: dependency-check-results/
+        sarif_file: 'trivy-python.sarif'
