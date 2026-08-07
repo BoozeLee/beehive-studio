@@ -54,7 +54,9 @@ jobs:
             python3-pip
 
       - name: Install JS dependencies
-        run: pnpm install
+        run: |
+          pnpm install --ignore-scripts
+          cd node_modules/esbuild && node install.js
         working-directory: apps/desktop
 
       - name: Install Python dependencies

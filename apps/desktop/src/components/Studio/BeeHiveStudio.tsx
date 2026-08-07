@@ -36,9 +36,12 @@ interface BeeHiveStudioProps {
   rightRail?: React.ReactNode;
   bottomRail?: React.ReactNode;
   statusBar?: React.ReactNode;
+  leftRail?: React.ReactNode;
+  projectName?: string;
+  projectRoot?: string;
 }
 
-export default function BeeHiveStudio({ topBar, center, rightRail, bottomRail, statusBar }: BeeHiveStudioProps) {
+export default function BeeHiveStudio({ topBar, center, rightRail, bottomRail, statusBar, leftRail, projectName, projectRoot }: BeeHiveStudioProps) {
   const [menuOpen, setMenuOpen] = useState<MenuKey>(null);
   const [agents, setAgents] = useState<{ id: string; label: string; tier: string }[]>([]);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
@@ -66,10 +69,17 @@ export default function BeeHiveStudio({ topBar, center, rightRail, bottomRail, s
     setRunning(true);
     setRunOutput(["Running…"]);
     try {
+      const body: Record<string, unknown> = {
+        entry: activeFile,
+        timeout: 30,
+      };
+      if (projectRoot) {
+        body.root = projectRoot;
+      }
       const res = await fetch("/tools/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ project_path: "/tmp", entry: activeFile, timeout: 30 }),
+        body: JSON.stringify(body),
       });
       const j = await res.json();
       setRunOutput(j.output ?? ["(no output)"]);
@@ -203,8 +213,15 @@ export default function BeeHiveStudio({ topBar, center, rightRail, bottomRail, s
             )}
           </div>
         </div>
-        <div className="w-56 flex-shrink-0 bh-rail" style={{ borderLeft: "1px solid var(--bh-border)" }}>
-          <HiveFileTree onOpenFile={(path) => setActiveFile(path)} />
+        <div className="w-56 flex-shrink-0 flex flex-col bh-rail" style={{ borderLeft: "1px solid var(--bh-border)" }}>
+          <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+            <HiveFileTree onOpenFile={(path) => setActiveFile(path)} />
+          </div>
+          {leftRail && (
+            <div className="flex-shrink-0 overflow-hidden" style={{ height: "40%", borderTop: "1px solid var(--bh-border)" }}>
+              {leftRail}
+            </div>
+          )}
         </div>
       </div>
 

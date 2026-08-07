@@ -62,7 +62,8 @@ jobs:
         cd services/agent-orchestrator
         uv sync --dev
         cd ../../apps/desktop
-        pnpm install
+        pnpm install --ignore-scripts
+        cd node_modules/esbuild && node install.js
 
     - name: Run tests
       run: |

@@ -160,7 +160,6 @@ function JetBeeApp() {
   const [showProjects, setShowProjects] = useState(false);
   const transport = useTransport();
   const [showTimeline, setShowTimeline] = useState(false);
-  const [showStudioView, setShowStudioView] = useState(false);
   const {
     tracks: timelineTracks,
     clips: timelineClips,
@@ -1284,9 +1283,6 @@ function JetBeeApp() {
         <button className="jetbee-toolbtn" onClick={() => setShowTimeline(!showTimeline)}>
           {showTimeline ? "Grid" : "Timeline"}
         </button>
-        <button className="jetbee-toolbtn" onClick={() => setShowStudioView(!showStudioView)}>
-          {showStudioView ? "Studio" : "Studio"}
-        </button>
       </div>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
         <BackendHealth />
@@ -1856,18 +1852,14 @@ function JetBeeApp() {
 
   return (
     <>
-      {showStudioView ? (
-        <BeeHiveStudio />
-      ) : (
-        <ResizableWorkbench
-          topBar={topBar}
-          leftRail={leftRail}
-          center={center}
-          rightRail={rightRail}
-          bottomRail={bottomRail}
-          statusBar={statusBar}
-        />
-      )}
+      <BeeHiveStudio
+        topBar={topBar}
+        center={center}
+        rightRail={rightRail}
+        bottomRail={bottomRail}
+        statusBar={statusBar}
+        leftRail={leftRail}
+      />
       <CommandPalette />
       <ExportAudioDialog
         isOpen={showExportDialog}
