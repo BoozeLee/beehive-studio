@@ -37,9 +37,10 @@
     "@types/wav": "^1",
     "@types/wavesurfer.js": "^6.0.12",
     "@vitejs/plugin-react": "^5.2.0",
+    "esbuild": "^0.25.12",
     "jsdom": "^26.1.0",
     "typescript": "^6.0.3",
-    "vite": "^5.4.21",
+    "vite": "^6.4.3",
     "vitest": "3.2.6"
   }
 }

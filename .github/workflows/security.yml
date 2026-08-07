@@ -58,6 +58,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Run secret scanning
       uses: gitleaks/gitleaks-action@v2
