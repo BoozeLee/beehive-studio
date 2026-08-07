@@ -53,6 +53,10 @@ jobs:
             libjack-jackd2-dev \
             python3-pip
 
+      - name: Pre-approve esbuild builds
+        run: pnpm approve-builds esbuild
+        working-directory: apps/desktop
+
       - name: Install JS dependencies
         run: pnpm install
         working-directory: apps/desktop

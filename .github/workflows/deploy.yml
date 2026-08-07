@@ -62,6 +62,7 @@ jobs:
         cd services/agent-orchestrator
         uv sync --dev
         cd ../../apps/desktop
+        pnpm approve-builds esbuild
         pnpm install
 
     - name: Run tests

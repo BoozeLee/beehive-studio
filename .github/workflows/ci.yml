@@ -51,6 +51,10 @@ jobs:
             libssl-dev \
             pkg-config
 
+      - name: Pre-approve esbuild builds
+        run: pnpm approve-builds esbuild
+        working-directory: apps/desktop
+
       - name: Install JS dependencies
         run: pnpm install
         working-directory: apps/desktop
@@ -139,6 +143,10 @@ jobs:
             libasound2-dev \
             libjack-jackd2-dev
 
+      - name: Pre-approve esbuild builds
+        run: pnpm approve-builds esbuild
+        working-directory: apps/desktop
+
       - name: Install JS dependencies
         run: pnpm install
         working-directory: apps/desktop
@@ -195,6 +203,10 @@ jobs:
             pkg-config \
             libasound2-dev \
             libjack-jackd2-dev
+
+      - name: Pre-approve esbuild builds
+        run: pnpm approve-builds esbuild
+        working-directory: apps/desktop
 
       - name: Install JS dependencies
         run: pnpm install
