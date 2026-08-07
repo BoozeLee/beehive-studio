@@ -24,57 +24,34 @@ jobs:
         output: 'trivy-results.sarif'
 
     - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: 'trivy-results.sarif'
 
   codeql-analysis:
-    # Runs CodeQL analysis
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
       security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript-typescript', 'python' ]
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Java
-      uses: actions/setup-java@v3
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.12'
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r services/agent-orchestrator/requirements.txt
-        cd apps/desktop && npm install
-
-    - name: Checkout additional languages
-      uses: actions/checkout@v4
-
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/perform-analysis@v2
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
       with:
         languages: ${{ matrix.language }}
-        build-mode: 'manual'
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v4
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v4
 
   secret-scanning:
     runs-on: ubuntu-latest
@@ -83,7 +60,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Run secret scanning
-      uses: gitleaks/gitleaks-action@v1
+      uses: gitleaks/gitleaks-action@v2
       with:
         args: --config=.gitleaks.toml
 
@@ -94,7 +71,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
@@ -107,7 +84,7 @@ jobs:
         dependency-check --project "Beehive Studio" --scan "./services/agent-orchestrator" --format "HTML" --out "dependency-check-results"
 
     - name: Upload dependency check results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dependency-check-results
         path: dependency-check-results/
