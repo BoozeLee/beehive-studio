@@ -62,7 +62,6 @@ jobs:
         cd services/agent-orchestrator
         uv sync --dev
         cd ../../apps/desktop
-        pnpm config set only-built-dependencies esbuild
         pnpm install
 
     - name: Run tests

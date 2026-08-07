@@ -1,11 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { HiveFileTree } from "./HiveFileTree";
-import { HiveCodeEditor, type HiveCodeEditorHandle } from "./HiveCodeEditor";
-import { HiveLivePreview } from "./HiveLivePreview";
 import { HiveChatPanel } from "./HiveChatPanel";
-import { HiveNoCodeCanvas } from "./HiveNoCodeCanvas";
 
 type MenuKey = "file" | "agents" | "run" | "projects" | "settings" | null;
 
@@ -15,7 +12,8 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 function useClickOutside(ref: React.RefObject<HTMLElement | null>, onClose: () => void) {
-  useEffect(() => {
+  const [, setDirty] = useState(0);
+  React.useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
@@ -32,8 +30,15 @@ function MenuItem({ label, onClick }: { label: string; onClick?: () => void }) {
   );
 }
 
-export default function BeeHiveStudio() {
-  const editorRef = useRef<HiveCodeEditorHandle | null>(null);
+interface BeeHiveStudioProps {
+  topBar?: React.ReactNode;
+  center: React.ReactNode;
+  rightRail?: React.ReactNode;
+  bottomRail?: React.ReactNode;
+  statusBar?: React.ReactNode;
+}
+
+export default function BeeHiveStudio({ topBar, center, rightRail, bottomRail, statusBar }: BeeHiveStudioProps) {
   const [menuOpen, setMenuOpen] = useState<MenuKey>(null);
   const [agents, setAgents] = useState<{ id: string; label: string; tier: string }[]>([]);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
@@ -42,81 +47,8 @@ export default function BeeHiveStudio() {
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [runOutput, setRunOutput] = useState<string[] | null>(null);
   const [running, setRunning] = useState(false);
-  const [audioPlaying, setAudioPlaying] = useState(false);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
-
-  const toggleAudio = async () => {
-    try {
-      const { invoke } = (window as any).__TAURI__?.core;
-      if (audioPlaying) {
-        await invoke?.("stop_audio");
-        setAudioPlaying(false);
-      } else {
-        await invoke?.("start_audio");
-        setAudioPlaying(true);
-      }
-    } catch (e) {
-      console.error("Audio failed", e);
-    }
-  };
-
-  const exportAbleton = async () => {
-    try {
-      setExportStatus("Fetching arrangement data…");
-      const { invoke } = (window as any).__TAURI__?.core;
-
-      const arrangementResp = await invoke?.("get_current_arrangement");
-      const arrangement = arrangementResp?.data;
-
-      const midiResp = await invoke?.("list_midi_clips");
-      const midiClips = midiResp?.data ?? [];
-
-      const name = arrangement?.name ? arrangement.name.replace(/[^a-zA-Z0-9_ -]/g, "_") : "beehive_project";
-      const outputPath = prompt("Save Ableton Live Set as:", `/tmp/${name}.als`);
-      if (!outputPath) { setExportStatus(null); return; }
-
-      setExportStatus("Generating .als file…");
-      const result = await invoke?.("export_ableton", {
-        arrangement,
-        midiClips,
-        audioClips: [],
-        outputPath,
-      });
-      const msg = "Exported: " + (result?.data ?? outputPath);
-      setExportStatus(msg);
-      setTimeout(() => setExportStatus(null), 5000);
-    } catch (e: any) {
-      console.error("Export failed", e);
-      setExportStatus("Export failed: " + e);
-      setTimeout(() => setExportStatus(null), 5000);
-    }
-  };
-
-  const [scaffoldOpen, setScaffoldOpen] = useState(false);
-  const [scaffoldDesc, setScaffoldDesc] = useState("");
-  const [scaffoldTemplate, setScaffoldTemplate] = useState("fastapi-crud");
-  const [scaffoldDir, setScaffoldDir] = useState("/tmp/hive_project");
-  const [scaffoldResult, setScaffoldResult] = useState<string[] | null>(null);
-  const [scaffolding, setScaffolding] = useState(false);
 
   useClickOutside(menuBarRef, () => setMenuOpen(null));
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "F5") {
-        e.preventDefault();
-        if (activeFile && !running) runActiveFile();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [activeFile, running]);
-
-  const toggleMenu = (key: MenuKey) => setMenuOpen((prev) => (prev === key ? null : key));
-
-  const handleOpenFile = (path: string, content: string) => {
-    editorRef.current?.openTab(path, content);
-  };
 
   const loadAgents = async () => {
     if (agentsLoaded) return;
@@ -148,33 +80,13 @@ export default function BeeHiveStudio() {
     }
   };
 
-  const scaffold = async () => {
-    if (!scaffoldDesc.trim()) return;
-    setScaffolding(true);
-    setScaffoldResult(null);
-    try {
-      const res = await fetch("/tools/scaffold", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ description: scaffoldDesc, template: scaffoldTemplate, target_dir: scaffoldDir }),
-      });
-      const j = await res.json();
-      const files = (j.files ?? []).map((f: { path?: string; type?: string }) => f.path ?? f.type ?? JSON.stringify(f));
-      setScaffoldResult(files.length ? files : ["(no files returned)"]);
-    } catch {
-      setScaffoldResult(["(scaffold failed — tools server offline?)"]);
-    } finally {
-      setScaffolding(false);
-    }
-  };
-
   const menus: { key: MenuKey; label: string; items: React.ReactNode }[] = [
     {
       key: "file",
       label: "File",
       items: (
         <>
-          <MenuItem label="New File" onClick={() => { editorRef.current?.openTab("untitled.py", ""); setMenuOpen(null); }} />
+          <MenuItem label="New File" onClick={() => { /* TODO: project-aware new file */ setMenuOpen(null); }} />
           <MenuItem label="Refresh File Tree" onClick={() => { window.dispatchEvent(new Event("hive:refresh-files")); setMenuOpen(null); }} />
         </>
       ),
@@ -212,7 +124,8 @@ export default function BeeHiveStudio() {
       label: "Projects",
       items: (
         <>
-          <MenuItem label="Scaffold from Template…" onClick={() => { setMenuOpen(null); setScaffoldOpen(true); }} />
+          <MenuItem label="New Project" onClick={() => { setMenuOpen(null); /* TODO */ }} />
+          <MenuItem label="Open Project" onClick={() => { setMenuOpen(null); /* TODO */ }} />
         </>
       ),
     },
@@ -230,14 +143,20 @@ export default function BeeHiveStudio() {
 
   return (
     <div className="flex h-screen flex-col" style={{ background: "var(--bh-bg)", color: "var(--bh-text)" }}>
-      <div className="flex items-center justify-between px-3 bh-menu-bar" style={{ height: "var(--bh-toolbar-height)" }}>
+      {topBar && (
+        <div className="flex-shrink-0" style={{ borderBottom: "1px solid var(--bh-border)", background: "var(--bh-toolbar-bg)" }}>
+          {topBar}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-3 bh-menu-bar" style={{ height: "var(--bh-toolbar-height)", borderBottom: "1px solid var(--bh-border)" }}>
         <div className="flex items-center gap-1" ref={menuBarRef}>
           <span className="font-semibold mr-3 text-sm" style={{ color: "var(--bh-accent)" }}>🐝 BeeHive Studio</span>
           {menus.map(({ key, label, items }) => (
             <div key={key} className="relative">
               <button
                 type="button"
-                onClick={() => { toggleMenu(key); if (key === "agents") loadAgents(); }}
+                onClick={() => { setMenuOpen(key); if (key === "agents") loadAgents(); }}
                 className={`px-2 py-1 rounded text-xs ${menuOpen === key ? "bg-[var(--bh-panel-hover)]" : ""}`}
                 style={{ color: menuOpen === key ? "var(--bh-text)" : "var(--bh-text-muted)" }}>
                 {label}
@@ -252,24 +171,8 @@ export default function BeeHiveStudio() {
           {activeFile && (
             <span className="ml-3 text-[10px] truncate max-w-xs" style={{ color: "var(--bh-text-faint)" }}>{activeFile}</span>
           )}
-          <button
-            onClick={toggleAudio}
-            className={`ml-4 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bh-btn ${audioPlaying ? "bh-btn-accent" : ""}`}
-          >
-            {audioPlaying ? "Audio: ON" : "Audio: OFF"}
-          </button>
-          <button
-            onClick={exportAbleton}
-            className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bh-btn"
-            style={{ background: "var(--bh-agent-drone)", color: "var(--bh-text)", borderColor: "var(--bh-agent-drone)" }}
-          >
-            Export Ableton
-          </button>
         </div>
         {running && <span className="text-xs animate-pulse" style={{ color: "var(--bh-accent)" }}>Running…</span>}
-        {exportStatus && (
-          <span className="text-xs animate-pulse" style={{ color: "var(--bh-agent-drone)" }}>{exportStatus}</span>
-        )}
       </div>
 
       {runOutput && (
@@ -283,74 +186,37 @@ export default function BeeHiveStudio() {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 overflow-hidden" style={{ width: "56px" }}>
-          <HiveFileTree onOpenFile={handleOpenFile} />
-        </div>
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 flex overflow-hidden">
-            <div className="flex-1 overflow-hidden">
-              <HiveCodeEditor ref={editorRef} onActiveFileChange={setActiveFile} />
+            <div className="flex-1 overflow-hidden" style={{ minHeight: 0, minWidth: 0 }}>
+              {center}
             </div>
-            <div className="flex-shrink-0" style={{ width: "320px" }}>
-              <HiveLivePreview />
-            </div>
-          </div>
-          <div className="flex-shrink-0" style={{ height: "256px" }}>
-            <HiveNoCodeCanvas onGeneratedCode={(code) => editorRef.current?.openTab("canvas_output.py", code)} />
-          </div>
-        </div>
-        <div className="flex-shrink-0" style={{ width: "320px" }}>
-          <HiveChatPanel />
-        </div>
-      </div>
-
-      {scaffoldOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="rounded-lg shadow-2xl w-[480px] max-h-[90vh] overflow-y-auto p-5 text-sm"
-            style={{ background: "var(--bh-panel)", border: "1px solid var(--bh-border)" }}>
-            <div className="flex items-center justify-between mb-4">
-              <span className="font-semibold" style={{ color: "var(--bh-accent)" }}>Scaffold New Project</span>
-              <button type="button" onClick={() => { setScaffoldOpen(false); setScaffoldResult(null); }}
-                className="hover:text-white" style={{ color: "var(--bh-text-faint)" }}>✕</button>
-            </div>
-            <label className="block text-xs mb-1" style={{ color: "var(--bh-text-muted)" }}>Description</label>
-            <textarea
-              className="bh-input w-full resize-none mb-3"
-              rows={3} value={scaffoldDesc} onChange={(e) => setScaffoldDesc(e.target.value)}
-              placeholder="A FastAPI service that tracks crypto prices…"
-            />
-            <div className="flex gap-3 mb-3">
-              <label className="flex-1">
-                <div className="text-xs mb-1" style={{ color: "var(--bh-text-muted)" }}>Template</div>
-                <select className="bh-select w-full" value={scaffoldTemplate} onChange={(e) => setScaffoldTemplate(e.target.value)}>
-                  <option value="fastapi-crud">FastAPI CRUD</option>
-                  <option value="streamlit-dashboard">Streamlit Dashboard</option>
-                  <option value="react-vite">React + Vite</option>
-                  <option value="nextjs-app">Next.js App Router</option>
-                  <option value="cli-rich">Python CLI (Rich)</option>
-                  <option value="rust-axum">Rust Axum</option>
-                </select>
-              </label>
-              <label className="flex-1">
-                <div className="text-xs mb-1" style={{ color: "var(--bh-text-muted)" }}>Target directory</div>
-                <input className="bh-input w-full" value={scaffoldDir} onChange={(e) => setScaffoldDir(e.target.value)} />
-              </label>
-            </div>
-            <button type="button" onClick={scaffold} disabled={scaffolding || !scaffoldDesc.trim()}
-              className="w-full rounded py-1.5 text-xs font-medium bh-btn-accent disabled:opacity-50 mb-3">
-              {scaffolding ? "Scaffolding…" : "Generate Project"}
-            </button>
-            {scaffoldResult && (
-              <div>
-                <div className="text-xs mb-1" style={{ color: "var(--bh-text-muted)" }}>Created files:</div>
-                <div className="rounded p-2 max-h-40 overflow-y-auto bh-scrollable" style={{ background: "var(--bh-bg)" }}>
-                  {scaffoldResult.map((f, i) => (
-                    <div key={i} className="text-[10px] font-mono" style={{ color: "var(--bh-success)" }}>{f}</div>
-                  ))}
+            {rightRail && (
+              <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: "320px", borderLeft: "1px solid var(--bh-border)" }}>
+                <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+                  {rightRail}
+                </div>
+                <div className="flex-shrink-0" style={{ height: "320px", borderTop: "1px solid var(--bh-border)" }}>
+                  <HiveChatPanel />
                 </div>
               </div>
             )}
           </div>
+        </div>
+        <div className="w-56 flex-shrink-0 bh-rail" style={{ borderLeft: "1px solid var(--bh-border)" }}>
+          <HiveFileTree onOpenFile={(path) => setActiveFile(path)} />
+        </div>
+      </div>
+
+      {bottomRail && (
+        <div className="flex-shrink-0" style={{ height: "200px", borderTop: "1px solid var(--bh-border)" }}>
+          {bottomRail}
+        </div>
+      )}
+
+      {statusBar && (
+        <div className="bh-statusbar flex-shrink-0">
+          {statusBar}
         </div>
       )}
     </div>
