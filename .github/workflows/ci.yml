@@ -25,8 +25,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -54,7 +52,9 @@ jobs:
             pkg-config
 
       - name: Install JS dependencies
-        run: pnpm install
+        run: |
+          pnpm install --ignore-scripts
+          cd node_modules/esbuild && node install.js
         working-directory: apps/desktop
 
       - name: Install Python dependencies
@@ -113,8 +113,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -144,7 +142,9 @@ jobs:
             libjack-jackd2-dev
 
       - name: Install JS dependencies
-        run: pnpm install
+        run: |
+          pnpm install --ignore-scripts
+          cd node_modules/esbuild && node install.js
         working-directory: apps/desktop
 
       - name: Install Python dependencies
@@ -179,8 +179,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -203,7 +201,9 @@ jobs:
             libjack-jackd2-dev
 
       - name: Install JS dependencies
-        run: pnpm install
+        run: |
+          pnpm install --ignore-scripts
+          cd node_modules/esbuild && node install.js
         working-directory: apps/desktop
 
       - name: Check Tauri app compiles

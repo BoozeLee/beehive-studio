@@ -128,13 +128,14 @@ class BuildCoordinator:
 
     async def _select_provider(self, request: BuildRequest) -> CompilerProvider:
         names = (
-            # Prefer deterministic local provider in dev; fall back to ACE-Step when available.
             ["beehive-local", "ace-rest", "ace-cpp"]
             if request.compiler_preference == "auto"
             else [request.compiler_preference]
         )
         for name in names:
-            provider = self.providers[name]
+            provider = self.providers.get(name)
+            if provider is None:
+                continue
             health = await provider.health()
             if not provider.local and (not request.allow_cloud or not request.cloud_approved):
                 raise PermissionError("cloud compiler requires explicit approval")

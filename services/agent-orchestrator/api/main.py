@@ -6,6 +6,7 @@ Now includes:
 - /brief           Submit a brief to the Rhythm & Groove agent
 - /lua/run         Execute a Lua script in sandbox
 - /agents          List available agents
+- /tools/*         SkyWeb-compatible local tools API (files, exec, agents, run)
 """
 
 from __future__ import annotations
@@ -657,6 +658,231 @@ async def list_agents():
             },
         ]
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# SkyWeb-compatible local tools API
+# ─────────────────────────────────────────────────────────────
+
+import subprocess
+from pathlib import Path
+from fastapi import Request
+
+TOOLS_ROOT = Path(__file__).resolve().parents[2]
+MAX_TEXT_RESPONSE = 1024 * 1024
+
+ALLOWED_COMMANDS = {
+    "npm run lint", "npm run build", "npm test", "npm run test",
+    "git status", "git status --short", "git diff", "git diff --stat",
+    "ls", "cat", "head", "tail", "find", "pwd",
+    "python3", "lua", "ffmpeg", "ffprobe", "mido", "midicsv",
+}
+
+
+def _safe_tools_path(raw: str) -> Path:
+    p = Path(raw)
+    if p.is_absolute():
+        resolved = p.resolve()
+    else:
+        resolved = (TOOLS_ROOT / p).resolve()
+    try:
+        resolved.relative_to(TOOLS_ROOT.resolve())
+    except ValueError:
+        raise HTTPException(400, "Path escapes Beehive workspace root.")
+    return resolved
+
+
+def _parse_allowed_command(command: str):
+    parts = command.strip().split()
+    if not parts:
+        return None
+    joined = " ".join(parts)
+
+    if joined in ALLOWED_COMMANDS:
+        return {"bin": parts[0], "args": parts[1:]}
+
+    if parts[0] == "npm" and parts[1] == "install" and len(parts) <= 12:
+        return {"bin": "npm", "args": parts[1:]}
+
+    if parts[0] == "rg" and 2 <= len(parts) <= 6:
+        return {"bin": "rg", "args": parts[1:]}
+
+    if parts[0] == "python3" and len(parts) >= 2 and "-c" not in parts:
+        return {"bin": "python3", "args": parts[1:]}
+
+    return None
+
+
+@app.get("/tools/health")
+async def tools_health():
+    return {
+        "ok": True,
+        "service": "beehive-tools-api",
+        "version": APP_VERSION,
+        "root": str(TOOLS_ROOT),
+        "capabilities": [
+            "files:list", "files:read", "files:write",
+            "code:exec", "agents:list", "run:script",
+        ],
+    }
+
+
+@app.get("/tools/files")
+async def tools_list_files(q: str = ""):
+    try:
+        result = subprocess.run(
+            ["rg", "--files"],
+            cwd=TOOLS_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        files = [
+            f for f in result.stdout.splitlines()
+            if f and not any(f.startswith(p) for p in [
+                "node_modules/", "dist/", ".git/", "target/", ".venv/",
+                "__pycache__/", ".pytest_cache/",
+            ])
+            and (not q or q.lower() in f.lower())
+        ][:80]
+        return {"files": files}
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.post("/tools/read")
+async def tools_read_file(request: Request):
+    body = await request.json()
+    path = body.get("path", "")
+    if not path:
+        raise HTTPException(400, "path is required")
+    resolved = _safe_tools_path(path)
+    try:
+        content = resolved.read_text(encoding="utf-8")
+        return {"path": str(resolved.relative_to(TOOLS_ROOT)), "content": content[:MAX_TEXT_RESPONSE]}
+    except Exception as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.post("/tools/write")
+async def tools_write_file(request: Request):
+    body = await request.json()
+    path = body.get("path", "")
+    content = body.get("content", "")
+    if not path:
+        raise HTTPException(400, "path is required")
+    resolved = _safe_tools_path(path)
+    try:
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_text(content, encoding="utf-8")
+        return {"path": str(resolved.relative_to(TOOLS_ROOT)), "bytes": len(content)}
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.post("/tools/exec")
+async def tools_exec_command(request: Request):
+    body = await request.json()
+    command = body.get("command", "")
+    if not command:
+        raise HTTPException(400, "command is required")
+    parsed = _parse_allowed_command(command)
+    if not parsed:
+        raise HTTPException(403, "Command is not in the Beehive allowlist.")
+    try:
+        proc = subprocess.run(
+            [parsed["bin"]] + parsed["args"],
+            cwd=TOOLS_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={**__import__("os").environ, "PYTHONUNBUFFERED": "1"},
+        )
+        return {
+            "command": command,
+            "stdout": proc.stdout[:20000],
+            "stderr": proc.stderr[:12000],
+            "returncode": proc.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "Command timed out.")
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.get("/tools/agents")
+async def tools_list_agents():
+    return await list_agents()
+
+
+@app.post("/tools/run")
+async def tools_run_script(request: Request):
+    body = await request.json()
+    script = body.get("script", "")
+    language = body.get("language", "python")
+    if not script:
+        raise HTTPException(400, "script is required")
+    if language not in ("python", "lua"):
+        raise HTTPException(400, "Unsupported language. Use 'python' or 'lua'.")
+
+    suffix = ".py" if language == "python" else ".lua"
+    tmp = Path(tempfile.gettempdir()) / f"beehive_script_{uuid.uuid4().hex}{suffix}"
+    try:
+        tmp.write_text(script, encoding="utf-8")
+        cmd = ["python3", str(tmp)] if language == "python" else ["lua", str(tmp)]
+        proc = subprocess.run(
+            cmd,
+            cwd=TOOLS_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={**__import__("os").environ, "PYTHONUNBUFFERED": "1"},
+        )
+        return {
+            "language": language,
+            "stdout": proc.stdout[:MAX_TEXT_RESPONSE],
+            "stderr": proc.stderr[:12000],
+            "returncode": proc.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "Script timed out.")
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+@app.post("/tools/scaffold")
+async def tools_scaffold(request: Request):
+    body = await request.json()
+    description = body.get("description", "")
+    template = body.get("template", "fastapi-crud")
+    target_dir = body.get("target_dir", "/tmp/hive_project")
+
+    files = []
+    if template == "fastapi-crud":
+        files = [
+            {"path": f"{target_dir}/main.py", "type": "file", "content": "# FastAPI CRUD scaffold\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/health')\ndef health():\n    return {'status': 'ok'}\n"},
+            {"path": f"{target_dir}/requirements.txt", "type": "file", "content": "fastapi>=0.115\nuvicorn>=0.30\n"},
+            {"path": f"{target_dir}/README.md", "type": "file", "content": f"# {description or 'FastAPI Project'}\n"},
+        ]
+    elif template == "react-vite":
+        files = [
+            {"path": f"{target_dir}/package.json", "type": "file", "content": '{"name": "beehive-project", "private": true, "version": "0.0.0", "type": "module", "scripts": {"dev": "vite", "build": "tsc && vite build", "preview": "vite preview"}, "dependencies": {"react": "^19.2.7", "react-dom": "^19.2.6"}, "devDependencies": {"@types/react": "^19.2.17", "@types/react-dom": "^19.2.3", "@vitejs/plugin-react": "^5.2.0", "typescript": "^6.0.3", "vite": "^6.4.3"}}'},
+            {"path": f"{target_dir}/src/App.tsx", "type": "file", "content": "import React from 'react';\n\nexport default function App() {\n  return <div>Hello from BeeHive</div>;\n}\n"},
+            {"path": f"{target_dir}/src/main.tsx", "type": "file", "content": "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\n\nReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);\n"},
+            {"path": f"{target_dir}/index.html", "type": "file", "content": "<!DOCTYPE html><html><head><title>BeeHive App</title></head><body><div id='root'></div><script type='module' src='/src/main.tsx'></script></body></html>"},
+            {"path": f"{target_dir}/tsconfig.json", "type": "file", "content": '{"compilerOptions": {"target": "ES2020", "useDefineForClassFields": true, "lib": ["ES2020", "DOM", "DOM.Iterable"], "module": "ESNext", "skipLibCheck": true, "moduleResolution": "bundler", "allowImportingTsExtensions": true, "resolveJsonModule": true, "isolatedModules": true, "noEmit": true, "jsx": "react-jsx", "strict": true}, "include": ["src"]}'},
+            {"path": f"{target_dir}/vite.config.ts", "type": "file", "content": "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({ plugins: [react()], server: { port: 1420 } });\n"},
+        ]
+    else:
+        files = [
+            {"path": f"{target_dir}/README.md", "type": "file", "content": f"# {description or 'BeeHive Project'}\n"},
+            {"path": f"{target_dir}/.gitignore", "type": "file", "content": "node_modules/\ndist/\n.git/\n"},
+        ]
+
+    return {"description": description, "template": template, "target_dir": target_dir, "files": files}
 
 
 class ResearchRequest(BaseModel):

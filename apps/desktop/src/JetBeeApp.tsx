@@ -83,9 +83,11 @@ import { BuildPlanReview } from "./components/BuildPlanReview/BuildPlanReview";
 import { useJetBeeBuild } from "./lib/useJetBeeBuild";
 import type { BuildEvent, PatchOperation } from "../../../packages/core-models/index";
 import { PluginMarketplace } from "./components/PluginMarketplace/PluginMarketplace";
+import BeeHiveStudio from "./components/Studio/BeeHiveStudio";
 
 // JetBee theme
 import "./styles/jetbee-theme.css";
+import "./styles/studio-theme.css";
 
 // Keyboard store
 import {
@@ -1850,13 +1852,13 @@ function JetBeeApp() {
 
   return (
     <>
-      <ResizableWorkbench
+      <BeeHiveStudio
         topBar={topBar}
-        leftRail={leftRail}
         center={center}
         rightRail={rightRail}
         bottomRail={bottomRail}
         statusBar={statusBar}
+        leftRail={leftRail}
       />
       <CommandPalette />
       <ExportAudioDialog
