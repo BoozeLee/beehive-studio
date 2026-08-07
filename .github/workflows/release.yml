@@ -54,7 +54,7 @@ jobs:
             python3-pip
 
       - name: Pre-approve esbuild builds
-        run: pnpm approve-builds esbuild
+        run: echo '{"esbuild": true}' > approvals.json
         working-directory: apps/desktop
 
       - name: Install JS dependencies

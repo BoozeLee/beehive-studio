@@ -62,7 +62,8 @@ jobs:
         cd services/agent-orchestrator
         uv sync --dev
         cd ../../apps/desktop
-        pnpm approve-builds esbuild
+        echo '{"esbuild": true}' > ../../approvals.json
+        cd ../..
         pnpm install
 
     - name: Run tests

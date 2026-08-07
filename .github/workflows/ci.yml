@@ -52,8 +52,9 @@ jobs:
             pkg-config
 
       - name: Pre-approve esbuild builds
-        run: pnpm approve-builds esbuild
-        working-directory: apps/desktop
+        run: |
+          echo '{"esbuild": true}' > apps/desktop/approvals.json
+        working-directory: .
 
       - name: Install JS dependencies
         run: pnpm install
@@ -144,8 +145,9 @@ jobs:
             libjack-jackd2-dev
 
       - name: Pre-approve esbuild builds
-        run: pnpm approve-builds esbuild
-        working-directory: apps/desktop
+        run: |
+          echo '{"esbuild": true}' > apps/desktop/approvals.json
+        working-directory: .
 
       - name: Install JS dependencies
         run: pnpm install
@@ -205,8 +207,9 @@ jobs:
             libjack-jackd2-dev
 
       - name: Pre-approve esbuild builds
-        run: pnpm approve-builds esbuild
-        working-directory: apps/desktop
+        run: |
+          echo '{"esbuild": true}' > apps/desktop/approvals.json
+        working-directory: .
 
       - name: Install JS dependencies
         run: pnpm install
