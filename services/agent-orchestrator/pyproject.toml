@@ -37,6 +37,11 @@ dev = [
 [tool.ruff]
 line-length = 100
 
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"' or use --run-slow)",
+]
+
 # Development mode - no strict packaging required yet
 [tool.hatch.build.targets.wheel]
 packages = ["."]
